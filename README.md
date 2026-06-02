@@ -19,11 +19,6 @@ When copy-pasting multiple code files into Large Language Models (LLMs) for anal
 
 Run the script by passing the target project directory absolute path as an argument.
 
-### Stamp a Single File
-```bash
-python src/coding_tools/path_stamper.py /path/to/your/project
-```
-
 ### Stamp an Entire Directory
 ```bash
 python path_stamper.py ./your_project_folder/
