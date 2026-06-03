@@ -21,7 +21,12 @@ Run the script by passing the target project directory absolute path as an argum
 
 ### Stamp an Entire Directory
 ```bash
-python path_stamper.py ./your_project_folder/
+python ./src/coding_tools/path_stamper.py ./your_project_folder/
+```
+
+or 
+```bash
+python .\src\coding_tools\path_stamper.py .\your_project_folder\
 ```
 
 ---
