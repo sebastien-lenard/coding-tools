@@ -1,243 +1,176 @@
 import argparse
-import re
-import subprocess
+import logging
 import sys
+from difflib import unified_diff
 from pathlib import Path
 
+from pydantic import BaseModel, DirectoryPath
 
-def generate_updated_content(content: str, rel_path_str: str) -> tuple[str, bool]:
-    """
-    Parses top-of-file comments to safely update or insert the script's relative path.
-    Preserves shebangs and coding instructions perfectly.
-    """
-    lines = content.splitlines(keepends=True)
-    expected_comment = f"# {rel_path_str}\n"
-
-    if not lines:
-        return expected_comment, True
-
-    idx = 0
-    if lines[idx].startswith("#!"):
-        idx += 1
-
-    if (
-        idx < len(lines)
-        and ("coding:" in lines[idx] or "coding=" in lines[idx])
-        and lines[idx].startswith("#")
-    ):
-        idx += 1
-
-    insertion_idx = idx
-    comment_indices = []
-    for i in range(insertion_idx, len(lines)):
-        if lines[i].startswith("#"):
-            comment_indices.append(i)
-        else:
-            break
-
-    path_comment_pattern = re.compile(
-        r"^#\s*([a-zA-Z]:[\\/])?([\w\-\.\\\/ ]+/)*[\w\-\.]+\.py\s*$"
-    )
-
-    existing_path_idx = None
-    for c_idx in comment_indices:
-        if path_comment_pattern.match(lines[c_idx].strip() + "\n"):
-            existing_path_idx = c_idx
-            break
-
-    if existing_path_idx is not None:
-        if lines[existing_path_idx] == expected_comment:
-            return content, False
-        lines[existing_path_idx] = expected_comment
-        return "".join(lines), True
-    else:
-        lines.insert(insertion_idx, expected_comment)
-        return "".join(lines), True
+logger = logging.getLogger("coding_tools.path_stamper")
+logger.setLevel(logging.INFO)
 
 
-def scan_python_files(root_dir: Path) -> list[Path]:
-    """Finds all project python files excluding environment assets."""
-    all_py = root_dir.rglob("*.py")
-    return [f for f in all_py if not any(part in f.parts for part in (".venv", "venv"))]
+class PathStamper(BaseModel):
+    """Automates and validates top-of-file relative path headers for Python scripts."""
 
+    project_dir: DirectoryPath
 
-def verify_git_diff(root_dir: Path) -> tuple[bool, list[str]]:
-    """
-    Runs git diff strictly within the targeted project folder.
-    Allows either a single path comment insertion OR a single path comment replacement.
-    Returns (is_valid, error_messages_list).
-    """
-    errors = []
-    try:
-        # Pass "." explicitly to scope the diff strictly to the cwd (project root)
-        result = subprocess.run(
-            ["git", "diff", "-U0", "."],
-            cwd=root_dir,
-            capture_output=True,
-            text=True,
-            check=True,
+    def run(self) -> bool:
+        """Orchestrates the stamping workflow and validates modifications for safety."""
+        logger.info(f"Initializing path stamping for directory: {self.project_dir}")
+        py_files = self._scan_files()
+
+        if not py_files:
+            logger.info("No target Python files identified to process.")
+            return True
+
+        # Snapshot baseline file contents before modification for safe validation
+        baselines: dict[Path, str] = {}
+        for file_path in py_files:
+            try:
+                baselines[file_path] = file_path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, PermissionError) as e:
+                logger.warning(
+                    f"Skipping file due to read permissions/encoding: "
+                    f"{file_path.name} ({e})"
+                )
+
+        modified_count = 0
+        for file_path, original_content in baselines.items():
+            if self._stamp_file(file_path, original_content):
+                modified_count += 1
+
+        logger.info(
+            f"Processed {len(baselines)} files. Modified {modified_count} targets."
         )
-    except (subprocess.SubprocessError, FileNotFoundError) as e:
-        return False, [f"Failed to execute git diff command: {e}"]
 
-    if not result.stdout.strip():
-        return True, []
+        # Validate structural changes safely without regex string parsing
+        return self._verify_modifications(baselines)
 
-    # Regex to ensure a hunk strictly contains a single added path comment
-    hunk_header_pattern = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@")
-    # Matches both added (+) and deleted (-) lines that are pure path comments
-    path_comment_pattern = re.compile(
-        r"^[+-]\s*#\s*([\w\-\.\\\/ ]+/)*[\w\-\.]+\.py\s*$"
-    )
+    def _scan_files(self) -> list[Path]:
+        """Finds all project python files excluding virtual environments."""
+        return [
+            f
+            for f in self.project_dir.rglob("*.py")
+            if not any(part in f.parts for part in (".venv", "venv", "__pycache__"))
+        ]
 
-    # Group the unified diff lines cleanly by file
-    current_file = "Unknown File"
-    file_hunks = {}
+    def _generate_updated_content(
+        self, content: str, rel_path_str: str
+    ) -> tuple[str, bool]:
+        """Inserts or overwrites the relative path macro at the top of the file."""
+        lines = content.splitlines(keepends=True)
+        expected_header = f"# {rel_path_str}\n"
 
-    for line in result.stdout.splitlines():
-        if line.startswith("diff --git"):
-            # Extract target file name path accurately from git headers
-            match = re.search(r"b/(.+)$", line)
-            current_file = match.group(1) if match else "Unknown File"
-            file_hunks[current_file] = []
-        elif current_file in file_hunks:
-            if line.startswith("@@") or line.startswith("+") or line.startswith("-"):
-                if not (line.startswith("---") or line.startswith("+++")):
-                    file_hunks[current_file].append(line)
-
-    # Process and evaluate each file's changes individually
-    for filename, lines in file_hunks.items():
         if not lines:
-            continue
+            return expected_header, True
 
+        # Find safe insertion index past shebangs or encoding cookies
         idx = 0
-        while idx < len(lines):
-            # 1. We expect a hunk header line
-            if not hunk_header_pattern.match(lines[idx]):
-                errors.append(
-                    f"[{filename}] Unexpected git structural metadata line: "
-                    "'{lines[idx]}'"
-                )
-                idx += 1
-                continue
-
-            # 2. Gather the content lines belonging to this specific header hunk
-            hunk_content_lines = []
+        if lines[idx].startswith("#!"):
             idx += 1
-            while idx < len(lines) and not hunk_header_pattern.match(lines[idx]):
-                hunk_content_lines.append(lines[idx])
-                idx += 1
+        if idx < len(lines) and any(x in lines[idx] for x in ("coding:", "coding=")):
+            idx += 1
 
-            # --- VALIDATION LOGIC ---
-            deletions = [l for l in hunk_content_lines if l.startswith("-")]
-            additions = [l for l in hunk_content_lines if l.startswith("+")]
+        # Check if the header is already correctly set
+        if idx < len(lines) and lines[idx].strip() == expected_header.strip():
+            return content, False
 
-            # Scenario A: A pure new path comment insertion (0 deletions, 1 addition)
-            if len(deletions) == 0 and len(additions) == 1:
-                if not path_comment_pattern.match(additions[0]):
-                    errors.append(
-                        f"[{filename}] Added line is not a valid path comment: '{additions[0]}'"
-                    )
+        # If an outdated or alternative structural path header is already there,
+        # overwrite it
+        if idx < len(lines) and lines[idx].startswith("#") and (".py" in lines[idx]):
+            lines[idx] = expected_header
+        else:
+            lines.insert(idx, expected_header)
 
-            # Scenario B: An outdated path comment replacement (1 deletion, 1 addition)
-            elif len(deletions) == 1 and len(additions) == 1:
-                if not path_comment_pattern.match(
-                    deletions[0]
-                ) or not path_comment_pattern.match(additions[0]):
-                    errors.append(
-                        f"[{filename}] Modification is not a clean path comment replacement:\n"
-                        f"  -> {deletions[0]}\n"
-                        f"  -> {additions[0]}"
-                    )
+        return "".join(lines), True
 
-            # Scenario C: Anything else is unsafe (modifying actual code, multiple lines, etc.)
-            else:
-                errors.append(
-                    f"[{filename}] Hunk contains unsafe code changes or unexpected line modifications:\n"
-                    + "\n".join(f"  -> {l}" for l in hunk_content_lines)
-                )
-
-    return (len(errors) == 0), errors
-
-
-def run_process(project_path: Path) -> bool:
-    """
-    Orchestrates validating the path, scanning targets,
-    writing updated file contents, and verifying changes via Git.
-    """
-    project_path = project_path.resolve()
-    if not project_path.exists() or not project_path.is_dir():
-        print(
-            f"Error: Path '{project_path}' does not exist or is not a directory.",
-            file=sys.stderr,
-        )
-        return False
-
-    py_files = scan_python_files(project_path)
-    if not py_files:
-        print("No Python files found to process.")
-        return True
-
-    modified_count = 0
-    for file_path in py_files:
+    def _stamp_file(self, file_path: Path, original_content: str) -> bool:
+        """Handles the localized write mutation lifecycle for a target script."""
         try:
-            rel_path = file_path.relative_to(project_path)
-
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            new_content, is_modified = generate_updated_content(
-                content, rel_path.as_posix()
+            rel_path = file_path.relative_to(self.project_dir)
+            new_content, is_modified = self._generate_updated_content(
+                original_content, rel_path.as_posix()
             )
 
             if is_modified:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-                modified_count += 1
-                print(f"Updated header path: {rel_path.as_posix()}")
-
+                file_path.write_text(new_content, encoding="utf-8")
+                logger.info(f"Updated header path: {rel_path.as_posix()}")
+                return True
         except Exception as e:
-            print(
-                f"Failed to parse target script {file_path.name}: {e}", file=sys.stderr
-            )
-
-    print(f"Processed {len(py_files)} files. Modified {modified_count} targets.")
-
-    # Run the Git validation step to safeguard your codebase
-    print("Running Git diff structural verification safety check...")
-    is_valid, git_errors = verify_git_diff(project_path)
-
-    if not is_valid:
-        print("\n" + "=" * 70, file=sys.stderr)
-        print("CRITICAL ERROR: GIT DIFF SAFETY VALIDATION FAILED!", file=sys.stderr)
-        print("=" * 70, file=sys.stderr)
-        print(
-            "The following unexpected changes were caught in your working tree:\n",
-            file=sys.stderr,
-        )
-        for error in git_errors:
-            print(f"  ❌ {error}", file=sys.stderr)
-        print(
-            "\n👉 Please review these files or discard unwanted modifications via 'git checkout'.",
-            file=sys.stderr,
-        )
+            logger.error(f"Failed writing script updates to {file_path.name}: {e}")
         return False
 
-    print("Success: Structural validation checks passed cleanly.")
-    return True
+    def _verify_modifications(self, baselines: dict[Path, str]) -> bool:
+        """Ensures that the only changes are explicit header path comments."""
+        errors: list[str] = []
+
+        for file_path, original_content in baselines.items():
+            current_content = file_path.read_text(encoding="utf-8")
+            if original_content == current_content:
+                continue
+
+            diff = list(
+                unified_diff(
+                    original_content.splitlines(),
+                    current_content.splitlines(),
+                    lineterm="",
+                )
+            )
+
+            # A clean stamp operation should only yield lines showing the replacement
+            # Filter diff metadata out to evaluate actual content mutations
+            content_changes = [
+                line
+                for line in diff
+                if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+            ]
+
+            for change in content_changes:
+                # If a line deletion (-) wasn't an old header macro, or an addition (+)
+                # isn't a new one
+                if change.startswith("-") and not (
+                    ".py" in change and change.strip().startswith("-#")
+                ):
+                    errors.append(
+                        f"[{file_path.name}] Unsafe line removal detected: {change}"
+                    )
+                elif change.startswith("+") and not (
+                    change.strip().startswith("+#") and ".py" in change
+                ):
+                    errors.append(
+                        f"[{file_path.name}] Unsafe line addition detected: {change}"
+                    )
+
+        if errors:
+            logger.error("CRITICAL ERROR: SAFETY VALIDATION FAILED!")
+            for error in errors:
+                logger.error(f"Structural Deviation: {error}")
+            return False
+
+        logger.info("Success: All structural safety validation checks passed cleanly.")
+        return True
 
 
 def main() -> None:
     """CLI Entrypoint processing runtime arguments."""
-    parser = argparse.ArgumentParser(
-        description="Automate file path headers for Python script targets safely."
-    )
-    parser.add_argument(
-        "project_dir", type=str, help="Root folder system path of the target code base."
-    )
+    parser = argparse.ArgumentParser(description="Automate file path headers safely.")
+    parser.add_argument("project_dir", type=str, help="Root folder system path.")
     args = parser.parse_args()
 
-    success = run_process(Path(args.project_dir))
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    try:
+        stamper = PathStamper(project_dir=Path(args.project_dir))
+        success = stamper.run()
+    except Exception as e:
+        logger.error(f"Runtime roadblock encountered: {e}")
+        success = False
+
     sys.exit(0 if success else 1)
 
 

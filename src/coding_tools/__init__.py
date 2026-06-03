@@ -1,13 +1,5 @@
-from .path_stamper import (
-    generate_updated_content,
-    run_process,
-    scan_python_files,
-    verify_git_diff,
-)
+# src/coding_tools/__init__.py
+from .backup_untracked import UntrackedBackupManager
+from .path_stamper import PathStamper
 
-__all__ = [
-    "verify_git_diff",
-    "run_process",
-    "scan_python_files",
-    "generate_updated_content",
-]
+__all__ = ["PathStamper", "UntrackedBackupManager"]
