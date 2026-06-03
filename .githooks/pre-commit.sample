@@ -1,0 +1,26 @@
+#!/bin/sh
+# .githooks/pre-commit.sample (Inside your coding-tools repository)
+
+# Redirect output to stderr for visible logging during git commits
+exec 1>&2
+
+echo "🔔 [Pre-Commit Hook] Initializing automatic untracked files backup..."
+
+# -----------------------------------------------------------------------------
+# CONFIGURATION: Adjust these two absolute paths to match your local machine
+# -----------------------------------------------------------------------------
+CODING_TOOLS_DIR="/path/to/your/local/coding-tools"
+TARGET_PROJECT_DIR="/path/to/the/project/to/save/untracked"
+# -----------------------------------------------------------------------------
+
+# Execute the backup manager globally using uv's directory context flag
+uv --directory "$CODING_TOOLS_DIR" run backup-untracked "$TARGET_PROJECT_DIR" --verbose
+
+# Capture the exit code of the backup manager
+if [ $? -ne 0 ]; then
+    echo "❌ [Pre-Commit Hook] Critical: Backup failed! Aborting commit for safety."
+    exit 1
+fi
+
+echo "✅ [Pre-Commit Hook] Backup cycle complete. Proceeding with commit."
+exit 0
