@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.coding_tools.path_stamper import PathStamper
+from src.coding_tools.workspace_stamper import PathStamper
 
 # =====================================================================
 # INITIALIZATION & VALIDATION TESTS
