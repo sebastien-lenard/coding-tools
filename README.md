@@ -84,7 +84,7 @@ Thanks to the project's `pyproject.toml` configurations, you don't need to invok
 Pass the target folder directory as an argument:
 
 ```bash
-uv run path-stamper /path/to/your/project/directory/to/path/stamp
+uv run workspace-stamper /path/to/your/project/directory/to/path/stamp
 
 ```
 

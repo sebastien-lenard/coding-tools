@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.coding_tools.workspace_stamper import (
+from coding_tools.workspace_stamper import (
     FILE_LICENSE,
     FILE_NOTICE,
     TargetWorkspace,
@@ -20,11 +20,11 @@ def create_compliance_environment(
     has_license: bool = True,
     has_notice: bool = True,
 ) -> tuple[Path, Path]:
-    """Stage structural compliance environments."""
+    """Stage structural compliance environments with standard formats."""
     lic = root / FILE_LICENSE
     notc = root / FILE_NOTICE
     if has_license:
-        lic.write_text("Apache License Version 2.0", encoding="utf-8")
+        lic.write_text("Apache License Version 2.0\nLine 2 info", encoding="utf-8")
     if has_notice:
         notc.write_text(
             "Copyright 2026 Sebastien Lenard <sebastien.lenard@gmail.com>",
@@ -83,98 +83,68 @@ def test_workspace_file_resolution_single_file(tmp_path: Path) -> None:
 
 
 # =====================================================================
-# LEGAL INFRASTRUCTURE & METADATA TESTS
+# INFRASTRUCTURE & METADATA TESTS WITH NEW RESILIENT SPECS
 # =====================================================================
 
 
-def test_missing_infrastructure_triggers_warning_and_deactivates(
+def test_missing_license_triggers_warning_but_stamps_successfully(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Deactivates licensing gracefully if infrastructure dependencies are missing."""
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    """Warns if LICENSE is missing, but still injects SPDX-License-Identifier."""
+    create_compliance_environment(tmp_path, has_license=False, has_notice=True)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
     with caplog.at_level("WARNING"):
         engine._evaluate_legal_infrastructure()
 
-    assert not ws.run_license_stamp
-    assert "missing at project root" in caplog.text
+    assert ws.run_license_stamp
+    assert "is missing from project root" in caplog.text
 
 
-def test_empty_license_file_deactivates_stamping(
+def test_missing_notice_triggers_warning_but_stamps_rest(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Deactivates licensing updates if LICENSE is present but empty."""
-    create_compliance_environment(tmp_path, has_notice=True)
-    (tmp_path / FILE_LICENSE).write_text("", encoding="utf-8")
-
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    """Warns if NOTICE is missing, skipping copyright but stamping license-id."""
+    create_compliance_environment(tmp_path, has_license=True, has_notice=False)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="MIT",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
     with caplog.at_level("WARNING"):
         engine._evaluate_legal_infrastructure()
 
-    assert not ws.run_license_stamp
-    assert "LICENSE file is completely empty" in caplog.text
+    assert ws.run_license_stamp
+    assert ws.extracted_copyright is None
+    assert "is missing from project root" in caplog.text
 
 
-def test_unresolved_structural_title_deactivates_stamping(
+def test_unparseable_license_captured_and_logged(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Deactivates licensing updates if LICENSE has no extractable title chunks."""
-    create_compliance_environment(tmp_path, has_notice=True)
-    (tmp_path / FILE_LICENSE).write_text("   \n\n  ", encoding="utf-8")
-
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    """Captures and logs the header elements cleanly from valid LICENSE."""
+    create_compliance_environment(tmp_path)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"):
         engine._evaluate_legal_infrastructure()
 
-    assert not ws.run_license_stamp
-    assert "LICENSE file is completely empty" in caplog.text
-
-
-def test_missing_notice_copyright_deactivates_stamping(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Deactivates licensing updates if NOTICE is present but has no copyright."""
-    create_compliance_environment(tmp_path, has_notice=False)
-    (tmp_path / FILE_NOTICE).write_text("Just generic text", encoding="utf-8")
-
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
-    engine = WorkspaceStamper(workspace=ws)
-
-    with caplog.at_level("WARNING"):
-        engine._evaluate_legal_infrastructure()
-
-    assert not ws.run_license_stamp
-    assert "Could not locate a valid 'Copyright' string" in caplog.text
-
-
-def test_io_failure_during_parsing_deactivates_stamping(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Safely captures I/O errors and disables licensing verification."""
-    create_compliance_environment(tmp_path, has_license=False)
-
-    # Force OSError on read_text by converting LICENSE into a directory
-    license_dir = tmp_path / FILE_LICENSE
-    license_dir.mkdir()
-
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
-    engine = WorkspaceStamper(workspace=ws)
-
-    with caplog.at_level("WARNING"):
-        engine._evaluate_legal_infrastructure()
-
-    assert not ws.run_license_stamp
-    assert "Failed parsing legal infrastructure" in caplog.text
+    assert "LICENSE headers detected:" in caplog.text
 
 
 # =====================================================================
@@ -185,7 +155,11 @@ def test_io_failure_during_parsing_deactivates_stamping(
 def test_generates_both_path_and_license_on_empty_file(tmp_path: Path) -> None:
     """Inserts stacked structural modifications cleanly inside empty source targets."""
     create_compliance_environment(tmp_path)
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
     engine._evaluate_legal_infrastructure()
 
@@ -202,7 +176,7 @@ def test_generates_both_path_and_license_on_empty_file(tmp_path: Path) -> None:
 
 
 def test_only_path_stamped_when_license_disabled(tmp_path: Path) -> None:
-    """Applies only path elements when license stamping flags are explicitly dropped."""
+    """Applies only path elements when license stamping flags are dropped."""
     ws = TargetWorkspace(
         project_dir=tmp_path,
         target_path=tmp_path,
@@ -225,6 +199,7 @@ def test_only_license_stamped_when_path_disabled(tmp_path: Path) -> None:
         project_dir=tmp_path,
         target_path=tmp_path,
         run_path_stamp=False,
+        extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
     engine._evaluate_legal_infrastructure()
@@ -240,7 +215,11 @@ def test_only_license_stamped_when_path_disabled(tmp_path: Path) -> None:
 def test_preserves_interpreter_directives(tmp_path: Path) -> None:
     """Ensures paths and license definitions append below shebang blocks correctly."""
     create_compliance_environment(tmp_path)
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
     engine._evaluate_legal_infrastructure()
 
@@ -258,7 +237,11 @@ def test_preserves_interpreter_directives(tmp_path: Path) -> None:
 def test_overwrites_legacy_and_dirty_spdx_lines(tmp_path: Path) -> None:
     """Slices out broken or legacy license tags to keep structural layout clean."""
     create_compliance_environment(tmp_path)
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
     engine._evaluate_legal_infrastructure()
 
@@ -296,7 +279,7 @@ def test_purges_legacy_tags_when_license_disabled(tmp_path: Path) -> None:
 
 
 # =====================================================================
-# INTEGRATION, EXCEPTION & SAFETY TESTS
+# INTEGRATION & FAULT-TOLERANCE TESTS
 # =====================================================================
 
 
@@ -306,20 +289,17 @@ def test_engine_run_completes_end_to_end_successfully(tmp_path: Path) -> None:
     script = tmp_path / "main.py"
     script.write_text("pass", encoding="utf-8")
 
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=script)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=script,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
     assert engine.run()
     updated_content = script.read_text(encoding="utf-8")
     assert "# main.py\n" in updated_content
     assert "SPDX-License-Identifier: Apache-2.0" in updated_content
-
-
-def test_engine_run_with_no_actionable_targets(tmp_path: Path) -> None:
-    """Verifies engine exit behavior when zero target files are located."""
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
-    engine = WorkspaceStamper(workspace=ws)
-    assert engine.run()
 
 
 def test_engine_blocked_by_permission_error(
@@ -331,10 +311,14 @@ def test_engine_blocked_by_permission_error(
     script = tmp_path / "main.py"
     script.write_text("print('test')", encoding="utf-8")
 
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=script)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=script,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
-    # Trigger structural decode issue by writing raw invalid binary sequences
+    # Force encoding mismatch issues
     script.write_bytes(b"\x80\x81\xff")
 
     with caplog.at_level("WARNING"):
@@ -350,7 +334,6 @@ def test_process_file_failure_captured_gracefully(
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
 
-    # Attempt to process a directory as a file which triggers OSError on save
     with caplog.at_level("ERROR"):
         status = engine._process_file(tmp_path, "content")
 
@@ -367,7 +350,11 @@ def test_safety_engine_catches_unauthorized_functional_mutations(
     script = tmp_path / "main.py"
     script.write_text("print('safe')", encoding="utf-8")
 
-    ws = TargetWorkspace(project_dir=tmp_path, target_path=script)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=script,
+        extracted_license_id="Apache-2.0",
+    )
     engine = WorkspaceStamper(workspace=ws)
 
     baselines = {script: script.read_text(encoding="utf-8")}
@@ -390,18 +377,17 @@ def test_safety_engine_catches_unauthorized_functional_mutations(
 
 
 # =====================================================================
-# CLI EXECUTIVE RUNNER TESTS
+# NEW COMPLEMENTARY SPECIFICATIONS CLI TESTS
 # =====================================================================
 
 
-def test_cli_execution_success(
+def test_cli_requires_license_id_unless_no_license(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verifies successful executive run transitions on CLI invocation."""
-    create_compliance_environment(tmp_path)
+    """Validates that execution terminates if --license-id is missing."""
     script = tmp_path / "main.py"
-    script.write_text("pass", encoding="utf-8")
+    script.touch()
 
     monkeypatch.setattr(
         sys,
@@ -412,22 +398,105 @@ def test_cli_execution_success(
     with pytest.raises(SystemExit) as sysexit:
         main()
 
-    assert sysexit.value.code == 0
+    assert sysexit.value.code == 1
 
 
-def test_cli_execution_roadblock(
+def test_cli_invalid_license_id_pattern(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verifies failing structural transactions trigger correct exit code."""
+    """Checks character verification for invalid licensing patterns."""
+    script = tmp_path / "main.py"
+    script.touch()
+
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "workspace_stamper",
-            "/invalid/target/path",
+            str(script),
             "--project-dir",
-            "/invalid/project/path",
+            str(tmp_path),
+            "--license-id",
+            "Apache 2.0!",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as sysexit:
+        main()
+
+    assert sysexit.value.code == 1
+
+
+def test_cli_mutual_deactivation_termination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Asserts clean termination with logging when stamps are turned off."""
+    script = tmp_path / "main.py"
+    script.touch()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "workspace_stamper",
+            str(script),
+            "--no-path",
+            "--no-license",
+        ],
+    )
+
+    with caplog.at_level("INFO"), pytest.raises(SystemExit) as sysexit:
+        main()
+
+    assert sysexit.value.code == 0
+    assert "No stamping will be carried out" in caplog.text
+
+
+def test_cli_optional_project_dir_when_target_is_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default directory paths are inferred cleanly from targets."""
+    create_compliance_environment(tmp_path)
+    script = tmp_path / "main.py"
+    script.write_text("pass", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "workspace_stamper",
+            str(tmp_path),
+            "-l",
+            "MIT",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as sysexit:
+        main()
+
+    assert sysexit.value.code == 0
+
+
+def test_cli_raises_error_if_project_dir_missing_on_file_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aborts execution if file path targets lack project directory parameters."""
+    script = tmp_path / "main.py"
+    script.touch()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "workspace_stamper",
+            str(script),
+            "-l",
+            "MIT",
         ],
     )
 

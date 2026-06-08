@@ -102,79 +102,52 @@ class WorkspaceStamper(BaseModel):
         return self._verify_modifications(baselines)
 
     def _evaluate_legal_infrastructure(self) -> None:
-        """Ensure presence of LICENSE/NOTICE and parses metadata dynamically."""
+        """Process legal headers, logging file contents without blocking updates."""
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
-        if not license_file.exists() or not notice_file.exists():
+        if not license_file.exists():
             logger.warning(
-                "Compliance mismatch: '%s' or '%s' missing at project root (%s). "
-                "Deactivating license stamping.",
+                "Compliance notice: '%s' is missing from project root (%s).",
                 FILE_LICENSE,
+                self.workspace.project_dir,
+            )
+        else:
+            try:
+                lines = license_file.read_text(encoding="utf-8").splitlines()
+                first_two = [line.strip() for line in lines[:2] if line.strip()]
+                logger.info("LICENSE headers detected: %s", " | ".join(first_two))
+            except OSError as e:
+                logger.warning("Could not read LICENSE file: %s", e)
+
+        if not notice_file.exists():
+            logger.warning(
+                "Compliance notice: '%s' is missing from project root (%s).",
                 FILE_NOTICE,
                 self.workspace.project_dir,
             )
-            self.workspace.run_license_stamp = False
-            return
-
-        try:
-            license_lines = license_file.read_text(encoding="utf-8").splitlines()
-            title_candidates = [line.strip() for line in license_lines if line.strip()]
-            if not title_candidates:
-                logger.warning(
-                    "The LICENSE file is completely empty. Deactivating "
-                    "license stamping.",
-                )
-                self.workspace.run_license_stamp = False
-                return
-
-            raw_title = title_candidates[0]
-            normalized = (
-                raw_title.replace("License", "").replace("v", "").replace("Version", "")
-            )
-            parts = [p.strip() for p in normalized.split() if p.strip()]
-
-            if not parts:
-                logger.warning(
-                    "Could not resolve a structural title within the LICENSE file.",
-                )
-                self.workspace.run_license_stamp = False
-                return
-
-            self.workspace.extracted_license_id = "-".join(parts)
-
-            notice_text = notice_file.read_text(encoding="utf-8")
-            for line in notice_text.splitlines():
-                if "Copyright" in line:
-                    clean_text = (
-                        line.replace("Copyright", "")
-                        .replace("(C)", "")
-                        .replace("(c)", "")
+        else:
+            try:
+                notice_text = notice_file.read_text(encoding="utf-8")
+                for line in notice_text.splitlines():
+                    if "Copyright" in line:
+                        clean_text = (
+                            line.replace("Copyright", "")
+                            .replace("(C)", "")
+                            .replace("(c)", "")
+                        )
+                        clean_text = " ".join(clean_text.split())
+                        self.workspace.extracted_copyright = (
+                            f"# {COPYRIGHT_TAG}: {clean_text}"
+                        )
+                        break
+                if not self.workspace.extracted_copyright:
+                    logger.warning(
+                        "Could not locate a valid 'Copyright' string sequence in %s.",
+                        FILE_NOTICE,
                     )
-                    clean_text = " ".join(clean_text.split())
-
-                    self.workspace.extracted_copyright = (
-                        f"# {COPYRIGHT_TAG}: {clean_text}"
-                    )
-                    logger.info(
-                        "Extracted ID: %s | Copyright: %s",
-                        self.workspace.extracted_license_id,
-                        self.workspace.extracted_copyright,
-                    )
-                    return
-
-            logger.warning(
-                "Could not locate a valid 'Copyright' string sequence in %s.",
-                FILE_NOTICE,
-            )
-            self.workspace.run_license_stamp = False
-        except (OSError, ValueError) as e:
-            logger.warning(
-                "Failed parsing legal infrastructure: %s. "
-                "Deactivating license stamping.",
-                e,
-            )
-            self.workspace.run_license_stamp = False
+            except OSError as e:
+                logger.warning("Could not read NOTICE file: %s", e)
 
     def _find_insertion_point(self, lines: list[str]) -> int:
         """Locate safe insertion point past interpreter lines."""
@@ -227,27 +200,26 @@ class WorkspaceStamper(BaseModel):
         """Apply or purge SPDX license compliance definitions."""
         is_modified = False
         new_lines = list(lines)
-        if self.workspace.run_license_stamp and self.workspace.extracted_copyright:
-            block = SPDXBlock(
-                copyright_line=self.workspace.extracted_copyright,
-                license_line=(
-                    f"# {LICENSE_TAG}: {self.workspace.extracted_license_id}"
-                ),
-            )
+        if self.workspace.run_license_stamp:
+            license_line = f"# {LICENSE_TAG}: {self.workspace.extracted_license_id}"
+            copyright_line = self.workspace.extracted_copyright
 
-            if (
-                idx + 1 < len(new_lines)
-                and new_lines[idx].strip() == block.copyright_line
-                and new_lines[idx + 1].strip() == block.license_line
-            ):
-                return new_lines, is_modified
+            # Verification of existing structure
+            if copyright_line is not None:
+                if (
+                    idx + 1 < len(new_lines)
+                    and new_lines[idx].strip() == copyright_line
+                    and new_lines[idx + 1].strip() == license_line
+                ) or (idx < len(new_lines) and new_lines[idx].strip() == license_line):
+                    return new_lines, is_modified
 
             new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
             if purge_mod:
                 is_modified = True
 
-            new_lines.insert(idx, block.license_line + "\n")
-            new_lines.insert(idx, block.copyright_line + "\n")
+            new_lines.insert(idx, license_line + "\n")
+            if copyright_line is not None:
+                new_lines.insert(idx, copyright_line + "\n")
             is_modified = True
         elif not self.workspace.run_license_stamp:
             new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
@@ -356,6 +328,11 @@ class WorkspaceStamper(BaseModel):
         return True
 
 
+def validate_license_id(license_id: str) -> bool:
+    """Check if license_id contains only alphanumericals, dashes, or dots."""
+    return all(c.isalnum() or c in "-." for c in license_id)
+
+
 def main() -> None:
     """CLI Executive Run Entrypoint."""
     parser = argparse.ArgumentParser(
@@ -368,9 +345,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--project-dir",
+        "-p",
         type=str,
-        required=True,
+        required=False,
         help="Root anchor location housing LICENSE/NOTICE.",
+    )
+    parser.add_argument(
+        "--license-id",
+        "-l",
+        type=str,
+        required=False,
+        help="SPDX-License-Identifier constraint target.",
     )
     parser.add_argument(
         "--no-path",
@@ -390,12 +375,45 @@ def main() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    if args.no_path and args.no_license:
+        logger.info(
+            "Both --no-path and --no-license flags are active. "
+            "No stamping will be carried out.",
+        )
+        sys.exit(0)
+
+    if not args.no_license:
+        if not args.license_id:
+            logger.error("Argument --license-id / -l is required unless --no-license.")
+            sys.exit(1)
+        if not validate_license_id(args.license_id):
+            logger.error(
+                "Invalid characters in license ID '%s'. Only alphanumeric, "
+                "dashes (-), and dots (.) are allowed.",
+                args.license_id,
+            )
+            sys.exit(1)
+
+    target_path = Path(args.target)
+    if target_path.is_dir():
+        project_dir = Path(args.project_dir) if args.project_dir else target_path
+    else:
+        if not args.project_dir:
+            logger.error("Argument --project-dir is required when target is a file.")
+            sys.exit(1)
+        project_dir = Path(args.project_dir)
+
+    if not project_dir.is_dir():
+        logger.error("Resolved project directory is invalid: %s", project_dir)
+        sys.exit(1)
+
     try:
         workspace = TargetWorkspace(
-            project_dir=Path(args.project_dir),
-            target_path=Path(args.target),
+            project_dir=project_dir,
+            target_path=target_path,
             run_path_stamp=not args.no_path,
             run_license_stamp=not args.no_license,
+            extracted_license_id=args.license_id,
         )
         stamper = WorkspaceStamper(workspace=workspace)
         success = stamper.run()
