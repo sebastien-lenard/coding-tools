@@ -1,0 +1,60 @@
+# .github/workflows/test.yml
+name: Run Unit Tests
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # This triggers 3 parallel jobs: Ubuntu (Linux), Windows, and macOS
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4.2.2
+      with:
+        fetch-depth: 2 # Crucial for Codecov to track the commit git parent context
+
+    - name: Install uv and Python
+      uses: astral-sh/setup-uv@v5.3.0
+      with:
+        # This automatically installs Python 3.12.9
+        python-version: "3.12.9"
+        enable-cache: true
+
+    - name: Create dummy .env file
+      run: cp .env.example .env
+      shell: bash
+
+    - name: Run Pytest with Coverage (Linux)
+      # This step only runs on the Ubuntu machine
+      if: matrix.os == 'ubuntu-latest'
+      run: xvfb-run uv run --with pytest-cov --with coverage pytest -m unit --cov=src/ --cov-branch --cov-report=xml
+      
+
+    - name: Run Pytest (Windows & macOS)
+      # This step runs on Windows and Mac, skipping the virtual screen wrapper
+      if: matrix.os != 'ubuntu-latest'
+      run: uv run pytest -m unit
+
+
+    # Upload report
+    - name: Upload coverage reports to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false  # This forces the workflow step to fail if the upload fails
