@@ -40,6 +40,11 @@ minversion = "8.0"
 addopts = "-ra -q --tb=short"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "e2e: end to end tests (slower)",
+    "integration: integration and api tests (slower)",
+    "unit: unit tests (faster)"
+]
 # log_cli = true
 # log_cli_level = "INFO"
 
