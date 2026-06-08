@@ -2,6 +2,8 @@
 
 A suite of utility workflows designed to manage file backups and automate context and license/copyright injection for local Python projects.
 
+![Tests Status](https://github.com/sebastien-lenard/citecraft/actions/workflows/test.yml/badge.svg) [![codecov](https://codecov.io/github/sebastien-lenard/coding-tools/graph/badge.svg?token=VX5Q3KCIW2)](https://codecov.io/github/sebastien-lenard/coding-tools) [![Codacy Badge](https://app.codacy.com/project/badge/Grade/c08aa03041854dd2835d43eb61d2ce20)](https://app.codacy.com/gh/sebastien-lenard/coding-tools/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+
 ---
 
 ## 1. Workspace Stamper
