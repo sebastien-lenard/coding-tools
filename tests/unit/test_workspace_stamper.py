@@ -3,120 +3,270 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.coding_tools.workspace_stamper import PathStamper
+from src.coding_tools.workspace_stamper import (
+    FILE_LICENSE,
+    FILE_NOTICE,
+    CodeStamperEngine,
+    TargetWorkspace,
+)
+
+
+def create_compliance_environment(
+    root: Path,
+    has_license: bool = True,
+    has_notice: bool = True,
+) -> tuple[Path, Path]:
+    """Stage structural compliance environments."""
+    lic = root / FILE_LICENSE
+    notc = root / FILE_NOTICE
+    if has_license:
+        lic.write_text("Apache License\nVersion 2.0", encoding="utf-8")
+    if has_notice:
+        notc.write_text(
+            "Copyright 2026 Sebastien Lenard <sebastien.lenard@gmail.com>",
+            encoding="utf-8",
+        )
+    return lic, notc
+
 
 # =====================================================================
 # INITIALIZATION & VALIDATION TESTS
 # =====================================================================
 
 
-def test_pydantic_validation_fails_for_invalid_directory():
+def test_pydantic_validation_fails_for_invalid_directory() -> None:
+    """Verifies that non-existent workspace targets fail structural tracking."""
     with pytest.raises(ValidationError):
-        PathStamper(project_dir=Path("/non/existent/directory/path/here"))
+        TargetWorkspace(
+            project_dir=Path("/non/existent/dir"),
+            target_path=Path("/non/existent/dir"),
+        )
 
 
-def test_pydantic_validation_passes_for_valid_directory(tmp_path):
-    stamper = PathStamper(project_dir=tmp_path)
-    assert stamper.project_dir == tmp_path
+def test_workspace_file_resolution_ignores_environments(tmp_path: Path) -> None:
+    """Verifies file discovery handles recursive filters and ignores environments."""
+    src = tmp_path / "src"
+    venv = tmp_path / ".venv"
+    src.mkdir()
+    venv.mkdir()
+
+    file_ok = src / "app.py"
+    file_bad = venv / "lib.py"
+    file_ok.touch()
+    file_bad.touch()
+
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    resolved = ws.resolve_files()
+
+    assert file_ok in resolved
+    assert file_bad not in resolved
 
 
 # =====================================================================
-# FUNCTIONAL LOGIC TESTS
+# LEGAL INFRASTRUCTURE & METADATA TESTS
 # =====================================================================
 
 
-def test_adds_path_comment_to_empty_file(tmp_path):
-    stamper = PathStamper(project_dir=tmp_path)
-    new_content, modified = stamper._generate_updated_content("", "src/utils/config.py")
-    assert modified is True
-    assert new_content == "# src/utils/config.py\n"
+def test_missing_infrastructure_triggers_warning_and_deactivates(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Deactivates licensing gracefully if infrastructure dependencies are missing."""
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+
+    with caplog.at_level("WARNING"):
+        engine._evaluate_legal_infrastructure()
+
+    assert not ws.run_license_stamp
+    assert "missing at project root" in caplog.text
 
 
-def test_preserves_shebang_and_coding_header_and_prepends_path(tmp_path):
-    stamper = PathStamper(project_dir=tmp_path)
-    content = "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\nprint('Hello World')\n"
-    new_content, modified = stamper._generate_updated_content(
-        content, "src/utils/config.py"
-    )
+def test_unrecognized_license_signature_deactivates_stamping(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Short-circuits legal updates if the LICENSE string matches no signatures."""
+    create_compliance_environment(tmp_path, has_notice=True)
+    (tmp_path / FILE_LICENSE).write_text("Unknown Custom License", encoding="utf-8")
 
-    assert modified is True
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+
+    with caplog.at_level("WARNING"):
+        engine._evaluate_legal_infrastructure()
+
+    assert not ws.run_license_stamp
+    assert "Unrecognized signature inside LICENSE" in caplog.text
+
+
+def test_missing_notice_copyright_deactivates_stamping(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Deactivates licensing updates if NOTICE is present but has no copyright."""
+    create_compliance_environment(tmp_path, has_notice=False)
+    (tmp_path / FILE_NOTICE).write_text("Just generic text", encoding="utf-8")
+
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+
+    with caplog.at_level("WARNING"):
+        engine._evaluate_legal_infrastructure()
+
+    assert not ws.run_license_stamp
+    assert "Could not locate a valid 'Copyright' string" in caplog.text
+
+
+# =====================================================================
+# CONTENT TRANSFORMATION & FEATURE-FLAG TESTS
+# =====================================================================
+
+
+def test_generates_both_path_and_license_on_empty_file(tmp_path: Path) -> None:
+    """Inserts stacked structural modifications cleanly inside empty source targets."""
+    create_compliance_environment(tmp_path)
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+    engine._evaluate_legal_infrastructure()
+
+    target_file = tmp_path / "main.py"
+    content, modified = engine._generate_updated_content(target_file, "")
+
+    assert modified
     expected = (
-        "#!/usr/bin/env python3\n"
-        "# -*- coding: utf-8 -*-\n"
-        "# src/utils/config.py\n"
-        "print('Hello World')\n"
+        "# main.py\n"
+        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com>\n"
+        "# SPDX-License-Identifier: Apache-2.0\n"
     )
-    assert new_content == expected
+    assert content == expected
 
 
-def test_no_modification_if_correct_path_exists(tmp_path):
-    stamper = PathStamper(project_dir=tmp_path)
-    content = "#!/usr/bin/env python3\n# src/utils/config.py\nprint('Code')\n"
-    new_content, modified = stamper._generate_updated_content(
-        content, "src/utils/config.py"
+def test_only_path_stamped_when_license_disabled(tmp_path: Path) -> None:
+    """Applies only path elements when license stamping flags are explicitly dropped."""
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        run_license_stamp=False,
     )
-    assert modified is False
-    assert new_content == content
+    engine = CodeStamperEngine(workspace=ws)
+
+    target_file = tmp_path / "main.py"
+    content, modified = engine._generate_updated_content(target_file, "print('ok')")
+
+    assert modified
+    assert "# main.py\nprint('ok')" in content
+    assert "SPDX-License-Identifier" not in content
 
 
-def test_scans_deep_folders_and_ignores_venvs(tmp_path):
-    src_dir = tmp_path / "src" / "utils"
-    venv_dir = tmp_path / ".venv" / "lib"
-    src_dir.mkdir(parents=True)
-    venv_dir.mkdir(parents=True)
+def test_only_license_stamped_when_path_disabled(tmp_path: Path) -> None:
+    """Applies only license lines if path elements are deactivated."""
+    create_compliance_environment(tmp_path)
+    ws = TargetWorkspace(
+        project_dir=tmp_path,
+        target_path=tmp_path,
+        run_path_stamp=False,
+    )
+    engine = CodeStamperEngine(workspace=ws)
+    engine._evaluate_legal_infrastructure()
 
-    file1 = tmp_path / "src" / "main.py"
-    file2 = tmp_path / "src" / "utils" / "config.py"
-    ignored_venv = tmp_path / ".venv" / "lib" / "site.py"
+    target_file = tmp_path / "main.py"
+    content, modified = engine._generate_updated_content(target_file, "print('ok')")
 
-    for f in [file1, file2, ignored_venv]:
-        f.touch()
+    assert modified
+    assert "# main.py\n" not in content
+    assert "# SPDX-License-Identifier: Apache-2.0\n" in content
 
-    stamper = PathStamper(project_dir=tmp_path)
-    found_files = stamper._scan_files()
 
-    assert file1 in found_files
-    assert file2 in found_files
-    assert ignored_venv not in found_files
-    assert len(found_files) == 2
+def test_preserves_interpreter_directives(tmp_path: Path) -> None:
+    """Ensures paths and license definitions append below shebang blocks correctly."""
+    create_compliance_environment(tmp_path)
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+    engine._evaluate_legal_infrastructure()
+
+    original = "#!/usr/bin/env python3\n# coding: utf-8\nprint('code')"
+    target_file = tmp_path / "main.py"
+    content, modified = engine._generate_updated_content(target_file, original)
+
+    assert modified
+    lines = content.splitlines()
+    assert lines[0] == "#!/usr/bin/env python3"
+    assert lines[1] == "# coding: utf-8"
+    assert lines[2] == "# main.py"
+
+
+def test_overwrites_legacy_and_dirty_spdx_lines(tmp_path: Path) -> None:
+    """Slices out broken or legacy license tags to keep structural layout clean."""
+    create_compliance_environment(tmp_path)
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = CodeStamperEngine(workspace=ws)
+    engine._evaluate_legal_infrastructure()
+
+    dirty_input = (
+        "# main.py\n"
+        "# SPDX-FileCopyrightText: Outdated Holder 2020\n"
+        "# SPDX-License-Identifier: MIT\n"
+        "print('run')"
+    )
+    target_file = tmp_path / "main.py"
+    content, modified = engine._generate_updated_content(target_file, dirty_input)
+
+    assert modified
+    assert "Outdated Holder" not in content
+    assert "MIT" not in content
+    assert "Apache-2.0" in content
 
 
 # =====================================================================
-# END-TO-END INTEGRATION & SAFETY SAFETY TESTS
+# INTEGRATION & SAFETY TESTS
 # =====================================================================
 
 
-def test_path_stamper_succeeds_on_valid_execution(tmp_path):
+def test_engine_run_completes_end_to_end_successfully(tmp_path: Path) -> None:
+    """Verifies flawless execution transaction cycles for verified structures."""
+    create_compliance_environment(tmp_path)
     script = tmp_path / "main.py"
-    script.write_text("print('test')", encoding="utf-8")
+    script.write_text("pass", encoding="utf-8")
 
-    stamper = PathStamper(project_dir=tmp_path)
-    assert stamper.run() is True
-    assert script.read_text(encoding="utf-8") == "# main.py\nprint('test')"
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=script)
+    engine = CodeStamperEngine(workspace=ws)
+
+    assert engine.run()
+    updated_content = script.read_text(encoding="utf-8")
+    assert "# main.py\n" in updated_content
+    assert "SPDX-License-Identifier: Apache-2.0" in updated_content
 
 
-def test_path_stamper_fails_when_non_header_code_changes_occur(tmp_path, caplog):
+def test_safety_engine_catches_unauthorized_functional_mutations(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Fails and alerts when structural changes alter functional logic."""
+    create_compliance_environment(tmp_path)
     script = tmp_path / "main.py"
-    script.write_text("print('original')", encoding="utf-8")
+    script.write_text("print('safe')", encoding="utf-8")
 
-    stamper = PathStamper(project_dir=tmp_path)
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=script)
+    engine = CodeStamperEngine(workspace=ws)
 
-    # We simulate an adversarial environment where code is structurally deleted
-    # alongside running the stamper step
-    def suspicious_activity_run():
-        py_files = stamper._scan_files()
-        baselines = {f: f.read_text(encoding="utf-8") for f in py_files}
+    # Cache original state
+    baselines = {script: script.read_text(encoding="utf-8")}
 
-        # Stamper updates the header
-        stamper._stamp_file(script, baselines[script])
+    # Update file correctly
+    engine._process_file(script, baselines[script])
 
-        # Unexpected side-effect change occurs: original code gets tampered with
-        script.write_text("# main.py\nprint('malicious injection')", encoding="utf-8")
+    # Simulate adversarial file mutation (code tampering post-processing)
+    script.write_text(
+        "# main.py\n"
+        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
+        "# SPDX-License-Identifier: Apache-2.0\n"
+        "print('malicious injection')",
+        encoding="utf-8",
+    )
 
-        return stamper._verify_modifications(baselines)
+    with caplog.at_level("CRITICAL"):
+        status = engine._verify_modifications(baselines)
 
-    with caplog.at_level("ERROR"):
-        execution_status = suspicious_activity_run()
-        assert execution_status is False
-
-    assert "CRITICAL ERROR: SAFETY VALIDATION FAILED!" in caplog.text
+    assert not status
+    assert "SAFETY ENGINE ALERT" in caplog.text
