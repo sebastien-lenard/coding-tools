@@ -1,3 +1,6 @@
+# src\coding-tools\workspace_stamper.py
+"""Compliance engine for workspace files, managing license and path stamps."""
+
 import argparse
 import logging
 import sys
@@ -24,6 +27,7 @@ class SPDXBlock(NamedTuple):
     license_line: str
 
     def to_lines(self) -> list[str]:
+        """Convert the SPDX block into raw formatted comment lines."""
         return [f"{self.copyright_line}\n", f"{self.license_line}\n"]
 
 
@@ -53,7 +57,7 @@ class TargetWorkspace(BaseModel):
         return []
 
 
-class CodeStamperEngine(BaseModel):
+class WorkspaceStamper(BaseModel):
     """Path-stamping and SPDX license metadata injection."""
 
     workspace: TargetWorkspace
@@ -61,7 +65,8 @@ class CodeStamperEngine(BaseModel):
     def run(self) -> bool:
         """Execute the verification engine, short-circuiting on validation anomalies."""
         logger.info(
-            f"Initializing compliance engine for target: {self.workspace.target_path}",
+            "Initializing compliance engine for target: %s",
+            self.workspace.target_path,
         )
 
         if self.workspace.run_license_stamp:
@@ -83,10 +88,16 @@ class CodeStamperEngine(BaseModel):
                 if self._process_file(file_path, content):
                     modified_count += 1
             except (UnicodeDecodeError, PermissionError) as e:
-                logger.warning(f"I/O execution blocked for {file_path.name}: {e}")
+                logger.warning(
+                    "I/O execution blocked for %s: %s",
+                    file_path.name,
+                    e,
+                )
 
         logger.info(
-            f"Processed {len(baselines)} files. Mutated {modified_count} targets.",
+            "Processed %d files. Mutated %d targets.",
+            len(baselines),
+            modified_count,
         )
         return self._verify_modifications(baselines)
 
@@ -97,31 +108,27 @@ class CodeStamperEngine(BaseModel):
 
         if not license_file.exists() or not notice_file.exists():
             logger.warning(
-                f"Compliance mismatch: '{FILE_LICENSE}' or '{FILE_NOTICE}' missing "
-                f"at project root ({self.workspace.project_dir}). Deactivating license stamping.",
+                "Compliance mismatch: '%s' or '%s' missing at project root (%s). "
+                "Deactivating license stamping.",
+                FILE_LICENSE,
+                FILE_NOTICE,
+                self.workspace.project_dir,
             )
             self.workspace.run_license_stamp = False
             return
 
         try:
-            # 1. Truly Dynamic LICENSE Parsing via Structural Extraction
             license_lines = license_file.read_text(encoding="utf-8").splitlines()
-
-            # Filter empty lines and locate the title block header (usually line 1 or 2)
             title_candidates = [line.strip() for line in license_lines if line.strip()]
             if not title_candidates:
                 logger.warning(
-                    "The LICENSE file is completely empty. Deactivating license stamping.",
+                    "The LICENSE file is completely empty. Deactivating "
+                    "license stamping.",
                 )
                 self.workspace.run_license_stamp = False
                 return
 
             raw_title = title_candidates[0]
-
-            # Normalize title chunks into a standardized SPDX lookalike slug
-            # e.g., "Apache License Version 2.0" -> "Apache-2.0"
-            # e.g., "MIT License" -> "MIT"
-            # e.g., "BSD 3-Clause License" -> "BSD-3-Clause"
             normalized = (
                 raw_title.replace("License", "").replace("v", "").replace("Version", "")
             )
@@ -134,11 +141,8 @@ class CodeStamperEngine(BaseModel):
                 self.workspace.run_license_stamp = False
                 return
 
-            # Combine elements cleanly with standard SPDX dash joins
-            # e.g., ['Apache', '2.0'] -> 'Apache-2.0'
             self.workspace.extracted_license_id = "-".join(parts)
 
-            # 2. Dynamically extract copyright line from NOTICE
             notice_text = notice_file.read_text(encoding="utf-8")
             for line in notice_text.splitlines():
                 if "Copyright" in line:
@@ -153,20 +157,122 @@ class CodeStamperEngine(BaseModel):
                         f"# {COPYRIGHT_TAG}: {clean_text}"
                     )
                     logger.info(
-                        f"Extracted metadata elements -> ID: {self.workspace.extracted_license_id} | "
-                        f"Copyright: {self.workspace.extracted_copyright}",
+                        "Extracted ID: %s | Copyright: %s",
+                        self.workspace.extracted_license_id,
+                        self.workspace.extracted_copyright,
                     )
                     return
 
             logger.warning(
-                f"Could not locate a valid 'Copyright' string sequence in {FILE_NOTICE}.",
+                "Could not locate a valid 'Copyright' string sequence in %s.",
+                FILE_NOTICE,
             )
             self.workspace.run_license_stamp = False
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.warning(
-                f"Failed parsing legal infrastructure: {e}. Deactivating license stamping.",
+                "Failed parsing legal infrastructure: %s. "
+                "Deactivating license stamping.",
+                e,
             )
             self.workspace.run_license_stamp = False
+
+    def _find_insertion_point(self, lines: list[str]) -> int:
+        """Locate safe insertion point past interpreter lines."""
+        idx = 0
+        if idx < len(lines) and lines[idx].startswith("#!"):
+            idx += 1
+        if idx < len(lines) and any(c in lines[idx] for c in ("coding:", "coding=")):
+            idx += 1
+        return idx
+
+    def _apply_path_stamp(
+        self,
+        file_path: Path,
+        lines: list[str],
+        idx: int,
+    ) -> tuple[list[str], bool]:
+        """Apply or purge top-of-file path comment macros."""
+        is_modified = False
+        new_lines = list(lines)
+        if self.workspace.run_path_stamp:
+            rel_path = file_path.relative_to(self.workspace.project_dir).as_posix()
+            expected_path_line = f"# {rel_path}\n"
+
+            if idx < len(new_lines) and new_lines[idx] == expected_path_line:
+                pass
+            elif (
+                idx < len(new_lines)
+                and new_lines[idx].startswith("#")
+                and new_lines[idx].strip().endswith(".py")
+            ):
+                new_lines[idx] = expected_path_line
+                is_modified = True
+            else:
+                new_lines.insert(idx, expected_path_line)
+                is_modified = True
+        elif (
+            idx < len(new_lines)
+            and new_lines[idx].startswith("#")
+            and new_lines[idx].strip().endswith(".py")
+        ):
+            new_lines.pop(idx)
+            is_modified = True
+        return new_lines, is_modified
+
+    def _apply_license_stamp(
+        self,
+        lines: list[str],
+        idx: int,
+    ) -> tuple[list[str], bool]:
+        """Apply or purge SPDX license compliance definitions."""
+        is_modified = False
+        new_lines = list(lines)
+        if self.workspace.run_license_stamp and self.workspace.extracted_copyright:
+            block = SPDXBlock(
+                copyright_line=self.workspace.extracted_copyright,
+                license_line=(
+                    f"# {LICENSE_TAG}: {self.workspace.extracted_license_id}"
+                ),
+            )
+
+            if (
+                idx + 1 < len(new_lines)
+                and new_lines[idx].strip() == block.copyright_line
+                and new_lines[idx + 1].strip() == block.license_line
+            ):
+                return new_lines, is_modified
+
+            new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
+            if purge_mod:
+                is_modified = True
+
+            new_lines.insert(idx, block.license_line + "\n")
+            new_lines.insert(idx, block.copyright_line + "\n")
+            is_modified = True
+        elif not self.workspace.run_license_stamp:
+            new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
+            if purge_mod:
+                is_modified = True
+        return new_lines, is_modified
+
+    def _purge_legacy_tags(
+        self,
+        lines: list[str],
+        idx: int,
+    ) -> tuple[list[str], bool]:
+        """Identify and slice out legacy tags within reasonable bounds."""
+        is_modified = False
+        new_lines = list(lines)
+        lookahead = min(len(new_lines), idx + 4)
+        purge_indices = [
+            i
+            for i in range(idx, lookahead)
+            if COPYRIGHT_TAG in new_lines[i] or LICENSE_TAG in new_lines[i]
+        ]
+        for offset, target_purge in enumerate(purge_indices):
+            new_lines.pop(target_purge - offset)
+            is_modified = True
+        return new_lines, is_modified
 
     def _generate_updated_content(
         self,
@@ -177,83 +283,17 @@ class CodeStamperEngine(BaseModel):
         lines = content.splitlines(keepends=True)
         is_modified = False
 
-        # 1. Locate safe insertion point past interpreters
-        idx = 0
-        if idx < len(lines) and lines[idx].startswith("#!"):
-            idx += 1
-        if idx < len(lines) and any(c in lines[idx] for c in ("coding:", "coding=")):
-            idx += 1
+        idx = self._find_insertion_point(lines)
+        lines, path_mod = self._apply_path_stamp(file_path, lines, idx)
+        if path_mod:
+            is_modified = True
 
-        # 2. Path Stamp Layer Implementation
         if self.workspace.run_path_stamp:
-            rel_path = file_path.relative_to(self.workspace.project_dir).as_posix()
-            expected_path_line = f"# {rel_path}\n"
-
-            if idx < len(lines) and lines[idx] == expected_path_line:
-                pass  # Perfectly aligned
-            elif (
-                idx < len(lines)
-                and lines[idx].startswith("#")
-                and lines[idx].strip().endswith(".py")
-            ):
-                lines[idx] = expected_path_line
-                is_modified = True
-            else:
-                lines.insert(idx, expected_path_line)
-                is_modified = True
-
             idx += 1
-        elif (
-            idx < len(lines)
-            and lines[idx].startswith("#")
-            and lines[idx].strip().endswith(".py")
-        ):
-            lines.pop(idx)
+
+        lines, lic_mod = self._apply_license_stamp(lines, idx)
+        if lic_mod:
             is_modified = True
-
-        # 3. SPDX License Injection Layer Implementation
-        if self.workspace.run_license_stamp and self.workspace.extracted_copyright:
-            block = SPDXBlock(
-                copyright_line=self.workspace.extracted_copyright,
-                license_line=(
-                    f"# {LICENSE_TAG}: {self.workspace.extracted_license_id}"
-                ),
-            )
-
-            if (
-                idx + 1 < len(lines)
-                and lines[idx].strip() == block.copyright_line
-                and lines[idx + 1].strip() == block.license_line
-            ):
-                return "".join(lines), is_modified
-
-            # Purge dirty/legacy indicators up front
-            lookahead = min(len(lines), idx + 4)
-            purge_indices = [
-                i
-                for i in range(idx, lookahead)
-                if COPYRIGHT_TAG in lines[i] or LICENSE_TAG in lines[i]
-            ]
-            for offset, target_purge in enumerate(purge_indices):
-                lines.pop(target_purge - offset)
-                is_modified = True
-
-            # Insert clean blocks down stream
-            lines.insert(idx, block.license_line + "\n")
-            lines.insert(idx, block.copyright_line + "\n")
-            is_modified = True
-
-        elif not self.workspace.run_license_stamp:
-            lookahead = min(len(lines), idx + 4)
-            purge_indices = [
-                i
-                for i in range(idx, lookahead)
-                if COPYRIGHT_TAG in lines[i] or LICENSE_TAG in lines[i]
-            ]
-            if purge_indices:
-                for offset, target_purge in enumerate(purge_indices):
-                    lines.pop(target_purge - offset)
-                is_modified = True
 
         return "".join(lines), is_modified
 
@@ -267,8 +307,8 @@ class CodeStamperEngine(BaseModel):
             if is_modified:
                 file_path.write_text(new_content, encoding="utf-8")
                 return True
-        except Exception:
-            logger.exception(f"Failed execution lifecycle on target {file_path.name}")
+        except OSError:
+            logger.exception("Failed execution lifecycle on target %s", file_path.name)
         return False
 
     def _verify_modifications(self, baselines: dict[Path, str]) -> bool:
@@ -287,7 +327,6 @@ class CodeStamperEngine(BaseModel):
                     lineterm="",
                 ),
             )
-            # Ruff E741 Fixed: variable renamed from 'l' to 'diff_line'
             content_changes = [
                 diff_line
                 for diff_line in diff
@@ -298,9 +337,7 @@ class CodeStamperEngine(BaseModel):
             for change in content_changes:
                 stripped = change[1:].strip()
 
-                if ".py" in change and (
-                    change.startswith("-#") or change.startswith("+#")
-                ):
+                if ".py" in change and change.startswith(("-#", "+#")):
                     continue
                 if COPYRIGHT_TAG in stripped or LICENSE_TAG in stripped:
                     continue
@@ -312,7 +349,7 @@ class CodeStamperEngine(BaseModel):
         if errors:
             logger.critical("SAFETY ENGINE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!")
             for err in errors:
-                logger.error(err)
+                logger.error("%s", err)
             return False
 
         logger.info("Workspace verification engine completed layout with zero faults.")
@@ -360,9 +397,9 @@ def main() -> None:
             run_path_stamp=not args.no_path,
             run_license_stamp=not args.no_license,
         )
-        stamper = CodeStamperEngine(workspace=workspace)
+        stamper = WorkspaceStamper(workspace=workspace)
         success = stamper.run()
-    except Exception:
+    except (OSError, ValueError):
         logger.exception("Runtime execution roadblock encountered.")
         success = False
 
