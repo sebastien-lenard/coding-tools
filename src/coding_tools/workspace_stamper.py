@@ -1,4 +1,6 @@
-# src\coding-tools\workspace_stamper.py
+# src/coding_tools/workspace_stamper.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
 """Compliance engine for workspace files, managing license and path stamps."""
 
 import argparse
@@ -210,8 +212,10 @@ class WorkspaceStamper(BaseModel):
                     idx + 1 < len(new_lines)
                     and new_lines[idx].strip() == copyright_line
                     and new_lines[idx + 1].strip() == license_line
-                ) or (idx < len(new_lines) and new_lines[idx].strip() == license_line):
+                ):
                     return new_lines, is_modified
+            elif idx < len(new_lines) and new_lines[idx].strip() == license_line:
+                return new_lines, is_modified
 
             new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
             if purge_mod:
@@ -221,7 +225,7 @@ class WorkspaceStamper(BaseModel):
             if copyright_line is not None:
                 new_lines.insert(idx, copyright_line + "\n")
             is_modified = True
-        elif not self.workspace.run_license_stamp:
+        else:
             new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
             if purge_mod:
                 is_modified = True
@@ -395,12 +399,19 @@ def main() -> None:
             sys.exit(1)
 
     target_path = Path(args.target)
+
     if target_path.is_dir():
         project_dir = Path(args.project_dir) if args.project_dir else target_path
-    else:
-        if not args.project_dir:
-            logger.error("Argument --project-dir is required when target is a file.")
+    elif not args.project_dir:
+        if not args.no_license:
+            logger.error(
+                "Argument --project-dir is required when target is a file "
+                "and licensing is enabled.",
+            )
             sys.exit(1)
+        else:
+            project_dir = target_path.parent
+    else:
         project_dir = Path(args.project_dir)
 
     if not project_dir.is_dir():
