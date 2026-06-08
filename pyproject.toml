@@ -1,3 +1,4 @@
+# pyproject.toml
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -8,7 +9,9 @@ packages = ["src/coding_tools"]
 [project]
 name = "coding-tools"
 version = "0.1.0"
-description = "Automated workflows for codebase path stamping and untracked file backups."
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+description = "Automated workflows for workspace stamping and untracked file backups."
 readme = "README.md"
 requires-python = ">=3.12.9"
 authors = [
@@ -23,7 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
-path-stamper = "coding_tools.path_stamper:main"
+workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 
 [dependency-groups]
@@ -37,15 +40,39 @@ minversion = "8.0"
 addopts = "-ra -q --tb=short"
 testpaths = ["tests"]
 pythonpath = ["src"]
-python_files = ["test_*.py"]
-log_cli = true
-log_cli_level = "INFO"
+# log_cli = true
+# log_cli_level = "INFO"
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+extend-exclude = [
+    "uv.lock"
+]
+unsafe-fixes = false
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "RUF"]
-ignore = []
+select = ["E", "F", "I", "B", "A", "ANN", "ARG", "BLE", "C4", "C90", "COM", "CPY", "D", "DTZ", "EM", "ERA", "EXE", "FA", "FBT", "FIX", "FLY", "FURB", "G", "ICN", "INP", "ISC", "LOG", "N", "PERF", "PGH", "PIE", "PL", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "SLF", "UP", "T10", "T20", "TC", "TD", "TID", "TRY", "W", "YTT"]
+extend-ignore = ["D107"]
 fixable = ["ALL"]
+unfixable = []
+allowed-confusables = ["ℹ"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ARG001", # Allow apparently non accessed arguments
+    "ARG005", # Allow apparently non accessed arguments
+    "BLE001",  # Allow broad exception catching (great for checking fallback paths)
+    "FBT001", # Allow boolean positional arguments
+    "FBT002", # Allow boolean default positional arguments
+    "PLR2004", # Allow numerical values not being constant
+    "PLW0120", # Allow loose control structures if an LLM generated messy loop edge-case tests
+    "PLR0913", # Allow many arguments
+    "S101",    # Allow 'assert' statements (otherwise bandit flags every single test)
+    "SLF001", # Access to private member
+]
+"__init__.py" = ["D104"]
+"__main__.py" = ["D100", "D104"]
+
+[tool.ruff.format]
+quote-style = "double"
