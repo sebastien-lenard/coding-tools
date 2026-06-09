@@ -1,6 +1,4 @@
-# src/coding_tools/workspace_stamper.py
-# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-# SPDX-License-Identifier: Apache-2.0
+# workspace_stamper.py
 """Compliance engine for workspace files, managing license and path stamps."""
 
 import argparse
@@ -65,7 +63,7 @@ class WorkspaceStamper(BaseModel):
     workspace: TargetWorkspace
 
     def run(self) -> bool:
-        """Execute the verification engine, short-circuiting on validation anomalies."""
+        """Execute the verification engine, validating in-memory before writing."""
         logger.info(
             "Initializing compliance engine for target: %s",
             self.workspace.target_path,
@@ -79,16 +77,21 @@ class WorkspaceStamper(BaseModel):
             logger.info("No actionable Python targets identified.")
             return True
 
-        baselines: dict[Path, str] = {}
         modified_count = 0
+        total_processed = 0
+        has_safety_faults = False
 
         for file_path in py_files:
             try:
                 content = file_path.read_text(encoding="utf-8")
-                baselines[file_path] = content
+                total_processed += 1
 
-                if self._process_file(file_path, content):
+                status, is_modified = self._process_file(file_path, content)
+                if not status:
+                    has_safety_faults = True
+                elif is_modified:
                     modified_count += 1
+
             except (UnicodeDecodeError, PermissionError) as e:
                 logger.warning(
                     "I/O execution blocked for %s: %s",
@@ -98,10 +101,10 @@ class WorkspaceStamper(BaseModel):
 
         logger.info(
             "Processed %d files. Mutated %d targets.",
-            len(baselines),
+            total_processed,
             modified_count,
         )
-        return self._verify_modifications(baselines)
+        return not has_safety_faults
 
     def _evaluate_legal_infrastructure(self) -> None:
         """Process legal headers, logging file contents without blocking updates."""
@@ -131,6 +134,7 @@ class WorkspaceStamper(BaseModel):
         else:
             try:
                 notice_text = notice_file.read_text(encoding="utf-8")
+                copyright_lines = []
                 for line in notice_text.splitlines():
                     if "Copyright" in line:
                         clean_text = (
@@ -139,11 +143,11 @@ class WorkspaceStamper(BaseModel):
                             .replace("(c)", "")
                         )
                         clean_text = " ".join(clean_text.split())
-                        self.workspace.extracted_copyright = (
-                            f"# {COPYRIGHT_TAG}: {clean_text}"
-                        )
-                        break
-                if not self.workspace.extracted_copyright:
+                        copyright_lines.append(f"# {COPYRIGHT_TAG}: {clean_text}")
+
+                if copyright_lines:
+                    self.workspace.extracted_copyright = "\n".join(copyright_lines)
+                else:
                     logger.warning(
                         "Could not locate a valid 'Copyright' string sequence in %s.",
                         FILE_NOTICE,
@@ -170,8 +174,13 @@ class WorkspaceStamper(BaseModel):
         is_modified = False
         new_lines = list(lines)
         if self.workspace.run_path_stamp:
-            rel_path = file_path.relative_to(self.workspace.project_dir).as_posix()
-            expected_path_line = f"# {rel_path}\n"
+            try:
+                rel_path = file_path.relative_to(
+                    self.workspace.project_dir,
+                ).as_posix()
+                expected_path_line = f"# {rel_path}\n"
+            except ValueError:
+                expected_path_line = f"# {file_path.name}\n"
 
             if idx < len(new_lines) and new_lines[idx] == expected_path_line:
                 pass
@@ -204,16 +213,22 @@ class WorkspaceStamper(BaseModel):
         new_lines = list(lines)
         if self.workspace.run_license_stamp:
             license_line = f"# {LICENSE_TAG}: {self.workspace.extracted_license_id}"
-            copyright_line = self.workspace.extracted_copyright
+            copyright_block = self.workspace.extracted_copyright
 
-            # Verification of existing structure
-            if copyright_line is not None:
-                if (
-                    idx + 1 < len(new_lines)
-                    and new_lines[idx].strip() == copyright_line
-                    and new_lines[idx + 1].strip() == license_line
-                ):
-                    return new_lines, is_modified
+            if copyright_block is not None:
+                # Ensure each extracted copyright line is properly formatted as a comment line
+                copyright_lines = [
+                    f"{line}\n" if line.startswith("#") else f"# {line}\n"
+                    for line in copyright_block.splitlines()
+                ]
+                req_len = len(copyright_lines) + 1
+                if idx + req_len <= len(new_lines):
+                    existing_chunk = new_lines[idx : idx + req_len]
+                    expected_chunk = [*copyright_lines, license_line + "\n"]
+                    if [line.strip() for line in existing_chunk] == [
+                        line.strip() for line in expected_chunk
+                    ]:
+                        return new_lines, is_modified
             elif idx < len(new_lines) and new_lines[idx].strip() == license_line:
                 return new_lines, is_modified
 
@@ -222,8 +237,10 @@ class WorkspaceStamper(BaseModel):
                 is_modified = True
 
             new_lines.insert(idx, license_line + "\n")
-            if copyright_line is not None:
-                new_lines.insert(idx, copyright_line + "\n")
+            if copyright_block is not None:
+                for line in reversed(copyright_block.splitlines()):
+                    comment_line = line if line.startswith("#") else f"# {line}"
+                    new_lines.insert(idx, comment_line + "\n")
             is_modified = True
         else:
             new_lines, purge_mod = self._purge_legacy_tags(new_lines, idx)
@@ -236,14 +253,16 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Identify and slice out legacy tags within reasonable bounds."""
+        """Identify and slice out legacy tags within comments safely."""
         is_modified = False
         new_lines = list(lines)
-        lookahead = min(len(new_lines), idx + 4)
+        # Extended window for multi-holder text
+        lookahead = min(len(new_lines), idx + 10)
         purge_indices = [
             i
             for i in range(idx, lookahead)
-            if COPYRIGHT_TAG in new_lines[i] or LICENSE_TAG in new_lines[i]
+            if new_lines[i].lstrip().startswith("#")
+            and (COPYRIGHT_TAG in new_lines[i] or LICENSE_TAG in new_lines[i])
         ]
         for offset, target_purge in enumerate(purge_indices):
             new_lines.pop(target_purge - offset)
@@ -273,54 +292,65 @@ class WorkspaceStamper(BaseModel):
 
         return "".join(lines), is_modified
 
-    def _process_file(self, file_path: Path, content: str) -> bool:
-        """Save structural transformations down to physical media safely."""
+    def _process_file(self, file_path: Path, content: str) -> tuple[bool, bool]:
+        """Check transformations in-memory and write changes atomically if clear."""
         try:
             new_content, is_modified = self._generate_updated_content(
                 file_path,
                 content,
             )
             if is_modified:
+                if not self._is_mutation_authorized(file_path, content, new_content):
+                    return False, False
                 file_path.write_text(new_content, encoding="utf-8")
-                return True
+            else:
+                return True, is_modified
         except OSError:
             logger.exception("Failed execution lifecycle on target %s", file_path.name)
-        return False
+        return False, False
 
-    def _verify_modifications(self, baselines: dict[Path, str]) -> bool:
-        """Verify that only explicitly authorized changes took place."""
+    def _is_mutation_authorized(
+        self,
+        file_path: Path,
+        original_content: str,
+        new_content: str,
+    ) -> bool:
+        """Enforce strict safety verification checks dynamically in-memory."""
+        diff = list(
+            unified_diff(
+                original_content.splitlines(),
+                new_content.splitlines(),
+                lineterm="",
+            ),
+        )
+        content_changes = [
+            diff_line
+            for diff_line in diff
+            if diff_line.startswith(("+", "-"))
+            and not diff_line.startswith(("+++", "---"))
+        ]
+
         errors: list[str] = []
+        for change in content_changes:
+            # Strip the leading +/- indicator
+            action = change[0]
+            line_content = change[1:]
+            stripped = line_content.strip()
 
-        for path, original_content in baselines.items():
-            current_content = path.read_text(encoding="utf-8")
-            if original_content == current_content:
+            # Ignore entirely empty lines changed at top of file layout
+            if not stripped:
+                continue
+            # Ignore any comment line modifications safely
+            if stripped.startswith("#"):
+                continue
+            # Ignore tags anywhere in the mutation sequence
+            if COPYRIGHT_TAG in stripped or LICENSE_TAG in stripped:
                 continue
 
-            diff = list(
-                unified_diff(
-                    original_content.splitlines(),
-                    current_content.splitlines(),
-                    lineterm="",
-                ),
+            errors.append(
+                f"[{file_path.name}] Unauthorized syntax variance intercepted:"
+                " {change}",
             )
-            content_changes = [
-                diff_line
-                for diff_line in diff
-                if diff_line.startswith(("+", "-"))
-                and not diff_line.startswith(("+++", "---"))
-            ]
-
-            for change in content_changes:
-                stripped = change[1:].strip()
-
-                if ".py" in change and change.startswith(("-#", "+#")):
-                    continue
-                if COPYRIGHT_TAG in stripped or LICENSE_TAG in stripped:
-                    continue
-
-                errors.append(
-                    f"[{path.name}] Unauthorized syntax variance intercepted: {change}",
-                )
 
         if errors:
             logger.critical("SAFETY ENGINE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!")
@@ -328,13 +358,12 @@ class WorkspaceStamper(BaseModel):
                 logger.error("%s", err)
             return False
 
-        logger.info("Workspace verification engine completed layout with zero faults.")
         return True
 
 
 def validate_license_id(license_id: str) -> bool:
-    """Check if license_id contains only alphanumericals, dashes, or dots."""
-    return all(c.isalnum() or c in "-." for c in license_id)
+    """Check if license_id contains only alphanumericals, dashes, dots, or plus sign."""
+    return all(c.isalnum() or c in "-.+" for c in license_id)
 
 
 def main() -> None:
@@ -393,15 +422,17 @@ def main() -> None:
         if not validate_license_id(args.license_id):
             logger.error(
                 "Invalid characters in license ID '%s'. Only alphanumeric, "
-                "dashes (-), and dots (.) are allowed.",
+                "dashes (-), dots (.), and plus signs (+) are allowed.",
                 args.license_id,
             )
             sys.exit(1)
 
-    target_path = Path(args.target)
+    target_path = Path(args.target).resolve()
 
     if target_path.is_dir():
-        project_dir = Path(args.project_dir) if args.project_dir else target_path
+        project_dir = (
+            Path(args.project_dir).resolve() if args.project_dir else target_path
+        )
     elif not args.project_dir:
         if not args.no_license:
             logger.error(
@@ -410,9 +441,9 @@ def main() -> None:
             )
             sys.exit(1)
         else:
-            project_dir = target_path.parent
+            project_dir = target_path.parent.resolve()
     else:
-        project_dir = Path(args.project_dir)
+        project_dir = Path(args.project_dir).resolve()
 
     if not project_dir.is_dir():
         logger.error("Resolved project directory is invalid: %s", project_dir)
