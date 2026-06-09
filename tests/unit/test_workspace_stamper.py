@@ -1,4 +1,6 @@
-# test_workspace_stamper.py
+# tests/unit/test_workspace_stamper.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
 """Tests for the workspace layout and compliance metadata verification engine."""
 
 import runpy
@@ -12,7 +14,7 @@ import coding_tools.workspace_stamper as ws_module
 from coding_tools.workspace_stamper import (
     FILE_LICENSE,
     FILE_NOTICE,
-    SPDXBlock,
+    FileComplianceStatus,
     TargetWorkspace,
     WorkspaceStamper,
     main,
@@ -42,12 +44,6 @@ def create_compliance_environment(
 # =====================================================================
 # GROUP 1: INITIALIZATION & BASE PATH VALIDATION
 # =====================================================================
-
-
-def test_spdx_block_to_lines() -> None:
-    """Verifies to_lines converts values correctly."""
-    block = SPDXBlock("# copyright", "# license")
-    assert block.to_lines() == ["# copyright\n", "# license\n"]
 
 
 def test_pydantic_validation_fails_for_invalid_directory() -> None:
@@ -173,7 +169,6 @@ def test_unparseable_license_captured_and_logged(
 
 def test_evaluate_legal_infrastructure_os_error(tmp_path: Path) -> None:
     """Captures read_text raises OSError inside infrastructure parsing."""
-    # Convert files to directories to force OSError on read_text
     (tmp_path / FILE_LICENSE).mkdir()
     (tmp_path / FILE_NOTICE).mkdir()
 
@@ -206,7 +201,7 @@ def test_evaluate_legal_infrastructure_no_copyright_match(tmp_path: Path) -> Non
 
 
 def test_evaluate_legal_infrastructure_multi_copyright(tmp_path: Path) -> None:
-    """Verifies parsing multiple distinct copyright entities within complex multi-holder NOTICE logs."""
+    """Verifies parsing multiple distinct copyright entities within multi-holder NOTICE logs."""
     content = "Copyright 2026 Primary Holder\nCopyright 2026 Contributors"
     create_compliance_environment(tmp_path, notice_content=content)
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
@@ -214,8 +209,8 @@ def test_evaluate_legal_infrastructure_multi_copyright(tmp_path: Path) -> None:
     engine._evaluate_legal_infrastructure()
 
     expected = (
-        "# SPDX-FileCopyrightText: 2026 Primary Holder\n"
-        "# SPDX-FileCopyrightText: 2026 Contributors"
+        f"# {ws_module.COPYRIGHT_TAG}: 2026 Primary Holder\n"
+        f"# {ws_module.COPYRIGHT_TAG}: 2026 Contributors"
     )
     assert ws.extracted_copyright == expected
 
@@ -506,7 +501,7 @@ def test_run_process_file_no_changes(tmp_path: Path) -> None:
 
 
 def test_process_file_no_modification(tmp_path: Path) -> None:
-    """process_file execution path returns False on zero changes."""
+    """process_file execution path returns COMPLIANT status on zero changes."""
     script = tmp_path / "main.py"
     script.write_text("# main.py\nprint('ok')\n", encoding="utf-8")
     ws = TargetWorkspace(
@@ -515,16 +510,16 @@ def test_process_file_no_modification(tmp_path: Path) -> None:
         run_license_stamp=False,
     )
     engine = WorkspaceStamper(workspace=ws)
-    status, is_modified = engine._process_file(script, "# main.py\nprint('ok')\n")
-    assert status and not is_modified
+    report = engine._process_file(script)
+    assert report.status == FileComplianceStatus.COMPLIANT
 
 
 def test_process_file_os_error(tmp_path: Path) -> None:
     """_process_file returns tuple statuses indicating failures cleanly on system blocks."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    status, is_modified = engine._process_file(tmp_path, "pass")
-    assert not status and not is_modified
+    report = engine._process_file(tmp_path)
+    assert report.status == FileComplianceStatus.IO_ERROR
 
 
 def test_is_mutation_authorized_no_changes(tmp_path: Path) -> None:
@@ -540,6 +535,30 @@ def test_is_mutation_authorized_with_approved_changes(tmp_path: Path) -> None:
     engine = WorkspaceStamper(workspace=ws)
     updated = "# main.py\n# SPDX-License-Identifier: MIT\npass"
     assert engine._is_mutation_authorized(tmp_path / "main.py", "pass", updated)
+
+
+def test_is_mutation_authorized_ignores_empty_line_insertions(tmp_path: Path) -> None:
+    """Ensures the safety engine skips entirely empty or stripped line additions (branch coverage)."""
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = WorkspaceStamper(workspace=ws)
+
+    # Introduce a modification that consists purely of blank lines / whitespace
+    original = "print('hello')"
+    updated = "print('hello')\n\n   \n"
+
+    assert engine._is_mutation_authorized(tmp_path / "main.py", original, updated)
+
+
+def test_is_mutation_authorized_ignores_tag_mutations(tmp_path: Path) -> None:
+    """Ensures the safety engine allows lines containing the metadata tags."""
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = WorkspaceStamper(workspace=ws)
+
+    # Introduce raw tags directly into the diff to trigger the tag-skipping branch safely
+    original = "pass"
+    updated = f"{ws_module.COPYRIGHT_TAG}: 2026\n# {ws_module.LICENSE_TAG}: MIT\npass"
+
+    assert engine._is_mutation_authorized(tmp_path / "main.py", original, updated)
 
 
 # =====================================================================
@@ -582,12 +601,10 @@ def test_engine_blocked_by_permission_error(
     )
     engine = WorkspaceStamper(workspace=ws)
 
-    # Force encoding mismatch issues
     script.write_bytes(b"\x80\x81\xff")
 
     with caplog.at_level("WARNING"):
-        assert engine.run()
-    assert "I/O execution blocked for" in caplog.text
+        assert not engine.run()  # IO_ERROR should cause overall run to fail
 
 
 def test_process_file_failure_captured_gracefully(
@@ -595,28 +612,28 @@ def test_process_file_failure_captured_gracefully(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ensures file modification write errors are captured and logged."""
+    """Ensures file modification write errors are captured and logged via IO_ERROR status."""
     target_file = tmp_path / "read_only.py"
     target_file.write_text("print('ok')", encoding="utf-8")
 
     ws = TargetWorkspace(project_dir=tmp_path, target_path=target_file)
     engine = WorkspaceStamper(workspace=ws)
 
-    # Force write_text to raise an OSError cleanly to test the lifecycle recovery
     def mock_write_text(*args, **kwargs):
         raise OSError("Permission Denied")
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
 
     with caplog.at_level("ERROR"):
-        status, _ = engine._process_file(target_file, "print('change')")
+        report = engine._process_file(target_file)
 
-    assert not status
+    assert report.status == FileComplianceStatus.IO_ERROR
     assert "Failed execution lifecycle on target" in caplog.text
 
 
 def test_safety_engine_blocks_unauthorized_functional_mutations(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Aborts the mutation cycle before touching files if operational source changes are detected."""
@@ -631,16 +648,18 @@ def test_safety_engine_blocks_unauthorized_functional_mutations(
     )
     engine = WorkspaceStamper(workspace=ws)
 
-    # Injecting logic mutations directly within generation output simulation
     monkeypatch_content = "print('safe')\nprint('malicious injection')"
-    engine._generate_updated_content = lambda f, c: (monkeypatch_content, True)
+    monkeypatch.setattr(
+        engine,
+        "_generate_updated_content",
+        lambda f, c: (monkeypatch_content, True),
+    )
 
     with caplog.at_level("CRITICAL"):
         status = engine.run()
 
     assert not status
     assert "SAFETY ENGINE ALERT" in caplog.text
-    # Integrity check: The file on disk was preserved untouched!
     assert script.read_text(encoding="utf-8") == "print('safe')"
 
 
@@ -656,12 +675,11 @@ def test_adds_copyright_when_license_already_present(tmp_path: Path) -> None:
     engine._evaluate_legal_infrastructure()
 
     target_file = tmp_path / "main.py"
-    # Pre-existing state: only license is stamped
     existing = "# SPDX-License-Identifier: Apache-2.0\nprint('ok')"
     content, modified = engine._generate_updated_content(target_file, existing)
 
     assert modified
-    assert "# SPDX-FileCopyrightText: 2026 Sebastien Lenard" in content
+    assert f"# {ws_module.COPYRIGHT_TAG}: 2026 Sebastien Lenard" in content
     assert "# SPDX-License-Identifier: Apache-2.0" in content
 
 
@@ -823,7 +841,6 @@ def test_main_exception_roadblock_handling(
         ["workspace_stamper", str(script), "-p", str(tmp_path), "--no-license"],
     )
 
-    # Force an unhandled ValueError inside run execution path
     def mock_run(self):
         raise ValueError("Simulated internal engine crash")
 
@@ -901,7 +918,7 @@ def test_cli_requires_project_dir_on_file_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Branch #2: Verifies CLI error when file target lacks project-dir."""
+    """Verifies CLI error when file target lacks project-dir."""
     script = tmp_path / "main.py"
     script.touch()
     monkeypatch.setattr(

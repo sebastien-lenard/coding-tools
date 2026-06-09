@@ -1,10 +1,14 @@
-# workspace_stamper.py
+# src/coding_tools/workspace_stamper.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Compliance engine for workspace files, managing license and path stamps."""
 
 import argparse
 import logging
 import sys
 from difflib import unified_diff
+from enum import Enum, auto
 from pathlib import Path
 from typing import NamedTuple
 
@@ -20,15 +24,20 @@ COPYRIGHT_TAG = "SPDX-FileCopyrightText"
 LICENSE_TAG = "SPDX-License-Identifier"
 
 
-class SPDXBlock(NamedTuple):
-    """Encapsulates the structured text lines for SPDX injection."""
+class FileComplianceStatus(Enum):
+    """Defines explicit states for individual target file layouts."""
 
-    copyright_line: str
-    license_line: str
+    COMPLIANT = auto()  # File is already properly formatted; no-op.
+    MUTATED = auto()  # File was out of compliance but safely updated.
+    BLOCKED_MUTATION = auto()  # Safety engine blocked unauthorized code changes.
+    IO_ERROR = auto()  # System-level permissions or write failure.
 
-    def to_lines(self) -> list[str]:
-        """Convert the SPDX block into raw formatted comment lines."""
-        return [f"{self.copyright_line}\n", f"{self.license_line}\n"]
+
+class FileProcessReport(NamedTuple):
+    """Value object carrying the diagnostic results of a single file execution."""
+
+    file_path: Path
+    status: FileComplianceStatus
 
 
 class TargetWorkspace(BaseModel):
@@ -58,12 +67,12 @@ class TargetWorkspace(BaseModel):
 
 
 class WorkspaceStamper(BaseModel):
-    """Path-stamping and SPDX license metadata injection."""
+    """Path-stamping and SPDX license metadata injection engine."""
 
     workspace: TargetWorkspace
 
     def run(self) -> bool:
-        """Execute the verification engine, validating in-memory before writing."""
+        """Execute compliance checking, synthesizing reports for the process run."""
         logger.info(
             "Initializing compliance engine for target: %s",
             self.workspace.target_path,
@@ -77,37 +86,44 @@ class WorkspaceStamper(BaseModel):
             logger.info("No actionable Python targets identified.")
             return True
 
-        modified_count = 0
-        total_processed = 0
-        has_safety_faults = False
+        reports: list[FileProcessReport] = []
 
         for file_path in py_files:
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                total_processed += 1
+            report = self._process_file(file_path)
+            reports.append(report)
 
-                status, is_modified = self._process_file(file_path, content)
-                if not status:
-                    has_safety_faults = True
-                elif is_modified:
-                    modified_count += 1
-
-            except (UnicodeDecodeError, PermissionError) as e:
-                logger.warning(
-                    "I/O execution blocked for %s: %s",
-                    file_path.name,
-                    e,
-                )
+        # Executive Metrics Aggregation
+        total_processed = len(reports)
+        mutated_count = sum(
+            1 for r in reports if r.status == FileComplianceStatus.MUTATED
+        )
+        compliant_count = sum(
+            1 for r in reports if r.status == FileComplianceStatus.COMPLIANT
+        )
+        blocked_count = sum(
+            1 for r in reports if r.status == FileComplianceStatus.BLOCKED_MUTATION
+        )
+        io_errors_count = sum(
+            1 for r in reports if r.status == FileComplianceStatus.IO_ERROR
+        )
 
         logger.info(
-            "Processed %d files. Mutated %d targets.",
+            "Processed %d files. Compliant: %d, Mutated: %d, Blocked: %d, Errors: %d.",
             total_processed,
-            modified_count,
+            compliant_count,
+            mutated_count,
+            blocked_count,
+            io_errors_count,
         )
-        return not has_safety_faults
+
+        # Strict execution boundary: Blocked syntax or system IO errors fail the run.
+        if blocked_count > 0 or io_errors_count > 0:
+            return False
+
+        return True
 
     def _evaluate_legal_infrastructure(self) -> None:
-        """Process legal headers, logging file contents without blocking updates."""
+        """Process legal headers, loading context rules from root workspace assets."""
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
@@ -175,9 +191,7 @@ class WorkspaceStamper(BaseModel):
         new_lines = list(lines)
         if self.workspace.run_path_stamp:
             try:
-                rel_path = file_path.relative_to(
-                    self.workspace.project_dir,
-                ).as_posix()
+                rel_path = file_path.relative_to(self.workspace.project_dir).as_posix()
                 expected_path_line = f"# {rel_path}\n"
             except ValueError:
                 expected_path_line = f"# {file_path.name}\n"
@@ -216,7 +230,6 @@ class WorkspaceStamper(BaseModel):
             copyright_block = self.workspace.extracted_copyright
 
             if copyright_block is not None:
-                # Ensure each extracted copyright line is properly formatted as a comment line
                 copyright_lines = [
                     f"{line}\n" if line.startswith("#") else f"# {line}\n"
                     for line in copyright_block.splitlines()
@@ -224,7 +237,7 @@ class WorkspaceStamper(BaseModel):
                 req_len = len(copyright_lines) + 1
                 if idx + req_len <= len(new_lines):
                     existing_chunk = new_lines[idx : idx + req_len]
-                    expected_chunk = [*copyright_lines, license_line + "\n"]
+                    expected_chunk = copyright_lines + [license_line + "\n"]
                     if [line.strip() for line in existing_chunk] == [
                         line.strip() for line in expected_chunk
                     ]:
@@ -256,7 +269,6 @@ class WorkspaceStamper(BaseModel):
         """Identify and slice out legacy tags within comments safely."""
         is_modified = False
         new_lines = list(lines)
-        # Extended window for multi-holder text
         lookahead = min(len(new_lines), idx + 10)
         purge_indices = [
             i
@@ -292,22 +304,30 @@ class WorkspaceStamper(BaseModel):
 
         return "".join(lines), is_modified
 
-    def _process_file(self, file_path: Path, content: str) -> tuple[bool, bool]:
-        """Check transformations in-memory and write changes atomically if clear."""
+    def _process_file(self, file_path: Path) -> FileProcessReport:
+        """Process an isolated target path and return an explicit operational report."""
         try:
+            content = file_path.read_text(encoding="utf-8")
             new_content, is_modified = self._generate_updated_content(
                 file_path,
                 content,
             )
-            if is_modified:
-                if not self._is_mutation_authorized(file_path, content, new_content):
-                    return False, False
-                file_path.write_text(new_content, encoding="utf-8")
-            else:
-                return True, is_modified
-        except OSError:
+
+            if not is_modified:
+                return FileProcessReport(file_path, FileComplianceStatus.COMPLIANT)
+
+            if not self._is_mutation_authorized(file_path, content, new_content):
+                return FileProcessReport(
+                    file_path,
+                    FileComplianceStatus.BLOCKED_MUTATION,
+                )
+
+            file_path.write_text(new_content, encoding="utf-8")
+            return FileProcessReport(file_path, FileComplianceStatus.MUTATED)
+
+        except (OSError, UnicodeDecodeError, PermissionError):
             logger.exception("Failed execution lifecycle on target %s", file_path.name)
-        return False, False
+            return FileProcessReport(file_path, FileComplianceStatus.IO_ERROR)
 
     def _is_mutation_authorized(
         self,
@@ -316,13 +336,11 @@ class WorkspaceStamper(BaseModel):
         new_content: str,
     ) -> bool:
         """Enforce strict safety verification checks dynamically in-memory."""
-        diff = list(
-            unified_diff(
-                original_content.splitlines(),
-                new_content.splitlines(),
-                lineterm="",
-            ),
-        )
+        # Normalize line feeds to isolate layout checks from environment variations
+        orig_normalized = original_content.replace("\r\n", "\n").splitlines()
+        new_normalized = new_content.replace("\r\n", "\n").splitlines()
+
+        diff = list(unified_diff(orig_normalized, new_normalized, lineterm=""))
         content_changes = [
             diff_line
             for diff_line in diff
@@ -332,24 +350,17 @@ class WorkspaceStamper(BaseModel):
 
         errors: list[str] = []
         for change in content_changes:
-            # Strip the leading +/- indicator
-            action = change[0]
-            line_content = change[1:]
-            stripped = line_content.strip()
+            stripped = change[1:].strip()
 
-            # Ignore entirely empty lines changed at top of file layout
             if not stripped:
                 continue
-            # Ignore any comment line modifications safely
             if stripped.startswith("#"):
                 continue
-            # Ignore tags anywhere in the mutation sequence
             if COPYRIGHT_TAG in stripped or LICENSE_TAG in stripped:
                 continue
 
             errors.append(
-                f"[{file_path.name}] Unauthorized syntax variance intercepted:"
-                " {change}",
+                f"[{file_path.name}] Unauthorized syntax variance intercepted: {change}",
             )
 
         if errors:
