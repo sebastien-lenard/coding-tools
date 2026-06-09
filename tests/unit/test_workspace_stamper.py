@@ -201,7 +201,7 @@ def test_evaluate_legal_infrastructure_no_copyright_match(tmp_path: Path) -> Non
 
 
 def test_evaluate_legal_infrastructure_multi_copyright(tmp_path: Path) -> None:
-    """Verifies parsing multiple distinct copyright entities within multi-holder NOTICE logs."""
+    """Check parsing multiple copyright entities within multi-holder NOTICE logs."""
     content = "Copyright 2026 Primary Holder\nCopyright 2026 Contributors"
     create_compliance_environment(tmp_path, notice_content=content)
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
@@ -377,7 +377,7 @@ def test_apply_path_stamp_incorrect_replacement(tmp_path: Path) -> None:
 
 
 def test_apply_path_stamp_outside_project_tree(tmp_path: Path) -> None:
-    """Gracefully targets standalone paths handled safely via ValueErrors outside root."""
+    """Targets standalone paths handled safely via ValueErrors outside root."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
     lines = ["print('ok')\n"]
@@ -515,7 +515,7 @@ def test_process_file_no_modification(tmp_path: Path) -> None:
 
 
 def test_process_file_os_error(tmp_path: Path) -> None:
-    """_process_file returns tuple statuses indicating failures cleanly on system blocks."""
+    """_process_file returns tuple statuses indicating failures on system blocks."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
     report = engine._process_file(tmp_path)
@@ -538,7 +538,7 @@ def test_is_mutation_authorized_with_approved_changes(tmp_path: Path) -> None:
 
 
 def test_is_mutation_authorized_ignores_empty_line_insertions(tmp_path: Path) -> None:
-    """Ensures the safety engine skips entirely empty or stripped line additions (branch coverage)."""
+    """Ensures skipping of empty or stripped line additions (branch coverage)."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
 
@@ -554,7 +554,6 @@ def test_is_mutation_authorized_ignores_tag_mutations(tmp_path: Path) -> None:
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
 
-    # Introduce raw tags directly into the diff to trigger the tag-skipping branch safely
     original = "pass"
     updated = f"{ws_module.COPYRIGHT_TAG}: 2026\n# {ws_module.LICENSE_TAG}: MIT\npass"
 
@@ -612,15 +611,16 @@ def test_process_file_failure_captured_gracefully(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ensures file modification write errors are captured and logged via IO_ERROR status."""
+    """Ensures file modification write errors are captured and logged via IO_ERROR."""
     target_file = tmp_path / "read_only.py"
     target_file.write_text("print('ok')", encoding="utf-8")
 
     ws = TargetWorkspace(project_dir=tmp_path, target_path=target_file)
     engine = WorkspaceStamper(workspace=ws)
 
-    def mock_write_text(*args, **kwargs):
-        raise OSError("Permission Denied")
+    def mock_write_text(*args: object, **kwargs: object) -> None:
+        err_msg = "Permission Denied"
+        raise OSError(err_msg)
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
 
@@ -636,7 +636,7 @@ def test_safety_engine_blocks_unauthorized_functional_mutations(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Aborts the mutation cycle before touching files if operational source changes are detected."""
+    """Aborts the mutation cycle before touching files if detected sourcechanges."""
     create_compliance_environment(tmp_path)
     script = tmp_path / "main.py"
     script.write_text("print('safe')", encoding="utf-8")
@@ -841,8 +841,9 @@ def test_main_exception_roadblock_handling(
         ["workspace_stamper", str(script), "-p", str(tmp_path), "--no-license"],
     )
 
-    def mock_run(self):
-        raise ValueError("Simulated internal engine crash")
+    def mock_run(self: object) -> None:
+        err_msg = "Simulated internal engine crash"
+        raise ValueError(err_msg)
 
     monkeypatch.setattr(WorkspaceStamper, "run", mock_run)
 

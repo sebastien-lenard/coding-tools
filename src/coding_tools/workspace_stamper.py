@@ -117,10 +117,7 @@ class WorkspaceStamper(BaseModel):
         )
 
         # Strict execution boundary: Blocked syntax or system IO errors fail the run.
-        if blocked_count > 0 or io_errors_count > 0:
-            return False
-
-        return True
+        return not (blocked_count > 0 or io_errors_count > 0)
 
     def _evaluate_legal_infrastructure(self) -> None:
         """Process legal headers, loading context rules from root workspace assets."""
@@ -237,7 +234,7 @@ class WorkspaceStamper(BaseModel):
                 req_len = len(copyright_lines) + 1
                 if idx + req_len <= len(new_lines):
                     existing_chunk = new_lines[idx : idx + req_len]
-                    expected_chunk = copyright_lines + [license_line + "\n"]
+                    expected_chunk = [*copyright_lines, license_line + "\n"]
                     if [line.strip() for line in existing_chunk] == [
                         line.strip() for line in expected_chunk
                     ]:
@@ -360,7 +357,8 @@ class WorkspaceStamper(BaseModel):
                 continue
 
             errors.append(
-                f"[{file_path.name}] Unauthorized syntax variance intercepted: {change}",
+                f"[{file_path.name}] Unauthorized syntax variance intercepted: "
+                "{change}",
             )
 
         if errors:
