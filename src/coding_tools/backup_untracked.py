@@ -1,8 +1,13 @@
+# src/coding_tools/backup_untracked.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
+"""Automates backups of untracked project resources."""
+
 import argparse
 import logging
 import shutil
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,8 +17,8 @@ logger = logging.getLogger("coding_tools.backup_untracked")
 
 
 class UntrackedBackupManager(BaseModel):
-    """
-    Automates backups of local untracked files based on project configurations.
+    """Automate backups of local untracked files based on project configurations.
+
     Uses Pydantic validation to protect file-system execution targets.
     """
 
@@ -28,18 +33,19 @@ class UntrackedBackupManager(BaseModel):
         return self.project_path / self._config_name
 
     def execute(self) -> bool:
-        """
-        Orchestrates reading the configurations and backing up files.
+        """Orchestrates reading the configurations and backing up files.
+
         Returns True if successful, False otherwise.
         """
         if self.verbose:
             logger.setLevel(logging.INFO)
 
-        logger.info(f"Target Project Folder: {self.project_path}")
+        logger.info("Target Project Folder: %s", self.project_path)
 
         if not self.config_file_path.exists():
             logger.error(
-                f"Configuration file missing at target: {self.config_file_path}"
+                "Configuration file missing at target: %s",
+                self.config_file_path,
             )
             return False
 
@@ -49,55 +55,74 @@ class UntrackedBackupManager(BaseModel):
 
         output_base_dir, items_to_backup = config_data
 
-        # Verify output destination target directory is accessible or buildable
-        if not output_base_dir.exists():
-            try:
-                output_base_dir.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                logger.error(
-                    f"Backup base destination path is invalid or uncreatable: {e}"
-                )
-                return False
+        if not self._ensure_output_dir(output_base_dir):
+            return False
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_target_dir = (
-            output_base_dir / f"backup_{self.project_path.name}_{timestamp}"
-        )
-
-        logger.info(f"Initializing dynamic backup into: {backup_target_dir}")
+        backup_target_dir = self._get_backup_target_dir(output_base_dir)
+        logger.info("Initializing dynamic backup into: %s", backup_target_dir)
         success_count = 0
 
         for item_str in items_to_backup:
-            # Normalize target names to handle accidental trailing slashes cleanly
-            clean_item_str = item_str.rstrip("/\\")
-            source_item = self.project_path / clean_item_str
+            if self._copy_item(item_str, backup_target_dir):
+                success_count += 1
 
-            if not source_item.exists():
-                logger.warning(f"Skipped (Not Found): {clean_item_str}")
-                continue
-
-            destination_path = backup_target_dir / clean_item_str
-
-            try:
-                if source_item.is_file():
-                    destination_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source_item, destination_path)
-                    logger.info(f"📄 Copied File: {clean_item_str}")
-                    success_count += 1
-                elif source_item.is_dir():
-                    shutil.copytree(source_item, destination_path, dirs_exist_ok=True)
-                    logger.info(f"📁 Copied Folder: {clean_item_str}/")
-                    success_count += 1
-            except (PermissionError, shutil.Error) as e:
-                logger.error(
-                    f"IO Failure tracking copy targets for {clean_item_str}: {e}"
-                )
-
-        logger.info(f"Backup finished. Successfully saved {success_count} items.")
+        logger.info(
+            "Backup finished. Successfully saved %s items.",
+            success_count,
+        )
         return True
 
+    def _ensure_output_dir(self, output_base_dir: Path) -> bool:
+        """Verify output destination directory is accessible or buildable."""
+        if not output_base_dir.exists():
+            try:
+                output_base_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                logger.exception(
+                    "Backup base destination path is invalid or uncreatable",
+                )
+                return False
+        return True
+
+    def _get_backup_target_dir(self, output_base_dir: Path) -> Path:
+        """Generate a unique timestamped destination target folder."""
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        return output_base_dir / f"backup_{self.project_path.name}_{timestamp}"
+
+    def _copy_item(self, item_str: str, backup_target_dir: Path) -> bool:
+        """Normalize and copy a single source item string to the destination."""
+        clean_item_str = item_str.rstrip("/\\")
+        source_item = self.project_path / clean_item_str
+
+        if not source_item.exists():
+            logger.warning("Skipped (Not Found): %s", clean_item_str)
+            return False
+
+        destination_path = backup_target_dir / clean_item_str
+
+        try:
+            if source_item.is_file():
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_item, destination_path)
+                logger.info("📄 Copied File: %s", clean_item_str)
+            elif source_item.is_dir():
+                shutil.copytree(
+                    source_item,
+                    destination_path,
+                    dirs_exist_ok=True,
+                )
+                logger.info("📁 Copied Folder: %s/", clean_item_str)
+        except (PermissionError, shutil.Error):
+            logger.exception(
+                "IO Failure tracking copy targets for %s",
+                clean_item_str,
+            )
+            return False
+        else:
+            return True
+
     def _parse_config(self) -> tuple[Path, list[str]] | None:
-        """Parses lines within the backup schema configuration file."""
+        """Parse lines within the backup schema configuration file."""
         try:
             content = self.config_file_path.read_text(encoding="utf-8")
             lines = [
@@ -105,13 +130,14 @@ class UntrackedBackupManager(BaseModel):
                 for line in content.splitlines()
                 if (cleaned := line.strip()) and not cleaned.startswith("#")
             ]
-        except (PermissionError, FileNotFoundError) as e:
-            logger.error(f"Failed to securely read configuration file: {e}")
+        except (PermissionError, FileNotFoundError):
+            logger.exception("Failed to securely read configuration file")
             return None
 
         if not lines:
             logger.error(
-                f"Configuration file at {self.config_file_path} is completely empty."
+                "Configuration file at %s is completely empty.",
+                self.config_file_path,
             )
             return None
 
@@ -124,7 +150,7 @@ class UntrackedBackupManager(BaseModel):
 def main() -> None:
     """CLI Gateway transforming raw arguments into verified Pydantic contexts."""
     parser = argparse.ArgumentParser(
-        description="Safely back up untracked local files."
+        description="Safely back up untracked local files.",
     )
     parser.add_argument(
         "project_path",
@@ -149,15 +175,16 @@ def main() -> None:
 
     try:
         manager = UntrackedBackupManager(
-            project_path=Path(args.project_path), verbose=args.verbose
+            project_path=Path(args.project_path),
+            verbose=args.verbose,
         )
         success = manager.execute()
-    except Exception as e:
-        logger.error(f"Execution terminated due to validation breakdown: {e}")
+    except Exception:
+        logger.exception("Execution terminated due to validation breakdown")
         success = False
 
     sys.exit(0 if success else 1)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
