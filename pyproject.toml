@@ -15,7 +15,7 @@ description = "Automated workflows for workspace stamping and untracked file bac
 readme = "README.md"
 requires-python = ">=3.12.9"
 authors = [
-    { name = "Sebastien Lenard", email = "sebstien.lenard@gmail.com" }
+    { name = "Sebastien Lenard", email = "sebastien.lenard@gmail.com" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3.12",
