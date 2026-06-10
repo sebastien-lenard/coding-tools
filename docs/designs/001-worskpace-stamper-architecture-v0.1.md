@@ -1,10 +1,10 @@
 ---
-# docs/designs/001-worskpace-stamper-architecture-v0.1.md
-# SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-# SPDX-License-Identifier: Apache-2.0
 status: active  
 date: 2026-06-08
 ---
+<!-- docs/designs/001-worskpace-stamper-architecture-v0.1.md -->
+<!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # 0001: Workspace Stamper Architecture v0.1
 
