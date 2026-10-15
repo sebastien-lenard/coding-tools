@@ -111,9 +111,9 @@ class SourceBundler(BaseModel):
         return True
 
     def _run_files_to_prompt(self) -> str:
-        """Execute files-to-prompt commands against the project structure."""
-        # Scan inside the project's src directory
-        cmd1 = [
+        """Execute files-to-prompt commands against source code and config files."""
+        # 1. Scan inside the project's src directory
+        cmd_src = [
             "uvx",
             "files-to-prompt",
             str(self.src_path),
@@ -124,36 +124,45 @@ class SourceBundler(BaseModel):
             "--ignore",
             "venv",
         ]
-        logger.info("Running command: %s", " ".join(cmd1))
-        result1 = subprocess.run(  # noqa: S603
-            cmd1,
+        logger.info("Running command: %s", " ".join(cmd_src))
+        result_src = subprocess.run(  # noqa: S603
+            cmd_src,
             capture_output=True,
             text=True,
             check=True,
             encoding="utf-8",
         )
 
-        # Scan root configuration files (like pyproject.toml) within the project path
-        cmd2 = [
-            "uvx",
-            "files-to-prompt",
-            str(self.project_path),
-            "--include-hidden",
-            "-e",
-            "example",
-            "-e",
-            "toml",
+        accumulated_output = result_src.stdout
+
+        # 2. Conditionally scan specific target files if they exist
+        optional_files = [
+            "pyproject.toml",
+            ".env.example",
+            "tests/conftest.py",
         ]
-        logger.info("Running command: %s", " ".join(cmd2))
-        result2 = subprocess.run(  # noqa: S603
-            cmd2,
-            capture_output=True,
-            text=True,
-            check=True,
-            encoding="utf-8",
-        )
 
-        return result1.stdout + result2.stdout
+        for file_rel_path in optional_files:
+            target_file = self.project_path / file_rel_path
+            if target_file.exists() and target_file.is_file():
+                logger.info("📄 Included optional file: %s", file_rel_path)
+                cmd_file = [
+                    "uvx",
+                    "files-to-prompt",
+                    str(target_file),
+                ]
+                result_file = subprocess.run(  # noqa: S603
+                    cmd_file,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    encoding="utf-8",
+                )
+                accumulated_output += result_file.stdout
+            else:
+                logger.info("ℹ️ Optional file not found (skipped): %s", file_rel_path)
+
+        return accumulated_output
 
 
 def main() -> None:

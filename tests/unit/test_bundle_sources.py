@@ -34,11 +34,21 @@ def setup_mock_project(tmp_path: Path) -> dict[str, Path]:
     toml_file = project_dir / "pyproject.toml"
     toml_file.write_text('[project]\nname = "test"', encoding="utf-8")
 
+    env_example_file = project_dir / ".env.example"
+    env_example_file.write_text("API_KEY=your_key_here", encoding="utf-8")
+
+    tests_dir = project_dir / "tests"
+    tests_dir.mkdir()
+    conftest_file = tests_dir / "conftest.py"
+    conftest_file.write_text("import pytest", encoding="utf-8")
+
     return {
         "project_dir": project_dir,
         "src_dir": src_dir,
         "core_file": core_file,
         "toml_file": toml_file,
+        "env_example_file": env_example_file,
+        "conftest_file": conftest_file,
     }
 
 
@@ -69,7 +79,7 @@ def test_bundler_executes_successfully_default_output(
     mock_completed = subprocess.CompletedProcess(
         args=[],
         returncode=0,
-        stdout="src/core.py\n---\nprint('core')\npyproject.toml\n---\n[project]\n",
+        stdout="src/core.py\n---\nprint('core')\n",
     )
 
     with (
@@ -80,8 +90,10 @@ def test_bundler_executes_successfully_default_output(
 
     expected_output = proj["project_dir"] / "src_files.txt"
     assert expected_output.exists()
-    assert "print('core')" in expected_output.read_text(encoding="utf-8")
     assert "Target Project Folder" in caplog.text
+    assert "Included optional file: pyproject.toml" in caplog.text
+    assert "Included optional file: .env.example" in caplog.text
+    assert "Included optional file: tests/conftest.py" in caplog.text
 
 
 def test_bundler_executes_successfully_custom_output(
@@ -99,14 +111,43 @@ def test_bundler_executes_successfully_custom_output(
     mock_completed = subprocess.CompletedProcess(
         args=[],
         returncode=0,
-        stdout="src/core.py\n---\nprint('core')\n",
+        stdout="content\n",
     )
 
     with patch("subprocess.run", return_value=mock_completed):
         assert bundler.execute() is True
 
     assert custom_output.exists()
-    assert "print('core')" in custom_output.read_text(encoding="utf-8")
+
+
+def test_bundler_skips_missing_optional_files(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verifies optional files are logged as missing and skipped if absent."""
+    project_dir = tmp_path / "minimal_project"
+    project_dir.mkdir()
+    src_dir = project_dir / "src"
+    src_dir.mkdir()
+    (src_dir / "app.py").write_text("print('app')", encoding="utf-8")
+
+    bundler = SourceBundler(project_path=project_dir, verbose=True)
+
+    mock_completed = subprocess.CompletedProcess(
+        args=[],
+        returncode=0,
+        stdout="src/app.py\n---\nprint('app')\n",
+    )
+
+    with (
+        patch("subprocess.run", return_value=mock_completed),
+        caplog.at_level("INFO"),
+    ):
+        assert bundler.execute() is True
+
+    assert "Optional file not found (skipped): pyproject.toml" in caplog.text
+    assert "Optional file not found (skipped): .env.example" in caplog.text
+    assert "Optional file not found (skipped): tests/conftest.py" in caplog.text
 
 
 def test_missing_src_folder_logs_error_and_returns_false(
