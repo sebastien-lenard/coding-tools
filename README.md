@@ -1,3 +1,7 @@
+<!-- README.md -->
+<!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Coding Tools
 
 A suite of utility workflows designed to manage file backups and automate context and license/copyright injection for local Python projects.
@@ -81,6 +85,33 @@ secrets/
 
 ---
 
+## 3. Bundle Sources
+
+`bundle-sources` automates packing a target project's source code and configuration files into a single, clean text document ready for LLM ingestion.
+
+### Core Use Case
+When feeding entire codebases to Large Language Models, passing individual files manually is tedious. This utility bundles everything inside a project's `src` folder along with key project configuration files (`pyproject.toml`, `.env.example`, `tests/conftest.py`) while automatically stripping redundant file headers.
+
+### Features
+- **Targeted Source Scan:** Automatically packs all Python source files found within the project's `src` subfolder.
+- **Config & Test Inclusion:** Gracefully checks for and includes optional project context files (`pyproject.toml`, `.env.example`, `tests/conftest.py`) if they exist.
+- **Header Sanitization:** Strips redundant file path blocks for a clean, unified prompt structure.
+- **Flexible Destination:** Defaults to creating `src_files.txt` at the root of the target project, or accepts a custom output path.
+
+### CLI Command Options
+```bash
+bundle-sources [project_path] [OPTIONS]
+```
+
+#### Arguments
+* **`project_path`** *(Positional, Optional)*: Path to the target project directory (defaults to current directory `.` ).
+
+#### Options
+* **`-o`, `--output`** *(String)*: Destination text file path (defaults to `src_files.txt` at the root of the target project).
+* **`-v`, `--verbose`** *(Flag)*: Increase output verbosity.
+
+---
+
 ## Installation & Setup
 
 This project uses **uv** for fast and reliable Python package and dependency management.
@@ -134,6 +165,18 @@ uv run workspace-stamper /path/to/target/project --no-path --no-license
 Run directly from your active directory (defaults to checking for `.git_untracked_to_save` in the current folder):
 ```bash
 uv run backup-untracked /path/to/your/project -v
+```
+
+### Running Bundle Sources
+
+**Example 1: Bundle the current directory into default `src_files.txt`**
+```bash
+uv run bundle-sources .
+```
+
+**Example 2: Bundle a target project and save to a custom output path**
+```bash
+uv run bundle-sources /path/to/target/project -o /path/to/output/codebase_prompt.txt -v
 ```
 
 ---
