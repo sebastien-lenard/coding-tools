@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
+bundle-sources = "coding_tools.bundle_sources:main"
 
 [dependency-groups]
 dev = [
