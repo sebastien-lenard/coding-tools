@@ -15,7 +15,7 @@ description = "Automated workflows for workspace stamping and untracked file bac
 readme = "README.md"
 requires-python = ">=3.12.9"
 authors = [
-    { name = "Sebastien Lenard", email = "sebstien.lenard@gmail.com" }
+    { name = "Sebastien Lenard", email = "sebastien.lenard@gmail.com" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3.12",
@@ -28,6 +28,7 @@ dependencies = [
 [project.scripts]
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
+bundle-sources = "coding_tools.bundle_sources:main"
 
 [dependency-groups]
 dev = [
@@ -78,6 +79,10 @@ allowed-confusables = ["ℹ"]
 ]
 "__init__.py" = ["D104"]
 "__main__.py" = ["D100", "D104"]
+
+[tool.ruff.lint.flake8-copyright]
+author = "Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors"
+notice-rgx = '(?i)SPDX-FileCopyrightText:\s*2026\s*'
 
 [tool.ruff.format]
 quote-style = "double"
