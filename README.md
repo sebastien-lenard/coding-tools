@@ -130,18 +130,44 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### 2. Synchronize the Environment
+### 2. Synchronize the Environment & Register Commands
 
-Navigate to the project root directory and synchronize the virtual environment to install dependencies and register CLI commands:
+Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`workspace-stamper`, `backup-untracked`, `bundle-sources`) locally:
 ```bash
 uv sync
 ```
 
 ---
 
+## Execution Guide (`uv run` vs Editable Install)
+
+You have two options for running the commands provided by this package:
+
+### Option A: Using `uv run` (Recommended — No global installation needed)
+By prefixing your command with `uv run`, `uv` automatically executes the command inside the project's isolated virtual environment, ensuring all package dependencies and entry points are correctly resolved:
+```bash
+uv run workspace-stamper --help
+uv run backup-untracked --help
+uv run bundle-sources --help
+```
+
+### Option B: Editable Install (For direct command-line access)
+If you prefer typing the command names directly without prefixing them with `uv run`, install the package in editable mode within the virtual environment:
+```bash
+uv pip install -e .
+```
+Once installed, you can invoke the scripts directly:
+```bash
+workspace-stamper --help
+backup-untracked --help
+bundle-sources --help
+```
+
+---
+
 ## Usage Examples
 
-Run the scripts directly using `uv run`.
+*(Note: The examples below use `uv run`. If you completed **Option B (Editable Install)** above, you can omit `uv run` and invoke the scripts directly).*
 
 ### Running Workspace Stamper
 
