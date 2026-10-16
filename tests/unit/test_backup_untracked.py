@@ -3,16 +3,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit test suite validating the untracked code backup workflows."""
 
-import subprocess
-import sys
+import runpy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
+from coding_tools import backup_untracked
 from coding_tools.backup_untracked import UntrackedBackupManager, main
-from src.coding_tools import backup_untracked
 
 # =====================================================================
 # SYSTEM FIXTURES
@@ -183,7 +182,6 @@ def test_uncreatable_output_base_directory_returns_false(
     """Ensures uncreatable destination base targets abort safely."""
     proj = setup_mock_project
     config_file = proj["project_dir"] / ".git_untracked_to_save"
-    # Overwrite config file to use an impossible uncreatable target path
     config_file.write_text("/uncreatable_root_dir_xyz/backup\n.env", encoding="utf-8")
 
     manager = UntrackedBackupManager(project_path=proj["project_dir"])
@@ -203,7 +201,7 @@ def test_copy_item_shutil_exception_logs_error(
 
     with patch("shutil.copy2", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
-            assert manager.execute() is True  # Main orchestrator skips over errors
+            assert manager.execute() is True
         assert "IO Failure tracking copy targets for" in caplog.text
 
 
@@ -250,12 +248,10 @@ def test_main_gateway_execution_failure() -> None:
 def test_script_execution_entrypoint(tmp_path: Path) -> None:
     """Asserts execution coverage over the primary standard file entrypoint block.
 
-    Uses an isolated subprocess invocation to cleanly evaluate module execution
-    without polluting the parent testing process architecture or mutating state.
+    Uses runpy to safely invoke the module execution path directly without subprocesses.
     """
-    script_path = Path(backup_untracked.__file__)
+    target_file_path = str(Path(backup_untracked.__file__).resolve())
 
-    # Set up a minimal valid project space so the real main executes smoothly
     project_dir = tmp_path / "entrypoint_project"
     output_dir = tmp_path / "entrypoint_backup"
     project_dir.mkdir()
@@ -264,15 +260,6 @@ def test_script_execution_entrypoint(tmp_path: Path) -> None:
     config_file = project_dir / ".git_untracked_to_save"
     config_file.write_text(f"{output_dir.as_posix()}\n", encoding="utf-8")
 
-    # Run the script as a direct executable module under the current Python runtime
-    # Note: Subprocess execution required to conduct CLI execution (although another
-    # way might be better)
-    result = subprocess.run(  # noqa: S603
-        [sys.executable, str(script_path), str(project_dir)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    # A zero exit code ensures the module successfully entered the __main__ block
-    assert result.returncode == 0
+    test_args = ["backup_untracked.py", str(project_dir)]
+    with patch("sys.argv", test_args), pytest.raises(SystemExit):
+        runpy.run_path(target_file_path, run_name="__main__")
