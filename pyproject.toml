@@ -80,5 +80,9 @@ allowed-confusables = ["ℹ"]
 "__init__.py" = ["D104"]
 "__main__.py" = ["D100", "D104"]
 
+[tool.ruff.lint.flake8-copyright]
+author = "Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors"
+notice-rgx = '(?i)SPDX-FileCopyrightText:\s*2026\s*'
+
 [tool.ruff.format]
 quote-style = "double"
