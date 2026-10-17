@@ -131,6 +131,12 @@ def test_bundler_skips_missing_optional_files(
     src_dir.mkdir()
     (src_dir / "app.py").write_text("print('app')", encoding="utf-8")
 
+    # Also add an ignored directory with a python file
+    # to test the ignore condition branch
+    ignored_dir = src_dir / "__pycache__"
+    ignored_dir.mkdir()
+    (ignored_dir / "cached.py").write_text("print('cached')", encoding="utf-8")
+
     bundler = SourceBundler(project_path=project_dir, verbose=True)
 
     mock_completed = subprocess.CompletedProcess(
