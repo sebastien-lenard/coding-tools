@@ -30,10 +30,17 @@ workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
 
+[project.optional-dependencies]
+ai = [
+    "google-genai>=2.16.0",
+]
+
 [dependency-groups]
 dev = [
-    "pytest>=8.3.0",
-    "ruff>=0.9.0",
+    "basedpyright>=1.39.9",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.1",
 ]
 
 [tool.pytest.ini_options]
@@ -48,6 +55,26 @@ markers = [
 ]
 # log_cli = true
 # log_cli_level = "INFO"
+
+[tool.basedpyright]
+extraPaths = ["src"]
+typeCheckingMode = "standard" # Options: "basic", "standard", "recommended", "strict"
+
+venvPath = "."
+venv = ".venv" 
+
+# Disable rules that complain about unannotated dynamic code
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+
+# Prevent duplicate warnings already handled by Ruff
+reportUnusedImport = "none"
+reportUnusedVariable = "none"
+
+# Optional: Basedpyright can be strict about Any types. 
+# Set to "warning" or "none" if it creates too much noise in existing code.
+reportAny = "none" 
 
 [tool.ruff]
 line-length = 88
