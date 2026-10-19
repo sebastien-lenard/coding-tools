@@ -122,6 +122,15 @@ async def run_workflow_with_iterations(
                     )
                     break
 
+                if status == "FIXED":
+                    logger.info(
+                        "[%s] Iteration %d applied a fix. Proceeding to next "
+                        "iteration to verify...",
+                        test_file,
+                        iteration,
+                    )
+                    continue
+
                 logger.warning(
                     "[%s] Iteration %d finished - Stage: %s | Status: %s",
                     test_file,

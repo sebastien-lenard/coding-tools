@@ -1,4 +1,4 @@
-# Python
+# Python / Pytest / Coverage
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,9 +6,24 @@ __pycache__/
 env/
 build/
 dist/
+.coverage
+*,cover
+*,cover.*
 
-# VS Code
+# Workflow log and output artifacts
+based-pyright-*.txt
+based-pyright.txt
+ruff-*.txt
+ruff.txt
+unit-test-*.txt
+unit-test.txt
+
+# Temp/Misc files and backups
+*.txt
+*.old.py
+*.copy.txt
+test_dummy_target.py
+
+# VS Code / Environment
 .vscode/
-
-# Environment variables
 .env

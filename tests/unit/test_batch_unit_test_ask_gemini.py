@@ -87,6 +87,28 @@ async def test_run_workflow_with_iterations_no_solution() -> None:
 
 
 @pytest.mark.anyio
+async def test_run_workflow_with_iterations_fixed() -> None:
+    """Test workflow execution with FIXED status followed by success."""
+    with patch(
+        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        side_effect=[
+            (False, "Pytest/Coverage", "FIXED"),
+            (True, "All Stages", "SUCCESS"),
+        ],
+    ) as mock_exec:
+        result = await butag.run_workflow_with_iterations(
+            "tests/unit/test_dummy.py", "src/dummy.py", max_iterations=3,
+        )
+        assert result == {
+            "test_file": "tests/unit/test_dummy.py",
+            "stage": "All Stages",
+            "status": "SUCCESS",
+            "iterations": 2,
+        }
+        assert mock_exec.call_count == 2
+
+
+@pytest.mark.anyio
 async def test_run_workflow_with_iterations_failure_then_success() -> None:
     """Test workflow execution with failure followed by success."""
     with patch(

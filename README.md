@@ -4,13 +4,41 @@
 
 # Coding Tools
 
-A suite of utility workflows designed to manage file backups and automate context and license/copyright injection for local Python projects.
+A suite of utility workflows designed to automate unit test generation and code remediation via AI, manage file backups, and automate context and license/copyright injection for local Python projects.
 
 ![Tests Status](https://github.com/sebastien-lenard/citecraft/actions/workflows/test.yml/badge.svg) [![codecov](https://codecov.io/github/sebastien-lenard/coding-tools/graph/badge.svg?token=VX5Q3KCIW2)](https://codecov.io/github/sebastien-lenard/coding-tools) [![Codacy Badge](https://app.codacy.com/project/badge/Grade/c08aa03041854dd2835d43eb61d2ce20)](https://app.codacy.com/gh/sebastien-lenard/coding-tools/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 ---
 
-## 1. Workspace Stamper
+## 1. Automated Unit Test Generation & Remediation (`batch-unit-test`)
+
+`batch-unit-test` is an AI-powered orchestration engine that automates the creation and iterative refinement of unit tests for Python projects using the Google Gemini API.
+
+### Core Use Case
+Writing exhaustive unit tests and achieving 100% code coverage while maintaining strict type checking (`basedpyright`) and linting compliance (`ruff`) can be tedious. This utility concurrently processes source files, queries Gemini to fix failing tests or missing coverage branches, and automatically validates code through an automated multi-stage loop.
+
+### Features
+- **Automated Workflow Pipeline:** Runs and iterates through test generation, pytest execution with coverage analysis, basedpyright static type checks, and ruff linting/auto-fixing.
+- **Iterative AI Remediation:** Feeds precise coverage hints, uncovered code blocks, and pytest warnings back into Gemini for targeted code fixes (up to a configurable maximum of iterations).
+- **Concurrent Execution:** Processes multiple project files concurrently using controlled asyncio semaphores.
+- **Execution Summary:** Outputs a structured summary table detailing the final stage, status, and iteration count for each processed file.
+
+For a detailed architectural breakdown of the multi-stage validation and AI remediation pipeline, see the [Unit Test Pipeline Design Doc](docs/designs/002-unit_test_pipeline-v0.1.md).
+
+### CLI Command Options
+```bash
+batch-unit-test [target] [OPTIONS]
+```
+
+#### Arguments
+* **`target`** *(Positional, Optional)*: Path to a specific source Python file or a target directory (defaults to `src`).
+
+#### Options
+* **`--max-iterations`** *(Integer)*: Maximum iterations per file (defaults to `5`).
+
+---
+
+## 2. Workspace Stamper
 
 `workspace-stamper` is an automated utility designed to inject relative file paths and standardized SPDX legal headers into Python source files. 
 
@@ -59,7 +87,7 @@ workspace-stamper target [OPTIONS]
 
 ---
 
-## 2. Backup Untracked
+## 3. Backup Untracked
 
 `backup-untracked` copies untracked or ignored local development files (such as `.env` configurations or custom assets) out of your repository tree into an isolated backup folder.
 
@@ -85,7 +113,7 @@ secrets/
 
 ---
 
-## 3. Bundle Sources
+## 4. Bundle Sources
 
 `bundle-sources` automates packing a target project's source code and configuration files into a single, clean text document ready for LLM ingestion.
 
@@ -132,9 +160,9 @@ powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ### 2. Synchronize the Environment & Register Commands
 
-Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`workspace-stamper`, `backup-untracked`, `bundle-sources`) locally:
+Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`batch-unit-test`, `workspace-stamper`, `backup-untracked`, `bundle-sources`) locally:
 ```bash
-uv sync
+uv sync --all-extras
 ```
 
 ---
@@ -146,18 +174,20 @@ You have two options for running the commands provided by this package:
 ### Option A: Using `uv run` (Recommended — No global installation needed)
 By prefixing your command with `uv run`, `uv` automatically executes the command inside the project's isolated virtual environment, ensuring all package dependencies and entry points are correctly resolved:
 ```bash
+uv run --extra ai batch-unit-test --help
 uv run workspace-stamper --help
 uv run backup-untracked --help
 uv run bundle-sources --help
 ```
 
 ### Option B: Editable Install (For direct command-line access)
-If you prefer typing the command names directly without prefixing them with `uv run`, install the package in editable mode within the virtual environment:
+If you prefer typing the command names directly without prefixing them with `uv run`, install the package in editable mode with AI extras within the virtual environment:
 ```bash
-uv pip install -e .
+uv pip install -e ".[ai]"
 ```
 Once installed, you can invoke the scripts directly:
 ```bash
+batch-unit-test --help
 workspace-stamper --help
 backup-untracked --help
 bundle-sources --help
@@ -168,6 +198,18 @@ bundle-sources --help
 ## Usage Examples
 
 *(Note: The examples below use `uv run`. If you completed **Option B (Editable Install)** above, you can omit `uv run` and invoke the scripts directly).*
+
+### Running Automated Unit Test Generation
+
+**Example 1: Process the entire `src` directory with default max-iterations (5)**
+```bash
+uv run --extra ai batch-unit-test src
+```
+
+**Example 2: Process a single source file with custom max-iterations**
+```bash
+uv run --extra ai batch-unit-test src/coding_tools/workspace_stamper.py --max-iterations 3
+```
 
 ### Running Workspace Stamper
 

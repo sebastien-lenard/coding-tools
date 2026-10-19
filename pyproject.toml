@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
+batch-unit-test = "coding_tools.batch_unit_test_ask_gemini:main"
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
