@@ -197,7 +197,7 @@ def print_summary_table(
     )
 
 
-async def main() -> None:
+async def async_main() -> None:
     """Execute workflows concurrently for multiple files with iteration loops."""
     parser = argparse.ArgumentParser(
         description="Run automated unit test workflow.",
@@ -270,5 +270,10 @@ async def main() -> None:
     logger.info("Batch concurrent workflow completed successfully.")
 
 
+def main() -> None:
+    """Initiate the asynchronous event loop (Synchronous CLI Gateway)."""
+    asyncio.run(async_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
