@@ -12,17 +12,15 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from google.genai import Client, errors
+from google.genai import errors
 from google.genai.errors import ServerError
 
-from coding_tools.gemini_client import CACHE_ALLOWED, cleanup_files
+from coding_tools.gemini_client import CACHE_ALLOWED
 from coding_tools.llm_remediation import (
+    LLMRemediator,
     StageConfig,
     WorkflowContext,
     WorkflowStatus,
-    run_pytest_stage,
-    run_workflow_stage,
-    setup_cache,
 )
 from coding_tools.parsers import (
     filter_ruff_output,
@@ -53,7 +51,7 @@ def _evaluate_stage_status(
 
 
 def _run_stage_chain(
-    client: Client,
+    remediator: LLMRemediator,
     cache_name: str | None,
     uploaded_files: list[Any],
     ctx: WorkflowContext,
@@ -61,15 +59,14 @@ def _run_stage_chain(
     """Execute the sequence of workflow stages sequentially."""
     # --- STAGE 1: Pytest / Coverage ---
     res = _evaluate_stage_status(
-        *run_pytest_stage(client, cache_name, uploaded_files, ctx),
+        *remediator.run_pytest_stage(cache_name, uploaded_files, ctx),
     )
     if res is not None:
         return res
 
     # --- STAGE 2: Basedpyright Type Checking ---
     res = _evaluate_stage_status(
-        *run_workflow_stage(
-            client,
+        *remediator.run_workflow_stage(
             cache_name,
             uploaded_files,
             ctx,
@@ -91,8 +88,7 @@ def _run_stage_chain(
 
     # --- STAGE 3: Ruff Linting ---
     res = _evaluate_stage_status(
-        *run_workflow_stage(
-            client,
+        *remediator.run_workflow_stage(
             cache_name,
             uploaded_files,
             ctx,
@@ -131,36 +127,36 @@ def execute_workflow(
     prefix = Path(test_file_path).name
     ctx = WorkflowContext(test_file_path, source_file_path, prefix, allow_gemini)
 
-    with Client() as client:
-        try:
-            cache_name, uploaded_files = setup_cache(
-                client,
-                source_file_path,
-                prefix,
-            )
+    remediator = LLMRemediator()
 
-            success, stage_name, status = _run_stage_chain(
-                client,
-                cache_name,
-                uploaded_files,
-                ctx,
-            )
-            if not success:
-                return False, stage_name, status
+    try:
+        cache_name, uploaded_files = remediator.setup_cache(
+            source_file_path,
+            prefix,
+        )
 
-            if CACHE_ALLOWED:
-                cleanup_files(client, uploaded_files, prefix)
-        except (ServerError, errors.APIError):
-            logger.exception(
-                "[%s] Gemini API / Server Error encountered",
-                prefix,
-            )
-            return False, "Pytest/Coverage", "API_ERROR"
-        except (OSError, ValueError):
-            logger.exception("[%s] File I/O or Value Error", prefix)
-            raise
-        except subprocess.SubprocessError:
-            logger.exception("[%s] Subprocess Execution Error", prefix)
-            raise
-        else:
-            return True, "ALL_STAGES", "SUCCESS"
+        success, stage_name, status = _run_stage_chain(
+            remediator,
+            cache_name,
+            uploaded_files,
+            ctx,
+        )
+        if not success:
+            return False, stage_name, status
+
+        if CACHE_ALLOWED:
+            remediator.client.cleanup_files(uploaded_files, prefix)
+    except (ServerError, errors.APIError):
+        logger.exception(
+            "[%s] Gemini API / Server Error encountered",
+            prefix,
+        )
+        return False, "Pytest/Coverage", "API_ERROR"
+    except (OSError, ValueError):
+        logger.exception("[%s] File I/O or Value Error", prefix)
+        raise
+    except subprocess.SubprocessError:
+        logger.exception("[%s] Subprocess Execution Error", prefix)
+        raise
+    else:
+        return True, "ALL_STAGES", "SUCCESS"

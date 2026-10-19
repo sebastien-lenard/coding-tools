@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Gemini API service for caching, prompts, and generic structured generation."""
+"""Google GenAI client wrapper satisfying LLMClientProtocol."""
 
 from __future__ import annotations
 
@@ -12,10 +12,11 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from google.genai import errors, types
+from google.genai import Client, errors, types
 from google.genai.errors import ServerError
 from pydantic import BaseModel
 
@@ -28,17 +29,16 @@ from coding_tools.parsers import (
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from google.genai import Client
     from google.genai.types import File
 
-# --- CONFIGURATION CONSTANTS ---
+    from coding_tools.llm_protocol import StructuredGenerationOptions
+
 CACHE_ALLOWED: bool = False
 MODEL_NAME: str = "gemini-3.5-flash-lite"
 HTTP_SERVICE_UNAVAILABLE = 503
 
 T = TypeVar("T", bound=BaseModel)
 
-# Configure logging format and level
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -51,6 +51,19 @@ class TestGenerationResponse(BaseModel):
 
     message: str
     code: str
+
+
+@dataclass
+class StructuredRequest[ReqT: BaseModel]:
+    """Encapsulates parameters for a structured GenAI request."""
+
+    client: Client
+    contents_list: list[types.ContentUnion]
+    response_schema: type[ReqT]
+    prefix: str
+    spinner_msg: str
+    system_instruction: str | None = None
+    cache_name: str | None = None
 
 
 @contextmanager
@@ -91,22 +104,6 @@ def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
     )
 
 
-def cleanup_files(client: Client, files: list[File | None], prefix: str) -> None:
-    """Clean up uploaded remote file resources safely."""
-    logger.info("[%s] Cleaning up remote uploaded static files...", prefix)
-    for f in files:
-        if f is not None and f.name is not None:
-            try:
-                client.files.delete(name=f.name)
-            except errors.APIError as e:
-                logger.warning(
-                    "[%s] Failed to delete remote file %s: %s",
-                    prefix,
-                    f.name,
-                    e.message,
-                )
-
-
 def validate_file_uris(
     file_config: File,
     file_conftest: File,
@@ -124,7 +121,7 @@ def build_config(
     system_instruction: str | None = None,
     cache_name: str | None = None,
 ) -> dict[str, object]:
-    """Centralized configuration factory for structured LLM execution."""
+    """Centralized configuration factory for structured GenAI execution."""
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
             thinking_level=types.ThinkingLevel.MEDIUM,
@@ -191,89 +188,111 @@ def call_gemini_with_retry(
     return response
 
 
-def execute_structured_request(
-    client: Client,
-    contents_list: list[types.ContentUnion],
-    response_schema: type[T],
-    prefix: str,
-    spinner_msg: str,
-    system_instruction: str | None = None,
-    cache_name: str | None = None,
-) -> T:
-    """High-level generic wrapper returning a validated Pydantic model response."""
-    config_kwargs = build_config(
-        response_schema=response_schema,
-        system_instruction=system_instruction,
-        cache_name=cache_name,
-    )
+class GeminiClientAdapter:
+    """Concrete Gemini adapter satisfying LLMClientProtocol."""
 
-    response = call_gemini_with_retry(
-        client=client,
-        contents_list=contents_list,
-        config_kwargs=config_kwargs,
-        prefix=prefix,
-        spinner_msg=spinner_msg,
-    )
+    def __init__(self) -> None:
+        self.client = Client()
 
-    parsed = response.parsed
-    if parsed is None:
-        msg = f"Gemini response did not conform to {response_schema.__name__} schema."
-        raise ValueError(msg)
+    def generate_structured_response(
+        self,
+        contents_list: list[object],
+        options: StructuredGenerationOptions,
+    ) -> BaseModel:
+        """High-level wrapper returning a validated Pydantic model response."""
+        config_kwargs = build_config(
+            response_schema=options.response_schema,
+            system_instruction=options.system_instruction,
+            cache_name=options.cache_name,
+        )
 
-    return response_schema.model_validate(parsed)
+        response = call_gemini_with_retry(
+            client=self.client,
+            contents_list=cast("list[types.ContentUnion]", contents_list),
+            config_kwargs=config_kwargs,
+            prefix=options.prefix,
+            spinner_msg=options.spinner_msg,
+        )
+
+        parsed = response.parsed
+        if parsed is None:
+            schema_name = options.response_schema.__name__
+            msg = f"GenAI response did not conform to {schema_name} schema."
+            raise ValueError(msg)
+
+        return options.response_schema.model_validate(parsed)
+
+    def setup_cache(
+        self,
+        source_file_path: str,
+        prefix: str,
+    ) -> tuple[str | None, list[object]]:
+        """Set up optional Gemini file caching."""
+        uploaded_files: list[File | None] = []
+        if not CACHE_ALLOWED:
+            return None, uploaded_files  # type: ignore[return-value]
+
+        logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
+        file_config = upload_static_file(self.client, "project.toml", prefix)
+        file_conftest = upload_static_file(self.client, "tests/conftest.py", prefix)
+        file_source = upload_static_file(self.client, source_file_path, prefix)
+        uploaded_files.extend([file_config, file_conftest, file_source])
+
+        config_uri, conftest_uri, source_uri = validate_file_uris(
+            file_config,
+            file_conftest,
+            file_source,
+        )
+
+        logger.info("[%s] Creating context cache...", prefix)
+        cached_content = self.client.caches.create(
+            model=MODEL_NAME,
+            config=types.CreateCachedContentConfig(
+                display_name=f"unit-test-context-{prefix}",
+                ttl="3600s",
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_uri(
+                                file_uri=source_uri,
+                                mime_type="text/plain",
+                            ),
+                            types.Part.from_uri(
+                                file_uri=config_uri,
+                                mime_type="text/plain",
+                            ),
+                            types.Part.from_uri(
+                                file_uri=conftest_uri,
+                                mime_type="text/plain",
+                            ),
+                        ],
+                    ),
+                ],
+                system_instruction=load_skill("unit_test_generation.md"),
+            ),
+        )
+        return cached_content.name, uploaded_files  # type: ignore[return-value]
+
+    def cleanup_files(self, files: list[object], prefix: str) -> None:
+        """Clean up uploaded remote file resources safely."""
+        logger.info("[%s] Cleaning up remote uploaded static files...", prefix)
+        for f in files:
+            if f is not None and hasattr(f, "name"):
+                try:
+                    file_name = cast("Any", f).name
+                    self.client.files.delete(name=file_name)
+                except errors.APIError as e:
+                    logger.warning(
+                        "[%s] Failed to delete remote file: %s",
+                        prefix,
+                        e.message,
+                    )
 
 
-def setup_cache(
-    client: Client,
-    source_file_path: str,
-    prefix: str,
-) -> tuple[str | None, list[types.File | None]]:
-    """Set up optional Gemini file caching."""
-    uploaded_files: list[types.File | None] = []
-    if not CACHE_ALLOWED:
-        return None, uploaded_files
-
-    logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
-    file_config = upload_static_file(client, "project.toml", prefix)
-    file_conftest = upload_static_file(client, "tests/conftest.py", prefix)
-    file_source = upload_static_file(client, source_file_path, prefix)
-    uploaded_files.extend([file_config, file_conftest, file_source])
-
-    config_uri, conftest_uri, source_uri = validate_file_uris(
-        file_config,
-        file_conftest,
-        file_source,
-    )
-
-    logger.info("[%s] Creating context cache...", prefix)
-    cached_content = client.caches.create(
-        model=MODEL_NAME,
-        config=types.CreateCachedContentConfig(
-            display_name=f"unit-test-context-{prefix}",
-            ttl="3600s",
-            contents=[
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_uri(
-                            file_uri=source_uri,
-                            mime_type="text/plain",
-                        ),
-                        types.Part.from_uri(
-                            file_uri=config_uri,
-                            mime_type="text/plain",
-                        ),
-                        types.Part.from_uri(
-                            file_uri=conftest_uri,
-                            mime_type="text/plain",
-                        ),
-                    ],
-                ),
-            ],
-            system_instruction=load_skill("unit_test_generation.md"),
-        ),
-    )
-    return cached_content.name, uploaded_files
+def create_text_part(text: str) -> types.ContentUnion:
+    """Create a text part."""
+    return types.Part.from_text(text=text)
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
@@ -328,7 +347,7 @@ def build_contents_list(
     coverage_content: str,
     pytest_output: str,
 ) -> list[types.ContentUnion]:
-    """Build the dynamic contents list for the Gemini model request."""
+    """Build the dynamic contents list for the GenAI model request."""
     contents_list: list[types.ContentUnion] = []
 
     if not CACHE_ALLOWED:
@@ -338,12 +357,12 @@ def build_contents_list(
 
         contents_list.extend(
             [
-                types.Part.from_text(text=f"--- pyproject.toml ---\n{toml_content}"),
-                types.Part.from_text(
-                    text=f"--- tests/conftest.py ---\n{conftest_content}",
+                create_text_part(f"--- pyproject.toml ---\n{toml_content}"),
+                create_text_part(
+                    f"--- tests/conftest.py ---\n{conftest_content}",
                 ),
-                types.Part.from_text(
-                    text=(f"--- {source_file_path} ---\n{source_content}"),
+                create_text_part(
+                    f"--- {source_file_path} ---\n{source_content}",
                 ),
             ],
         )
@@ -368,21 +387,18 @@ def build_contents_list(
 
     contents_list.extend(
         [
-            types.Part.from_text(
-                text=(
-                    "--- Current unit test script "
-                    f"({test_filename}) ---\n{test_content}"
-                ),
+            create_text_part(
+                (f"--- Current unit test script ({test_filename}) ---\n{test_content}"),
             ),
-            types.Part.from_text(
-                text=(
+            create_text_part(
+                (
                     "--- Pytest Assertion/Execution Errors (HIGHEST PRIORITY) ---\n"
                     f"{pytest_errors}\n\n"
                     "You MUST fix these assertion or execution failures first."
                 ),
             ),
-            types.Part.from_text(
-                text=(
+            create_text_part(
+                (
                     "--- Programmatic Branch & Coverage Analysis ---\n"
                     f"{hints_summary}\n\n"
                     "--- Uncovered Code Blocks Summary ---\n"
@@ -392,16 +408,16 @@ def build_contents_list(
                     f"{coverage_content}"
                 ),
             ),
-            types.Part.from_text(
-                text=(
+            create_text_part(
+                (
                     "--- Pytest Warnings Summary ---\n"
                     f"{pytest_warnings}\n\n"
                     "Address these specific warnings if possible."
                 ),
             ),
-            types.Part.from_text(text=f"--- Pytest output ---\n{pytest_output}"),
-            types.Part.from_text(
-                text=(
+            create_text_part(f"--- Pytest output ---\n{pytest_output}"),
+            create_text_part(
+                (
                     "Analyze these, fix any failures, warnings, or collection/import "
                     "errors, and ensure tests pass with 100% coverage."
                 ),
