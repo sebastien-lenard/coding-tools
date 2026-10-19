@@ -129,29 +129,25 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
     return full_content
 
 
-def parse_pytest_results(
-    output_text: str,
-    source_file_path: str | None = None,
-) -> tuple[str, str, bool, bool, bool, str]:
-    """Extract test/coverage, syntax error flag, and traceback for the specific source file."""
-    summary = "No summary found"
-    is_syntax_error = False
-    syntax_error_details = "None"
-
-    # Check for collection / syntax errors
+def _check_pytest_syntax_error(output_text: str) -> tuple[bool, str]:
+    """Check for collection / syntax errors in pytest output."""
     if (
         "ERRORS" in output_text
         or "SyntaxError" in output_text
         or "Interrupted: 1 error during collection" in output_text
     ):
-        is_syntax_error = True
-        syntax_error_details = output_text
         logger.error(
             "[%s] Fatal Pytest Collection / Syntax Error detected:\n%s",
             "Pytest",
             output_text,
         )
+        return True, output_text
+    return False, "None"
 
+
+def _extract_pytest_summary(output_text: str) -> str:
+    """Extract summary line from pytest output."""
+    summary = "No summary found"
     for line in reversed(output_text.splitlines()):
         stripped = line.strip()
         if any(
@@ -160,29 +156,23 @@ def parse_pytest_results(
         ):
             summary = stripped
             break
+    return summary
 
-    summary_lower = summary.lower()
-    tests_passed = (
-        not is_syntax_error
-        and "failed" not in summary_lower
-        and "error" not in summary_lower
-    )
 
+def _extract_coverage_metrics(
+    output_text: str,
+    target_source_normalized: str | None,
+) -> tuple[str, bool]:
+    """Extract missing lines and 100% coverage flag from pytest output."""
     missing_lines = "None"
     is_100_percent = False
     in_coverage_section = False
-
-    # Normalize source file path representation for matching in pytest coverage output
-    target_source_normalized = (
-        Path(source_file_path).as_posix().lower() if source_file_path else None
-    )
 
     for line in output_text.splitlines():
         if "tests coverage" in line:
             in_coverage_section = True
             continue
         if in_coverage_section and ".py" in line and "TOTAL" not in line:
-            # If a specific source file path is provided, ensure this coverage row matches it
             if target_source_normalized:
                 line_normalized = line.replace("\\", "/").lower()
                 if target_source_normalized not in line_normalized:
@@ -203,6 +193,33 @@ def parse_pytest_results(
                         else f"Missing lines (Miss count: {miss_count})"
                     )
                 break
+    return missing_lines, is_100_percent
+
+
+def parse_pytest_results(
+    output_text: str,
+    source_file_path: str | None = None,
+) -> tuple[str, str, bool, bool, bool, str]:
+    """Extract test/coverage, syntax error flag, and traceback for source file."""
+    is_syntax_error, syntax_error_details = _check_pytest_syntax_error(
+        output_text,
+    )
+    summary = _extract_pytest_summary(output_text)
+
+    summary_lower = summary.lower()
+    tests_passed = (
+        not is_syntax_error
+        and "failed" not in summary_lower
+        and "error" not in summary_lower
+    )
+
+    target_source_normalized = (
+        Path(source_file_path).as_posix().lower() if source_file_path else None
+    )
+    missing_lines, is_100_percent = _extract_coverage_metrics(
+        output_text,
+        target_source_normalized,
+    )
 
     return (
         summary,
@@ -231,11 +248,23 @@ def extract_pytest_warnings(pytest_output: str) -> str:
     return cleaned or "None"
 
 
+def extract_pytest_errors(pytest_output: str) -> str:
+    """Extract lines starting with 'E ' from pytest output."""
+    lines = pytest_output.splitlines()
+    error_lines = [line for line in lines if line.startswith("E ")]
+    cleaned = "\n".join(error_lines).strip()
+    if cleaned:
+        logger.warning(
+            "Pytest Assertion/Execution Errors detected (E lines):\n%s",
+            cleaned,
+        )
+    return cleaned or "None"
+
+
 def is_syntactically_valid(code_content: str) -> bool:
     """Check if the code string is valid Python syntax."""
     try:
         ast.parse(code_content)
-
     except SyntaxError:
         return False
     return True
@@ -323,7 +352,11 @@ def generate_coverage_hints(source_file_path: str) -> list[str]:
             actual_code = source_lines[idx].strip()
 
             guard_condition = "Unknown condition"
-            for prev_idx in range(idx - 1, max(-1, idx - MAX_BACKWARD_LOOKUP), -1):
+            for prev_idx in range(
+                idx - 1,
+                max(-1, idx - MAX_BACKWARD_LOOKUP),
+                -1,
+            ):
                 if prev_idx < len(source_lines):
                     prev_line = source_lines[prev_idx].strip()
                     if prev_line.startswith("if "):
@@ -369,12 +402,27 @@ def read_local_files(
     return test_content, coverage_content, pytest_output
 
 
-def is_valid_gemini_code(code: str) -> bool:
-    """Validate that Gemini returned actual code (>5 lines and comment tag)."""
+def validate_gemini_code(code: str) -> tuple[bool, str]:
+    """Validate that Gemini returned actual code (>5 lines and comment tag).
+
+    Returns:
+        tuple[bool, str]: (is_valid, failure_reason)
+
+    """
     lines = [line for line in code.splitlines() if line.strip()]
     if len(lines) <= MIN_LINES_FOR_GEMINI_CODE:
-        return False
-    return any(line.strip().startswith("#") for line in lines)
+        return (
+            False,
+            f"Code line count ({len(lines)}) is <= {MIN_LINES_FOR_GEMINI_CODE}",
+        )
+    if not any(line.strip().startswith("#") for line in lines):
+        return (
+            False,
+            "Code is missing required comment tags (e.g., # SPDX header)",
+        )
+    if not is_syntactically_valid(code):
+        return False, "Code failed Python syntax validation (SyntaxError)"
+    return True, "Valid"
 
 
 def process_and_save_code(new_code: str, test_file_path: str, prefix: str) -> None:

@@ -275,6 +275,15 @@ def test_extract_pytest_warnings() -> None:
     assert parsers.extract_pytest_warnings(output_without_warnings) == "None"
 
 
+def test_extract_pytest_errors() -> None:
+    """Test extracting pytest errors."""
+    output_with_errors = "E   AssertionError: assert 1 == 2\nsome traceback"
+    res = parsers.extract_pytest_errors(output_with_errors)
+    assert "AssertionError" in res
+
+    assert parsers.extract_pytest_errors("no errors here") == "None"
+
+
 def test_parse_basedpyright_summary() -> None:
     """Test parsing basedpyright summary."""
     text = "\n    analyzing file...\n    0 errors, 1 warning, 0 notes\n    "
@@ -389,16 +398,27 @@ def test_read_local_files(
 
 
 @pytest.mark.parametrize(
-    ("code", "expected"),
+    ("code", "expected_valid", "expected_reason"),
     [
-        ("# comment\nline2\nline3\nline4\nline5\nline6", True),
-        ("print('hello')\n" * 10, False),
-        ("# comment", False),
+        ("# comment\nline2\nline3\nline4\nline5\nline6", True, "Valid"),
+        ("print('hello')\n" * 3, False, "Code line count"),
+        (
+            "x = 1\nx = 2\nx = 3\nx = 4\nx = 5\nx = 6",
+            False,
+            "missing required comment tags",
+        ),
+        ("# comment\nx = (\nline3\nline4\nline5\nline6", False, "SyntaxError"),
     ],
 )
-def test_is_valid_gemini_code(code: str, expected: bool) -> None:
+def test_validate_gemini_code(
+    code: str,
+    expected_valid: bool,
+    expected_reason: str,
+) -> None:
     """Test validating gemini code."""
-    assert parsers.is_valid_gemini_code(code) == expected
+    is_valid, reason = parsers.validate_gemini_code(code)
+    assert is_valid == expected_valid
+    assert expected_reason in reason
 
 
 def test_process_and_save_code(

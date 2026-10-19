@@ -1,4 +1,4 @@
-# [file relative location, e.g. tests/unit/test_gemini_remediation.py]
+# tests/unit/test_gemini_remediation.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
@@ -165,8 +165,8 @@ def test_process_gemini_remediation_success(tmp_path: Path) -> None:
     ), patch(
         "coding_tools.gemini_remediation.cleanup_files",
     ) as mock_cleanup, patch(
-        "coding_tools.gemini_remediation.is_valid_gemini_code",
-        return_value=True,
+        "coding_tools.gemini_remediation.validate_gemini_code",
+        return_value=(True, ""),
     ), patch(
         "coding_tools.gemini_remediation.process_and_save_code",
     ) as mock_save:
@@ -231,8 +231,8 @@ def test_process_gemini_remediation_invalid_code(tmp_path: Path) -> None:
     ), patch(
         "coding_tools.gemini_remediation.cleanup_files",
     ) as mock_cleanup, patch(
-        "coding_tools.gemini_remediation.is_valid_gemini_code",
-        return_value=True,
+        "coding_tools.gemini_remediation.validate_gemini_code",
+        return_value=(False, "syntax error"),
     ):
         status, _msg = _process_gemini_remediation(
             ctx, stage, GeminiRemediationContext(client, None, [], {}, "out"),
@@ -275,8 +275,8 @@ def test_process_gemini_remediation_identical_code_retry_then_success(
     with patch(
         "coding_tools.gemini_remediation.CACHE_ALLOWED", new=False,
     ), patch(
-        "coding_tools.gemini_remediation.is_valid_gemini_code",
-        return_value=True,
+        "coding_tools.gemini_remediation.validate_gemini_code",
+        return_value=(True, ""),
     ), patch(
         "coding_tools.gemini_remediation.process_and_save_code",
     ) as mock_save:
@@ -315,8 +315,8 @@ def test_process_gemini_remediation_identical_code_abort(
     ), patch(
         "coding_tools.gemini_remediation.cleanup_files",
     ) as mock_cleanup, patch(
-        "coding_tools.gemini_remediation.is_valid_gemini_code",
-        return_value=True,
+        "coding_tools.gemini_remediation.validate_gemini_code",
+        return_value=(True, ""),
     ):
         status, msg = _process_gemini_remediation(
             ctx, stage, GeminiRemediationContext(client, None, [], {}, "out"),

@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 from google.genai import errors, types
 from pydantic import BaseModel
 
-from coding_tools.parsers import extract_pytest_warnings, extract_uncovered_blocks
+from coding_tools.parsers import (
+    extract_pytest_errors,
+    extract_pytest_warnings,
+    extract_uncovered_blocks,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -197,6 +201,7 @@ def build_contents_list(
         else "None identified."
     )
 
+    pytest_errors = extract_pytest_errors(pytest_output)
     pytest_warnings = extract_pytest_warnings(pytest_output)
     test_filename = Path(test_file_path).name
 
@@ -206,6 +211,13 @@ def build_contents_list(
                 text=(
                     "--- Current unit test script "
                     f"({test_filename}) ---\n{test_content}"
+                ),
+            ),
+            types.Part.from_text(
+                text=(
+                    "--- Pytest Assertion/Execution Errors (HIGHEST PRIORITY) ---\n"
+                    f"{pytest_errors}\n\n"
+                    "You MUST fix these assertion or execution failures first."
                 ),
             ),
             types.Part.from_text(

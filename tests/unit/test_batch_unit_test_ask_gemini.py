@@ -223,8 +223,7 @@ def test_print_summary_table_multiple(
     )
 
 
-@pytest.mark.anyio
-async def test_main_file_target(tmp_path: Path) -> None:
+def test_main_file_target(tmp_path: Path) -> None:
     """Test main entry point with a single file target."""
     py_file = tmp_path / "src" / "coding_tools" / "sample.py"
     py_file.parent.mkdir(parents=True, exist_ok=True)
@@ -242,31 +241,28 @@ async def test_main_file_target(tmp_path: Path) -> None:
             "status": "SUCCESS",
             "iterations": 1,
         }
-        await butag.main()
+        butag.main()
         mock_run.assert_awaited_once()
 
 
-@pytest.mark.anyio
-async def test_main_invalid_file_target(tmp_path: Path) -> None:
+def test_main_invalid_file_target(tmp_path: Path) -> None:
     """Test main entry point with an invalid non-python file target."""
     txt_file = tmp_path / "notes.txt"
     txt_file.write_text("hello", encoding="utf-8")
 
     with patch("sys.argv", ["batch_unit_test_ask_gemini.py", str(txt_file)]):
-        await butag.main()
+        butag.main()
 
 
-@pytest.mark.anyio
-async def test_main_nonexistent_target() -> None:
+def test_main_nonexistent_target() -> None:
     """Test main entry point with a nonexistent path target."""
     with patch(
         "sys.argv", ["batch_unit_test_ask_gemini.py", "nonexistent_path_abc_123"],
     ):
-        await butag.main()
+        butag.main()
 
 
-@pytest.mark.anyio
-async def test_main_dir_target(tmp_path: Path) -> None:
+def test_main_dir_target(tmp_path: Path) -> None:
     """Test main entry point with a directory target."""
     src_dir = tmp_path / "src"
     src_dir.mkdir()
@@ -285,7 +281,7 @@ async def test_main_dir_target(tmp_path: Path) -> None:
             "status": "SUCCESS",
             "iterations": 1,
         }
-        await butag.main()
+        butag.main()
         mock_run.assert_awaited()
 
 

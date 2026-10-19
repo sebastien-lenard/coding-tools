@@ -31,11 +31,11 @@ from coding_tools.gemini_service import (
 )
 from coding_tools.parsers import (
     extract_pytest_warnings,
-    is_valid_gemini_code,
     parse_pytest_results,
     process_and_save_code,
     read_local_files,
     run_pytest_command,
+    validate_gemini_code,
 )
 
 if TYPE_CHECKING:
@@ -238,13 +238,19 @@ def _process_gemini_remediation(
             raise ValueError(msg)
 
         parsed_resp = cast("TestGenerationResponse", parsed)
-        if not is_valid_gemini_code(parsed_resp.code) or not is_syntactically_valid(
-            parsed_resp.code,
-        ):
+        is_valid, validation_reason = validate_gemini_code(parsed_resp.code)
+        if not is_valid:
             logger.warning(
-                "[%s] Gemini returned invalid/incorrect code for %s. Skipping update.",
+                "[%s] Gemini returned invalid/incorrect code for %s. "
+                "Validation failure reason: %s. Skipping update.",
                 ctx.prefix,
                 stage.name,
+                validation_reason,
+            )
+            logger.debug(
+                "[%s] Rejected Gemini code payload:\n%s",
+                ctx.prefix,
+                parsed_resp.code,
             )
             if CACHE_ALLOWED:
                 cleanup_files(rem_ctx.client, rem_ctx.uploaded_files, ctx.prefix)
