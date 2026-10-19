@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 from google.genai import types
 from google.genai.errors import ServerError
 
-from coding_tools.gemini_service import (
+from coding_tools.gemini_client import (
     CACHE_ALLOWED,
     MODEL_NAME,
     TestGenerationResponse,

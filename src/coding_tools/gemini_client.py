@@ -1,4 +1,4 @@
-# src/coding_tools/gemini_service.py
+# src/coding_tools/gemini_client.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 #
 # SPDX-License-Identifier: Apache-2.0

@@ -1,4 +1,4 @@
-# tests/unit/test_gemini_service.py
+# tests/unit/test_gemini_client.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
@@ -13,13 +13,14 @@ from unittest.mock import MagicMock
 import pytest
 from google.genai import errors
 
-import coding_tools.gemini_service as gs
+import coding_tools.gemini_client as gs
 
 
 def test_test_generation_response_model() -> None:
     """Test Pydantic model instantiation."""
     resp = gs.TestGenerationResponse(
-        message="fixed", code="print('hello')",
+        message="fixed",
+        code="print('hello')",
     )
     assert resp.message == "fixed"
     assert resp.code == "print('hello')"
@@ -32,7 +33,8 @@ def test_gemini_spinner() -> None:
 
 
 def test_load_skill(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test loading a skill file from disk using tmp_path."""
     skills_dir = tmp_path / "config" / "skills"

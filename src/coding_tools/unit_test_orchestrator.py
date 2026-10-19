@@ -15,6 +15,7 @@ from typing import Any
 from google.genai import Client, errors
 from google.genai.errors import ServerError
 
+from coding_tools.gemini_client import CACHE_ALLOWED, cleanup_files
 from coding_tools.gemini_remediation import (
     StageConfig,
     WorkflowContext,
@@ -23,7 +24,6 @@ from coding_tools.gemini_remediation import (
     run_workflow_stage,
     setup_cache,
 )
-from coding_tools.gemini_service import CACHE_ALLOWED, cleanup_files
 from coding_tools.parsers import (
     filter_ruff_output,
     parse_basedpyright_summary,
