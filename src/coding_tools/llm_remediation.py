@@ -1,4 +1,4 @@
-# src/coding_tools/gemini_remediation.py
+# src/coding_tools/llm_remediation.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 #
 # SPDX-License-Identifier: Apache-2.0

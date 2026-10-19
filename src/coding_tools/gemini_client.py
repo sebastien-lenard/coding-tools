@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Gemini API service for caching, prompts, and generation."""
+"""Gemini API service for caching, prompts, and generic structured generation."""
 
 from __future__ import annotations
 
@@ -13,9 +13,10 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from google.genai import errors, types
+from google.genai.errors import ServerError
 from pydantic import BaseModel
 
 from coding_tools.parsers import (
@@ -31,8 +32,11 @@ if TYPE_CHECKING:
     from google.genai.types import File
 
 # --- CONFIGURATION CONSTANTS ---
-CACHE_ALLOWED: bool = False  # Set to True only if using a paid tier supporting caching
+CACHE_ALLOWED: bool = False
 MODEL_NAME: str = "gemini-3.5-flash-lite"
+HTTP_SERVICE_UNAVAILABLE = 503
+
+T = TypeVar("T", bound=BaseModel)
 
 # Configure logging format and level
 logging.basicConfig(
@@ -45,8 +49,8 @@ logger = logging.getLogger(__name__)
 class TestGenerationResponse(BaseModel):
     """Define the expected JSON structure returned by Gemini."""
 
-    message: str  # Brief explanation of what was fixed or changed
-    code: str  # The clean, complete unit test Python code
+    message: str
+    code: str
 
 
 @contextmanager
@@ -108,11 +112,168 @@ def validate_file_uris(
     file_conftest: File,
     file_source: File,
 ) -> tuple[str, str, str]:
-    """Validate that uploaded file URIs are not None (satisfies TRY301)."""
+    """Validate that uploaded file URIs are not None."""
     if file_config.uri is None or file_conftest.uri is None or file_source.uri is None:
         msg = "One or more uploaded file URIs resolved to None."
         raise ValueError(msg)
     return file_config.uri, file_conftest.uri, file_source.uri
+
+
+def build_config(
+    response_schema: type[BaseModel],
+    system_instruction: str | None = None,
+    cache_name: str | None = None,
+) -> dict[str, object]:
+    """Centralized configuration factory for structured LLM execution."""
+    config_kwargs: dict[str, object] = {
+        "thinking_config": types.ThinkingConfig(
+            thinking_level=types.ThinkingLevel.MEDIUM,
+        ),
+        "response_mime_type": "application/json",
+        "response_schema": response_schema,
+        "tools": None,
+        "automatic_function_calling": types.AutomaticFunctionCallingConfig(
+            disable=True,
+        ),
+    }
+
+    if CACHE_ALLOWED and cache_name is not None:
+        config_kwargs["cached_content"] = cache_name
+    elif system_instruction is not None:
+        config_kwargs["system_instruction"] = system_instruction
+
+    return config_kwargs
+
+
+def call_gemini_with_retry(
+    client: Client,
+    contents_list: list[types.ContentUnion],
+    config_kwargs: dict[str, object],
+    prefix: str,
+    spinner_msg: str,
+) -> types.GenerateContentResponse:
+    """Execute Gemini generate_content call with robust ServerError retry logic."""
+    max_retries = 3
+    response: types.GenerateContentResponse | None = None
+    for attempt in range(max_retries):
+        try:
+            with gemini_spinner(spinner_msg, prefix):
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=contents_list,
+                    config=types.GenerateContentConfig(
+                        **dict[str, Any](config_kwargs),
+                    ),
+                )
+        except ServerError as e:
+            if e.code == HTTP_SERVICE_UNAVAILABLE and attempt < max_retries - 1:
+                sleep_time = (2**attempt) * 2
+                logger.warning(
+                    "[%s] 503 Service Unavailable. Retrying in %ds (Attempt %d/%d)...",
+                    prefix,
+                    sleep_time,
+                    attempt + 1,
+                    max_retries,
+                )
+                time.sleep(sleep_time)
+                continue
+            logger.exception(
+                "[%s] Gemini Server Error persist after retries",
+                prefix,
+            )
+            raise
+        else:
+            break
+
+    if response is None:
+        msg = "Failed to generate content after max retries due to server errors."
+        raise RuntimeError(msg)
+    return response
+
+
+def execute_structured_request(
+    client: Client,
+    contents_list: list[types.ContentUnion],
+    response_schema: type[T],
+    prefix: str,
+    spinner_msg: str,
+    system_instruction: str | None = None,
+    cache_name: str | None = None,
+) -> T:
+    """High-level generic wrapper returning a validated Pydantic model response."""
+    config_kwargs = build_config(
+        response_schema=response_schema,
+        system_instruction=system_instruction,
+        cache_name=cache_name,
+    )
+
+    response = call_gemini_with_retry(
+        client=client,
+        contents_list=contents_list,
+        config_kwargs=config_kwargs,
+        prefix=prefix,
+        spinner_msg=spinner_msg,
+    )
+
+    parsed = response.parsed
+    if parsed is None:
+        msg = f"Gemini response did not conform to {response_schema.__name__} schema."
+        raise ValueError(msg)
+
+    return response_schema.model_validate(parsed)
+
+
+def setup_cache(
+    client: Client,
+    source_file_path: str,
+    prefix: str,
+) -> tuple[str | None, list[types.File | None]]:
+    """Set up optional Gemini file caching."""
+    uploaded_files: list[types.File | None] = []
+    if not CACHE_ALLOWED:
+        return None, uploaded_files
+
+    logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
+    file_config = upload_static_file(client, "project.toml", prefix)
+    file_conftest = upload_static_file(client, "tests/conftest.py", prefix)
+    file_source = upload_static_file(client, source_file_path, prefix)
+    uploaded_files.extend([file_config, file_conftest, file_source])
+
+    config_uri, conftest_uri, source_uri = validate_file_uris(
+        file_config,
+        file_conftest,
+        file_source,
+    )
+
+    logger.info("[%s] Creating context cache...", prefix)
+    cached_content = client.caches.create(
+        model=MODEL_NAME,
+        config=types.CreateCachedContentConfig(
+            display_name=f"unit-test-context-{prefix}",
+            ttl="3600s",
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_uri(
+                            file_uri=source_uri,
+                            mime_type="text/plain",
+                        ),
+                        types.Part.from_uri(
+                            file_uri=config_uri,
+                            mime_type="text/plain",
+                        ),
+                        types.Part.from_uri(
+                            file_uri=conftest_uri,
+                            mime_type="text/plain",
+                        ),
+                    ],
+                ),
+            ],
+            system_instruction=load_skill("unit_test_generation.md"),
+        ),
+    )
+    return cached_content.name, uploaded_files
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:

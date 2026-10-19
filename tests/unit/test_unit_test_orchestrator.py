@@ -12,20 +12,29 @@ import pytest
 from google.genai.errors import APIError, ServerError
 
 from coding_tools import unit_test_orchestrator
-from coding_tools.gemini_remediation import WorkflowStatus
+from coding_tools.llm_remediation import WorkflowStatus
 
 
 def test_evaluate_stage_status() -> None:
     """Test _evaluate_stage_status handles FIXED, FAILED, and other statuses."""
     assert unit_test_orchestrator._evaluate_stage_status(
-        WorkflowStatus.FIXED, "TestStage", "FIXED",
+        WorkflowStatus.FIXED,
+        "TestStage",
+        "FIXED",
     ) == (False, "TestStage", "FIXED")
     assert unit_test_orchestrator._evaluate_stage_status(
-        WorkflowStatus.FAILED, "TestStage", "ERROR",
+        WorkflowStatus.FAILED,
+        "TestStage",
+        "ERROR",
     ) == (False, "TestStage", "ERROR")
-    assert unit_test_orchestrator._evaluate_stage_status(
-        WorkflowStatus.SUCCESS, "TestStage", "SUCCESS",
-    ) is None
+    assert (
+        unit_test_orchestrator._evaluate_stage_status(
+            WorkflowStatus.SUCCESS,
+            "TestStage",
+            "SUCCESS",
+        )
+        is None
+    )
 
 
 @patch("coding_tools.unit_test_orchestrator.run_pytest_stage")
@@ -39,7 +48,10 @@ def test_run_stage_chain_pytest_failure(
     client = MagicMock()
     ctx = MagicMock()
     success, stage, status = unit_test_orchestrator._run_stage_chain(
-        client, "cache", [], ctx,
+        client,
+        "cache",
+        [],
+        ctx,
     )
     assert success is False
     assert stage == "Pytest"
@@ -59,7 +71,10 @@ def test_run_stage_chain_basedpyright_failure(
     client = MagicMock()
     ctx = MagicMock()
     success, stage, status = unit_test_orchestrator._run_stage_chain(
-        client, "cache", [], ctx,
+        client,
+        "cache",
+        [],
+        ctx,
     )
     assert success is False
     assert stage == "Basedpyright"
@@ -81,7 +96,10 @@ def test_run_stage_chain_ruff_failure(
     client = MagicMock()
     ctx = MagicMock()
     success, stage, status = unit_test_orchestrator._run_stage_chain(
-        client, "cache", [], ctx,
+        client,
+        "cache",
+        [],
+        ctx,
     )
     assert success is False
     assert stage == "Ruff"
@@ -100,7 +118,10 @@ def test_run_stage_chain_success(
     client = MagicMock()
     ctx = MagicMock()
     success, stage, status = unit_test_orchestrator._run_stage_chain(
-        client, "cache", [], ctx,
+        client,
+        "cache",
+        [],
+        ctx,
     )
     assert success is True
     assert stage == "ALL_STAGES"
