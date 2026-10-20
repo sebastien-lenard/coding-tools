@@ -61,7 +61,7 @@ def test_build_workflow_contents_custom(tmp_path: Path) -> None:
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     custom_contents = [MagicMock()]
     stage = StageConfig(
@@ -73,7 +73,11 @@ def test_build_workflow_contents_custom(tmp_path: Path) -> None:
     )
     remediator = LLMRemediator(client=MagicMock())
     contents = remediator._build_workflow_contents(
-        ctx, stage, "print('test')", "output", 1,
+        ctx,
+        stage,
+        "print('test')",
+        "output",
+        1,
     )
     assert contents[0] == custom_contents[0]
     assert len(contents) == 2
@@ -87,7 +91,7 @@ def test_build_workflow_contents_default(tmp_path: Path) -> None:
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="DefaultStage",
@@ -98,14 +102,18 @@ def test_build_workflow_contents_default(tmp_path: Path) -> None:
     )
     remediator = LLMRemediator(client=MagicMock())
     contents = remediator._build_workflow_contents(
-        ctx, stage, "print('test')", "output", 0,
+        ctx,
+        stage,
+        "print('test')",
+        "output",
+        0,
     )
     assert len(contents) == 3
 
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch("coding_tools.llm_remediation.process_and_save_code")
-@patch("coding_tools.llm_remediation.validate_gemini_code", return_value=(True, ""))
+@patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
 @patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_success(
     mock_validate: MagicMock,
@@ -120,7 +128,7 @@ def test_process_llm_remediation_success(
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -134,7 +142,11 @@ def test_process_llm_remediation_success(
 
     remediator = LLMRemediator(client=mock_client)
     status, msg = remediator._process_llm_remediation(
-        ctx, stage, "cache_name", ["file1"], "output",
+        ctx,
+        stage,
+        "cache_name",
+        ["file1"],
+        "output",
     )
     assert status == WorkflowStatus.FIXED
     assert msg == "FIXED"
@@ -145,7 +157,8 @@ def test_process_llm_remediation_success(
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_exception(
-    mock_load: MagicMock, tmp_path: Path,
+    mock_load: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test LLM remediation when an exception occurs."""
     test_file = tmp_path / "test_foo.py"
@@ -154,7 +167,7 @@ def test_process_llm_remediation_exception(
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -169,7 +182,11 @@ def test_process_llm_remediation_exception(
 
     remediator = LLMRemediator(client=mock_client)
     status, msg = remediator._process_llm_remediation(
-        ctx, stage, "cache_name", ["file1"], "output",
+        ctx,
+        stage,
+        "cache_name",
+        ["file1"],
+        "output",
     )
     assert status == WorkflowStatus.FAILED
     assert msg == "FAILED"
@@ -178,12 +195,14 @@ def test_process_llm_remediation_exception(
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch(
-    "coding_tools.llm_remediation.validate_gemini_code",
+    "coding_tools.llm_remediation.validate_llm_code",
     return_value=(False, "syntax error"),
 )
 @patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_invalid_code(
-    mock_validate: MagicMock, mock_load: MagicMock, tmp_path: Path,
+    mock_validate: MagicMock,
+    mock_load: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test LLM remediation handling invalid generated code."""
     test_file = tmp_path / "test_foo.py"
@@ -192,7 +211,7 @@ def test_process_llm_remediation_invalid_code(
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -206,7 +225,11 @@ def test_process_llm_remediation_invalid_code(
 
     remediator = LLMRemediator(client=mock_client)
     status, msg = remediator._process_llm_remediation(
-        ctx, stage, "cache_name", ["file1"], "output",
+        ctx,
+        stage,
+        "cache_name",
+        ["file1"],
+        "output",
     )
     assert status == WorkflowStatus.FAILED
     assert msg == "FAILED"
@@ -214,7 +237,7 @@ def test_process_llm_remediation_invalid_code(
 
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
-@patch("coding_tools.llm_remediation.validate_gemini_code", return_value=(True, ""))
+@patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
 @patch("coding_tools.llm_remediation.process_and_save_code")
 @patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_identical_retry_then_success(
@@ -230,7 +253,7 @@ def test_process_llm_remediation_identical_retry_then_success(
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -248,7 +271,11 @@ def test_process_llm_remediation_identical_retry_then_success(
 
     remediator = LLMRemediator(client=mock_client)
     status, msg = remediator._process_llm_remediation(
-        ctx, stage, "cache_name", ["file1"], "output",
+        ctx,
+        stage,
+        "cache_name",
+        ["file1"],
+        "output",
     )
     assert status == WorkflowStatus.FIXED
     assert msg == "FIXED"
@@ -256,10 +283,12 @@ def test_process_llm_remediation_identical_retry_then_success(
 
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
-@patch("coding_tools.llm_remediation.validate_gemini_code", return_value=(True, ""))
+@patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
 @patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_identical_max_reached(
-    mock_validate: MagicMock, mock_load: MagicMock, tmp_path: Path,
+    mock_validate: MagicMock,
+    mock_load: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test max retry limit reached when code remains identical."""
     test_file = tmp_path / "test_foo.py"
@@ -268,7 +297,7 @@ def test_process_llm_remediation_identical_max_reached(
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -282,7 +311,11 @@ def test_process_llm_remediation_identical_max_reached(
 
     remediator = LLMRemediator(client=mock_client)
     status, msg = remediator._process_llm_remediation(
-        ctx, stage, "cache_name", ["file1"], "output",
+        ctx,
+        stage,
+        "cache_name",
+        ["file1"],
+        "output",
     )
     assert status == WorkflowStatus.FAILED
     assert msg == "No solution"
@@ -295,7 +328,7 @@ def test_run_workflow_stage_success(tmp_path: Path) -> None:
         test_file_path=str(tmp_path / "t.py"),
         source_file_path="s.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -310,13 +343,13 @@ def test_run_workflow_stage_success(tmp_path: Path) -> None:
     assert msg == "SUCCESS"
 
 
-def test_run_workflow_stage_fail_no_gemini(tmp_path: Path) -> None:
-    """Test workflow stage failure when Gemini is disallowed."""
+def test_run_workflow_stage_fail_no_llm(tmp_path: Path) -> None:
+    """Test workflow stage failure when LLM is disallowed."""
     ctx = WorkflowContext(
         test_file_path=str(tmp_path / "t.py"),
         source_file_path="s.py",
         prefix="pref",
-        allow_gemini=False,
+        allow_llm=False,
     )
     stage = StageConfig(
         name="Stage",
@@ -337,14 +370,15 @@ def test_run_workflow_stage_fail_no_gemini(tmp_path: Path) -> None:
     return_value=(WorkflowStatus.FIXED, "FIXED"),
 )
 def test_run_workflow_stage_remediation(
-    mock_process: MagicMock, tmp_path: Path,
+    mock_process: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test workflow stage triggering remediation."""
     ctx = WorkflowContext(
         test_file_path=str(tmp_path / "t.py"),
         source_file_path="s.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     stage = StageConfig(
         name="Stage",
@@ -368,7 +402,7 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
         test_file_path=str(test_file),
         source_file_path="source.py",
         prefix="pref",
-        allow_gemini=True,
+        allow_llm=True,
     )
     remediator = LLMRemediator(client=MagicMock())
 
@@ -393,10 +427,14 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
         res, _name, _msg = remediator.run_pytest_stage(None, [], ctx)
         assert res == WorkflowStatus.SUCCESS
         mock_run_command.assert_called_once_with(
-            str(test_file), "source.py", "pref",
+            str(test_file),
+            "source.py",
+            "pref",
         )
         mock_read_files.assert_called_once_with(
-            str(test_file), "source.py", "pref",
+            str(test_file),
+            "source.py",
+            "pref",
         )
 
         mock_parse_results.return_value = (
@@ -410,8 +448,7 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
         with patch.object(
             remediator,
             "run_workflow_stage",
-            side_effect=lambda c, u, x, s:
-            (s.is_success("py_out"), s.name, "res"),
+            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
         ):
             res, _, _ = remediator.run_pytest_stage(None, [], ctx)
             assert res is False
@@ -421,8 +458,7 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
         with patch.object(
             remediator,
             "run_workflow_stage",
-            side_effect=lambda c, u, x, s:
-            (s.is_success("py_out"), s.name, "res"),
+            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
         ):
             res, _, _ = remediator.run_pytest_stage(None, [], ctx)
             assert res is True
@@ -439,8 +475,7 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
         with patch.object(
             remediator,
             "run_workflow_stage",
-            side_effect=lambda c, u, x, s:
-            (s.is_success("py_out"), s.name, "res"),
+            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
         ):
             res, _, _ = remediator.run_pytest_stage(None, [], ctx)
             assert res is False
@@ -473,7 +508,10 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
             stage = stage_config_holder["stage"]
 
             contents_syntax = stage.build_custom_contents(
-                "t.py", "s.py", "tc", "py_out",
+                "t.py",
+                "s.py",
+                "tc",
+                "py_out",
             )
             assert len(contents_syntax) == 3
 
@@ -487,6 +525,9 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
             )
             mock_build_contents.return_value = ["default_part"]
             contents_normal = stage.build_custom_contents(
-                "t.py", "s.py", "tc", "py_out",
+                "t.py",
+                "s.py",
+                "tc",
+                "py_out",
             )
             assert contents_normal == ["default_part"]

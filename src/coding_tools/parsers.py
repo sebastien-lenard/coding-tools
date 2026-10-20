@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 MIN_PARTS_FOR_COVERAGE = 3
 MIN_PARTS_WITH_MISSING = 4
 MAX_BACKWARD_LOOKUP = 5
-MIN_LINES_FOR_GEMINI_CODE = 5
+MIN_LINES_FOR_LLM_CODE = 5
 
 
 def run_pytest_command(
@@ -402,18 +402,18 @@ def read_local_files(
     return test_content, coverage_content, pytest_output
 
 
-def validate_gemini_code(code: str) -> tuple[bool, str]:
-    """Validate that Gemini returned actual code (>5 lines and comment tag).
+def validate_llm_code(code: str) -> tuple[bool, str]:
+    """Validate the LLM returned actual code (>5 lines and comment tag).
 
     Returns:
         tuple[bool, str]: (is_valid, failure_reason)
 
     """
     lines = [line for line in code.splitlines() if line.strip()]
-    if len(lines) <= MIN_LINES_FOR_GEMINI_CODE:
+    if len(lines) <= MIN_LINES_FOR_LLM_CODE:
         return (
             False,
-            f"Code line count ({len(lines)}) is <= {MIN_LINES_FOR_GEMINI_CODE}",
+            f"Code line count ({len(lines)}) is <= {MIN_LINES_FOR_LLM_CODE}",
         )
     if not any(line.strip().startswith("#") for line in lines):
         return (

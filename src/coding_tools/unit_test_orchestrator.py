@@ -116,7 +116,7 @@ def execute_workflow(
     test_file_path: str = "tests/unit/test_dummy_target.py",
     source_file_path: str = "src/coding_tools/dummy_target.py",
     *,
-    allow_gemini: bool = True,
+    allow_llm: bool = True,
 ) -> tuple[bool, str, str]:
     """Execute automated test generation, type checking, and linting workflow.
 
@@ -125,7 +125,7 @@ def execute_workflow(
 
     """
     prefix = Path(test_file_path).name
-    ctx = WorkflowContext(test_file_path, source_file_path, prefix, allow_gemini)
+    ctx = WorkflowContext(test_file_path, source_file_path, prefix, allow_llm)
 
     remediator = LLMRemediator()
 
@@ -148,7 +148,7 @@ def execute_workflow(
             remediator.client.cleanup_files(uploaded_files, prefix)
     except (ServerError, errors.APIError):
         logger.exception(
-            "[%s] Gemini API / Server Error encountered",
+            "[%s] LLM API / Server Error encountered",
             prefix,
         )
         return False, "Pytest/Coverage", "API_ERROR"

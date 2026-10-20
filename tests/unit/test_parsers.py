@@ -248,7 +248,8 @@ def test_parse_pytest_results_with_source_filter() -> None:
         "=== 1 passed ==="
     )
     _, missing, _, is_100, _, _ = parsers.parse_pytest_results(
-        output, source_file_path="src/coding_tools/foo.py",
+        output,
+        source_file_path="src/coding_tools/foo.py",
     )
     assert is_100 is True
     assert missing == "None (100% coverage)"
@@ -287,10 +288,7 @@ def test_extract_pytest_errors() -> None:
 def test_parse_basedpyright_summary() -> None:
     """Test parsing basedpyright summary."""
     text = "\n    analyzing file...\n    0 errors, 1 warning, 0 notes\n    "
-    assert (
-        parsers.parse_basedpyright_summary(text)
-        == "0 errors, 1 warning, 0 notes"
-    )
+    assert parsers.parse_basedpyright_summary(text) == "0 errors, 1 warning, 0 notes"
     assert parsers.parse_basedpyright_summary("no info") == "No summary found"
 
 
@@ -323,9 +321,7 @@ def test_extract_uncovered_blocks() -> None:
     assert blocks[0].strip() == "! line 2 uncovered"
     assert blocks[1].strip() == "! line 5 alone"
 
-    cov_text_trailing = (
-        "\n    line 1\n    ! line 2 trailing\n    ! line 3 trailing"
-    )
+    cov_text_trailing = "\n    line 1\n    ! line 2 trailing\n    ! line 3 trailing"
     blocks_trailing = parsers.extract_uncovered_blocks(cov_text_trailing)
     assert len(blocks_trailing) == 1
     assert blocks_trailing[0].strip() == "! line 2 trailing"
@@ -410,13 +406,13 @@ def test_read_local_files(
         ("# comment\nx = (\nline3\nline4\nline5\nline6", False, "SyntaxError"),
     ],
 )
-def test_validate_gemini_code(
+def test_validate_llm_code(
     code: str,
     expected_valid: bool,
     expected_reason: str,
 ) -> None:
-    """Test validating gemini code."""
-    is_valid, reason = parsers.validate_gemini_code(code)
+    """Test validating LLM code."""
+    is_valid, reason = parsers.validate_llm_code(code)
     assert is_valid == expected_valid
     assert expected_reason in reason
 

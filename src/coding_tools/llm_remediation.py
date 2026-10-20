@@ -29,7 +29,7 @@ from coding_tools.parsers import (
     process_and_save_code,
     read_local_files,
     run_pytest_command,
-    validate_gemini_code,
+    validate_llm_code,
 )
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ class WorkflowContext:
     test_file_path: str
     source_file_path: str
     prefix: str
-    allow_gemini: bool
+    allow_llm: bool
 
 
 @dataclass
@@ -190,7 +190,7 @@ class LLMRemediator:
                     self.client.cleanup_files(uploaded_files, ctx.prefix)
                 return WorkflowStatus.FAILED, "FAILED"
 
-            is_valid, validation_reason = validate_gemini_code(parsed_resp.code)
+            is_valid, validation_reason = validate_llm_code(parsed_resp.code)
             if not is_valid:
                 logger.warning(
                     "[%s] LLM returned invalid/incorrect code for %s. "
@@ -254,7 +254,7 @@ class LLMRemediator:
             logger.info("[%s] %s passed cleanly.", ctx.prefix, stage.name)
             return WorkflowStatus.SUCCESS, stage.name, "SUCCESS"
 
-        if not ctx.allow_gemini:
+        if not ctx.allow_llm:
             logger.warning(
                 "[%s] %s failed after all LLM authorized calls.",
                 ctx.prefix,

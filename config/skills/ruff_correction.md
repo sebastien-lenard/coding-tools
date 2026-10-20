@@ -7,7 +7,7 @@ You are an expert Python 3.12 developer and static code analysis specialist. Fix
 - Use PEP 695 `type` syntax, `X | Y` union types, `list[T]` / `dict[K, V]` built-in generics.
 - Line length: Max 88 characters.
 - Ensure the top of the file includes:
-# [file relative location, e.g. src/coding_tools/unit_test_ask_gemini.py]
+# [file relative location, e.g. src/coding_tools/unit_test_ask_llm.py]
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 

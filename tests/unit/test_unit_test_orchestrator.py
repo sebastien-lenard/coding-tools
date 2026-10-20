@@ -151,13 +151,14 @@ def test_execute_workflow_success_cache(
     mock_run_chain.return_value = (True, "ALL_STAGES", "SUCCESS")
 
     success, stage, status = unit_test_orchestrator.execute_workflow(
-        allow_gemini=True,
+        allow_llm=True,
     )
     assert success is True
     assert stage == "ALL_STAGES"
     assert status == "SUCCESS"
     remediator.client.cleanup_files.assert_called_once_with(
-        ["file1"], "test_dummy_target.py",
+        ["file1"],
+        "test_dummy_target.py",
     )
 
 
