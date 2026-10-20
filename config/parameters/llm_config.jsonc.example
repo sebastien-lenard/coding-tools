@@ -1,0 +1,22 @@
+// config/parameters/llm_config.jsonc.example
+{
+    // Global fallback default model
+    "default_model": "gemini-3.5-flash-lite",
+    
+    // User global toggle to activate caching when the provider supports it
+    "enable_caching": false,
+
+    // Providers configuration mapping
+    "providers": {
+        "gemini": {
+            "adapter": "coding_tools.gemini_client:GeminiClientAdapter",
+            "default_model": "gemini-3.5-flash-lite",
+            "supports_caching": true,
+            "models": [
+                "gemini-3.5-flash-lite",
+                "gemini-1.5-pro",
+                "gemini-1.5-flash"
+            ]
+        }
+    }
+}

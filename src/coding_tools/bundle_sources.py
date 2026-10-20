@@ -6,7 +6,6 @@
 import argparse
 import logging
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +30,8 @@ class SourceBundler(BaseModel):
     verbose: bool = False
 
     _default_output_name: ClassVar[str] = "src_files.txt"
+    # Define allowed source file extensions in the src directory
+    _allowed_extensions: ClassVar[set[str]] = {".py", ".pyx", ".pxd", ".pyi"}
 
     @property
     def target_output_path(self) -> Path:
@@ -77,17 +78,8 @@ class SourceBundler(BaseModel):
             )
             return False
 
-        # Matches the filepath line and the '---' line at the start of each block
-        pattern = r"^[^\r\n]+\r?\n---\r?\n"
-        cleaned_content = re.sub(
-            pattern,
-            "",
-            combined_content,
-            flags=re.MULTILINE,
-        )
-
         try:
-            output_path.write_text(cleaned_content, encoding="utf-8")
+            output_path.write_text(combined_content, encoding="utf-8")
         except OSError:
             logger.exception(
                 "Failed to write bundled output to: %s",
@@ -111,31 +103,39 @@ class SourceBundler(BaseModel):
         return True
 
     def _run_files_to_prompt(self) -> str:
-        """Execute files-to-prompt commands against source code and config files."""
-        # 1. Scan inside the project's src directory
-        cmd_src = [
-            "uvx",
-            "files-to-prompt",
-            str(self.src_path),
-            "--ignore",
-            "__pycache__",
-            "--ignore",
-            ".git",
-            "--ignore",
-            "venv",
-        ]
-        logger.info("Running command: %s", " ".join(cmd_src))
-        result_src = subprocess.run(  # noqa: S603
-            cmd_src,
-            capture_output=True,
-            text=True,
-            check=True,
-            encoding="utf-8",
-        )
+        """Execute files-to-prompt commands against explicitly filtered source files."""
+        accumulated_output = ""
 
-        accumulated_output = result_src.stdout
+        # Gather files matching allowed extensions, ignoring junk directories
+        ignore_dirs = {"__pycache__", ".git", "venv"}
+        source_files = []
 
-        # 2. Conditionally scan specific target files if they exist
+        for path in self.src_path.rglob("*"):
+            if any(part in ignore_dirs for part in path.parts):
+                continue
+            if path.is_file() and path.suffix in self._allowed_extensions:
+                source_files.append(path)
+
+        # Sort for deterministic output ordering
+        source_files.sort()
+
+        if source_files:
+            cmd_src = [
+                "uvx",
+                "files-to-prompt",
+                *[str(p) for p in source_files],
+            ]
+            logger.info("Running command for source files count: %d", len(source_files))
+            result_src = subprocess.run(  # noqa: S603
+                cmd_src,
+                capture_output=True,
+                text=True,
+                check=True,
+                encoding="utf-8",
+            )
+            accumulated_output += result_src.stdout
+
+        # Conditionally scan specific target files if they exist
         optional_files = [
             "pyproject.toml",
             ".env.example",
