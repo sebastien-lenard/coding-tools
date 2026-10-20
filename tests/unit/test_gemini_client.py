@@ -12,13 +12,21 @@ from unittest.mock import MagicMock
 
 import pytest
 from google.genai import errors
+from pydantic import BaseModel
 
 import coding_tools.gemini_client as gs
 
 
-def test_test_generation_response_model() -> None:
+class DummyResponse(BaseModel):
+    """Dummy pydantic model for testing structured generation."""
+
+    message: str
+    code: str
+
+
+def test_dummy_response_model() -> None:
     """Test Pydantic model instantiation."""
-    resp = gs.TestGenerationResponse(
+    resp = DummyResponse(
         message="fixed",
         code="print('hello')",
     )
@@ -66,7 +74,7 @@ def test_cleanup_files_success() -> None:
     f2 = None
     f3 = object()  # Does not have 'name' attribute
 
-    adapter = gs.GeminiClientAdapter()
+    adapter = gs.GeminiClientAdapter(model_name="test-model")
     adapter.client = mock_client
     adapter.cleanup_files([f1, f2, f3], "TEST")
     mock_client.files.delete.assert_called_once_with(name="files/123")
@@ -82,7 +90,7 @@ def test_cleanup_files_api_error() -> None:
     api_err.message = "Failed"
     mock_client.files.delete.side_effect = api_err
 
-    adapter = gs.GeminiClientAdapter()
+    adapter = gs.GeminiClientAdapter(model_name="test-model")
     adapter.client = mock_client
     adapter.cleanup_files([f1], "TEST")
     mock_client.files.delete.assert_called_once_with(name="files/123")
@@ -138,9 +146,9 @@ def test_build_config(
     expected_keys: list[str],
 ) -> None:
     """Test build_config with various cache and system instruction combinations."""
-    monkeypatch.setattr(gs, "CACHE_ALLOWED", cache_allowed_val)
+    monkeypatch.setattr(gs, "is_caching_allowed", lambda _provider: cache_allowed_val)
     config = gs.build_config(
-        response_schema=gs.TestGenerationResponse,
+        response_schema=DummyResponse,
         system_instruction=sys_instruction,
         cache_name=cache_name,
     )
@@ -157,13 +165,15 @@ def test_call_gemini_with_retry_success() -> None:
     mock_response = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
 
-    res = gs.call_gemini_with_retry(
+    params = gs.RetryRequestParameters(
         client=mock_client,
+        model_name="gemini-model",
         contents_list=[],
         config_kwargs={},
         prefix="TEST",
         spinner_msg="Waiting",
     )
+    res = gs.call_gemini_with_retry(params)
     assert res == mock_response
 
 
@@ -178,13 +188,15 @@ def test_call_gemini_with_retry_503_retry_then_success(
     err_503.code = 503
     mock_client.models.generate_content.side_effect = [err_503, mock_response]
 
-    res = gs.call_gemini_with_retry(
+    params = gs.RetryRequestParameters(
         client=mock_client,
+        model_name="gemini-model",
         contents_list=[],
         config_kwargs={},
         prefix="TEST",
         spinner_msg="Waiting",
     )
+    res = gs.call_gemini_with_retry(params)
     assert res == mock_response
 
 
@@ -196,14 +208,16 @@ def test_call_gemini_with_retry_503_exhausted(monkeypatch: pytest.MonkeyPatch) -
     err_503.code = 503
     mock_client.models.generate_content.side_effect = [err_503, err_503, err_503]
 
+    params = gs.RetryRequestParameters(
+        client=mock_client,
+        model_name="gemini-model",
+        contents_list=[],
+        config_kwargs={},
+        prefix="TEST",
+        spinner_msg="Waiting",
+    )
     with pytest.raises(errors.ServerError):
-        gs.call_gemini_with_retry(
-            client=mock_client,
-            contents_list=[],
-            config_kwargs={},
-            prefix="TEST",
-            spinner_msg="Waiting",
-        )
+        gs.call_gemini_with_retry(params)
 
 
 def test_call_gemini_with_retry_other_server_error() -> None:
@@ -213,31 +227,35 @@ def test_call_gemini_with_retry_other_server_error() -> None:
     err_500.code = 500
     mock_client.models.generate_content.side_effect = err_500
 
+    params = gs.RetryRequestParameters(
+        client=mock_client,
+        model_name="gemini-model",
+        contents_list=[],
+        config_kwargs={},
+        prefix="TEST",
+        spinner_msg="Waiting",
+    )
     with pytest.raises(errors.ServerError):
-        gs.call_gemini_with_retry(
-            client=mock_client,
-            contents_list=[],
-            config_kwargs={},
-            prefix="TEST",
-            spinner_msg="Waiting",
-        )
+        gs.call_gemini_with_retry(params)
 
 
 def test_call_gemini_with_retry_response_none() -> None:
     """Test RuntimeError when response is None after retries."""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = None
+    params = gs.RetryRequestParameters(
+        client=mock_client,
+        model_name="gemini-model",
+        contents_list=[],
+        config_kwargs={},
+        prefix="TEST",
+        spinner_msg="Waiting",
+    )
     with pytest.raises(
         RuntimeError,
         match="Failed to generate content after max retries",
     ):
-        gs.call_gemini_with_retry(
-            client=mock_client,
-            contents_list=[],
-            config_kwargs={},
-            prefix="TEST",
-            spinner_msg="Waiting",
-        )
+        gs.call_gemini_with_retry(params)
 
 
 def test_generate_structured_response_parsed_none() -> None:
@@ -247,11 +265,11 @@ def test_generate_structured_response_parsed_none() -> None:
     mock_response.parsed = None
     mock_client.models.generate_content.return_value = mock_response
 
-    adapter = gs.GeminiClientAdapter()
+    adapter = gs.GeminiClientAdapter(model_name="test-model")
     adapter.client = mock_client
 
     options = MagicMock()
-    options.response_schema = gs.TestGenerationResponse
+    options.response_schema = DummyResponse
     options.system_instruction = None
     options.cache_name = None
     options.prefix = "TEST"
@@ -268,30 +286,35 @@ def test_generate_structured_response_success() -> None:
     mock_response.parsed = {"message": "ok", "code": "pass"}
     mock_client.models.generate_content.return_value = mock_response
 
-    adapter = gs.GeminiClientAdapter()
+    adapter = gs.GeminiClientAdapter(model_name="test-model")
     adapter.client = mock_client
 
     options = MagicMock()
-    options.response_schema = gs.TestGenerationResponse
+    options.response_schema = DummyResponse
     options.system_instruction = None
     options.cache_name = None
     options.prefix = "TEST"
     options.spinner_msg = "Waiting"
 
     res = adapter.generate_structured_response([], options)
-    assert isinstance(res, gs.TestGenerationResponse)
+    assert isinstance(res, DummyResponse)
     assert res.message == "ok"
 
 
-def test_create_text_part() -> None:
-    """Test create_text_part helper."""
-    part = gs.create_text_part("test text")
-    assert part is not None
+def test_gemini_client_adapter_model_name_explicit() -> None:
+    """Test GeminiClientAdapter with explicit model_name."""
+    adapter = gs.GeminiClientAdapter(model_name="custom-model")
+    assert adapter.model_name == "custom-model"
 
 
 def test_setup_cache_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Test setup_cache when CACHE_ALLOWED is True."""
-    monkeypatch.setattr(gs, "CACHE_ALLOWED", True)
+    """Test setup_cache when is_caching_allowed is True."""
+    monkeypatch.setattr(gs, "is_caching_allowed", lambda _provider: True)
+    monkeypatch.setattr(
+        gs,
+        "get_provider_mapping",
+        lambda: {"gemini": {"default_model": "gemini-test"}},
+    )
     monkeypatch.chdir(tmp_path)
 
     skills_dir = tmp_path / "config" / "skills"
@@ -327,8 +350,8 @@ def test_setup_cache_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 
 def test_setup_cache_disabled() -> None:
-    """Test setup_cache when CACHE_ALLOWED is False."""
-    adapter = gs.GeminiClientAdapter()
+    """Test setup_cache when is_caching_allowed is False."""
+    adapter = gs.GeminiClientAdapter(model_name="test-model")
     cache_name, uploaded = adapter.setup_cache("dummy.py", "TEST")
     assert cache_name is None
     assert uploaded == []
@@ -379,7 +402,7 @@ def test_build_contents_list(
     cache_allowed: bool,
 ) -> None:
     """Test building the contents list with cache allowed True and False."""
-    monkeypatch.setattr(gs, "CACHE_ALLOWED", cache_allowed)
+    monkeypatch.setattr(gs, "is_caching_allowed", lambda _provider: cache_allowed)
 
     pyproj = tmp_path / "pyproject.toml"
     pyproj.write_text("[project]", encoding="utf-8")

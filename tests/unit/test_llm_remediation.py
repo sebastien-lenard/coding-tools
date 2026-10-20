@@ -4,17 +4,28 @@
 
 """Unit tests for llm_remediation.py achieving 100% coverage."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from coding_tools.gemini_client import TestGenerationResponse as TGResponse
 from coding_tools.llm_remediation import (
     LLMRemediator,
     StageConfig,
     WorkflowContext,
     WorkflowStatus,
 )
+
+
+@dataclass
+class GeminiResponse:
+    """Mock response structure for Gemini API responses."""
+
+    code: str
+    message: str = ""
+
+
+TGResponse = GeminiResponse
 
 
 def test_workflow_status_enum() -> None:
@@ -38,7 +49,6 @@ def test_llm_remediator_init_default() -> None:
         mock_get_client.return_value = mock_client
         remediator = LLMRemediator(model_name="test-model")
         assert remediator.client == mock_client
-        assert remediator.model_name == "test-model"
         mock_get_client.assert_called_once_with("test-model")
 
 
@@ -114,7 +124,6 @@ def test_build_workflow_contents_default(tmp_path: Path) -> None:
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch("coding_tools.llm_remediation.process_and_save_code")
 @patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
-@patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_success(
     mock_validate: MagicMock,
     mock_process: MagicMock,
@@ -137,6 +146,7 @@ def test_process_llm_remediation_success(
         skill_filename="skill.md",
     )
     mock_client = MagicMock()
+    mock_client.supports_caching = True
     resp = TGResponse(code="new code", message="fixed")
     mock_client.generate_structured_response.return_value = resp
 
@@ -155,7 +165,6 @@ def test_process_llm_remediation_success(
 
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
-@patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_exception(
     mock_load: MagicMock,
     tmp_path: Path,
@@ -176,6 +185,7 @@ def test_process_llm_remediation_exception(
         skill_filename="skill.md",
     )
     mock_client = MagicMock()
+    mock_client.supports_caching = True
     mock_client.generate_structured_response.side_effect = Exception(
         "API error",
     )
@@ -198,7 +208,6 @@ def test_process_llm_remediation_exception(
     "coding_tools.llm_remediation.validate_llm_code",
     return_value=(False, "syntax error"),
 )
-@patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_invalid_code(
     mock_validate: MagicMock,
     mock_load: MagicMock,
@@ -220,6 +229,7 @@ def test_process_llm_remediation_invalid_code(
         skill_filename="skill.md",
     )
     mock_client = MagicMock()
+    mock_client.supports_caching = True
     resp = TGResponse(code="bad code", message="fixed")
     mock_client.generate_structured_response.return_value = resp
 
@@ -239,7 +249,6 @@ def test_process_llm_remediation_invalid_code(
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
 @patch("coding_tools.llm_remediation.process_and_save_code")
-@patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_identical_retry_then_success(
     mock_process: MagicMock,
     mock_validate: MagicMock,
@@ -262,6 +271,7 @@ def test_process_llm_remediation_identical_retry_then_success(
         skill_filename="skill.md",
     )
     mock_client = MagicMock()
+    mock_client.supports_caching = False
     resp_identical = TGResponse(code="old code", message="same")
     resp_new = TGResponse(code="new code", message="diff")
     mock_client.generate_structured_response.side_effect = [
@@ -284,7 +294,6 @@ def test_process_llm_remediation_identical_retry_then_success(
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
 @patch("coding_tools.llm_remediation.validate_llm_code", return_value=(True, ""))
-@patch("coding_tools.llm_remediation.CACHE_ALLOWED", new=True)
 def test_process_llm_remediation_identical_max_reached(
     mock_validate: MagicMock,
     mock_load: MagicMock,
@@ -306,6 +315,7 @@ def test_process_llm_remediation_identical_max_reached(
         skill_filename="skill.md",
     )
     mock_client = MagicMock()
+    mock_client.supports_caching = True
     resp_identical = TGResponse(code="old code", message="same")
     mock_client.generate_structured_response.return_value = resp_identical
 

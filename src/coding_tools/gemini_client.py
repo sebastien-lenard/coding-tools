@@ -20,6 +20,8 @@ from google.genai import Client, errors, types
 from google.genai.errors import ServerError
 from pydantic import BaseModel
 
+from coding_tools.config import get_provider_mapping, is_caching_allowed
+from coding_tools.llm_prompts import load_skill
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
@@ -33,8 +35,6 @@ if TYPE_CHECKING:
 
     from coding_tools.llm_protocol import StructuredGenerationOptions
 
-CACHE_ALLOWED: bool = False
-MODEL_NAME: str = "gemini-3.5-flash-lite"
 HTTP_SERVICE_UNAVAILABLE = 503
 
 T = TypeVar("T", bound=BaseModel)
@@ -46,24 +46,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class TestGenerationResponse(BaseModel):
-    """Define the expected JSON structure returned by Gemini."""
-
-    message: str
-    code: str
-
-
 @dataclass
-class StructuredRequest[ReqT: BaseModel]:
-    """Encapsulates parameters for a structured GenAI request."""
+class RetryRequestParameters:
+    """Encapsulates parameters for Gemini API execution attempts."""
 
     client: Client
+    model_name: str
     contents_list: list[types.ContentUnion]
-    response_schema: type[ReqT]
+    config_kwargs: dict[str, object]
     prefix: str
     spinner_msg: str
-    system_instruction: str | None = None
-    cache_name: str | None = None
 
 
 @contextmanager
@@ -87,12 +79,6 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
         spinner_thread.join()
         sys.stdout.write("\n")
         sys.stdout.flush()
-
-
-def load_skill(skill_filename: str) -> str:
-    """Load a specific skill from the config/skills Markdown files."""
-    skill_path = Path("config/skills") / skill_filename
-    return skill_path.read_text(encoding="utf-8")
 
 
 def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
@@ -134,7 +120,7 @@ def build_config(
         ),
     }
 
-    if CACHE_ALLOWED and cache_name is not None:
+    if is_caching_allowed("gemini") and cache_name is not None:
         config_kwargs["cached_content"] = cache_name
     elif system_instruction is not None:
         config_kwargs["system_instruction"] = system_instruction
@@ -143,23 +129,19 @@ def build_config(
 
 
 def call_gemini_with_retry(
-    client: Client,
-    contents_list: list[types.ContentUnion],
-    config_kwargs: dict[str, object],
-    prefix: str,
-    spinner_msg: str,
+    params: RetryRequestParameters,
 ) -> types.GenerateContentResponse:
     """Execute Gemini generate_content call with robust ServerError retry logic."""
     max_retries = 3
     response: types.GenerateContentResponse | None = None
     for attempt in range(max_retries):
         try:
-            with gemini_spinner(spinner_msg, prefix):
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=contents_list,
+            with gemini_spinner(params.spinner_msg, params.prefix):
+                response = params.client.models.generate_content(
+                    model=params.model_name,
+                    contents=params.contents_list,
                     config=types.GenerateContentConfig(
-                        **dict[str, Any](config_kwargs),
+                        **dict[str, Any](params.config_kwargs),
                     ),
                 )
         except ServerError as e:
@@ -167,7 +149,7 @@ def call_gemini_with_retry(
                 sleep_time = (2**attempt) * 2
                 logger.warning(
                     "[%s] 503 Service Unavailable. Retrying in %ds (Attempt %d/%d)...",
-                    prefix,
+                    params.prefix,
                     sleep_time,
                     attempt + 1,
                     max_retries,
@@ -176,7 +158,7 @@ def call_gemini_with_retry(
                 continue
             logger.exception(
                 "[%s] Gemini Server Error persist after retries",
-                prefix,
+                params.prefix,
             )
             raise
         else:
@@ -191,8 +173,21 @@ def call_gemini_with_retry(
 class GeminiClientAdapter:
     """Concrete Gemini adapter satisfying LLMClientProtocol."""
 
-    def __init__(self) -> None:
+    def __init__(self, model_name: str | None = None) -> None:
         self.client = Client()
+        if model_name is not None:
+            self.model_name = model_name
+        else:
+            providers = get_provider_mapping()
+            gemini_config = providers.get("gemini", {})
+            self.model_name = str(
+                gemini_config.get("default_model", "gemini-3.5-flash-lite"),
+            )
+
+    @property
+    def supports_caching(self) -> bool:
+        """Return whether caching is enabled and supported for gemini."""
+        return is_caching_allowed("gemini")
 
     def generate_structured_response(
         self,
@@ -206,13 +201,21 @@ class GeminiClientAdapter:
             cache_name=options.cache_name,
         )
 
-        response = call_gemini_with_retry(
+        # Translate agnostic text contents into Gemini Part objects
+        gemini_contents: list[types.ContentUnion] = [
+            types.Part.from_text(text=str(item)) for item in contents_list
+        ]
+
+        params = RetryRequestParameters(
             client=self.client,
-            contents_list=cast("list[types.ContentUnion]", contents_list),
+            model_name=self.model_name,
+            contents_list=gemini_contents,
             config_kwargs=config_kwargs,
             prefix=options.prefix,
             spinner_msg=options.spinner_msg,
         )
+
+        response = call_gemini_with_retry(params)
 
         parsed = response.parsed
         if parsed is None:
@@ -229,7 +232,7 @@ class GeminiClientAdapter:
     ) -> tuple[str | None, list[object]]:
         """Set up optional Gemini file caching."""
         uploaded_files: list[File | None] = []
-        if not CACHE_ALLOWED:
+        if not self.supports_caching:
             return None, uploaded_files  # type: ignore[return-value]
 
         logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
@@ -246,7 +249,7 @@ class GeminiClientAdapter:
 
         logger.info("[%s] Creating context cache...", prefix)
         cached_content = self.client.caches.create(
-            model=MODEL_NAME,
+            model=self.model_name,
             config=types.CreateCachedContentConfig(
                 display_name=f"unit-test-context-{prefix}",
                 ttl="3600s",
@@ -275,7 +278,7 @@ class GeminiClientAdapter:
         return cached_content.name, uploaded_files  # type: ignore[return-value]
 
     def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Clean up uploaded remote file resources safely."""
+        """Clean up remote uploaded static files safely."""
         logger.info("[%s] Cleaning up remote uploaded static files...", prefix)
         for f in files:
             if f is not None and hasattr(f, "name"):
@@ -288,11 +291,6 @@ class GeminiClientAdapter:
                         prefix,
                         e.message,
                     )
-
-
-def create_text_part(text: str) -> types.ContentUnion:
-    """Create a text part."""
-    return types.Part.from_text(text=text)
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
@@ -321,20 +319,20 @@ def generate_coverage_hints(source_file_path: str) -> list[str]:
                     f"GENERIC HINT (Line {idx + 1}): The compound boolean "
                     f"expression `{actual_code}` was not fully covered. Ensure "
                     "you write test cases where each side evaluates to "
-                    "both True and False independently.",
+                    "both True and False independently,",
                 )
             elif actual_code.startswith("if "):
                 hints.append(
                     f"GENERIC HINT (Line {idx + 1}): The conditional block "
                     f"`{actual_code}` was never entered or its branch was "
                     "missed. Provide a test input that forces this "
-                    "condition to evaluate to True.",
+                    "condition to evaluate to True,",
                 )
             elif actual_code.startswith("except "):
                 hints.append(
                     f"GENERIC HINT (Line {idx + 1}): The exception handler "
                     f"`{actual_code}` was never triggered. Write a test case "
-                    "that raises this specific exception.",
+                    "that raises this specific exception,",
                 )
 
     return hints
@@ -346,24 +344,20 @@ def build_contents_list(
     test_content: str,
     coverage_content: str,
     pytest_output: str,
-) -> list[types.ContentUnion]:
-    """Build the dynamic contents list for the GenAI model request."""
-    contents_list: list[types.ContentUnion] = []
+) -> list[str]:
+    """Build the dynamic contents list as agnostic plain strings."""
+    contents_list: list[str] = []
 
-    if not CACHE_ALLOWED:
+    if not is_caching_allowed("gemini"):
         toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
         conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
         source_content = Path(source_file_path).read_text(encoding="utf-8")
 
         contents_list.extend(
             [
-                create_text_part(f"--- pyproject.toml ---\n{toml_content}"),
-                create_text_part(
-                    f"--- tests/conftest.py ---\n{conftest_content}",
-                ),
-                create_text_part(
-                    f"--- {source_file_path} ---\n{source_content}",
-                ),
+                f"--- pyproject.toml ---\n{toml_content}",
+                f"--- tests/conftest.py ---\n{conftest_content}",
+                f"--- {source_file_path} ---\n{source_content}",
             ],
         )
 
@@ -387,40 +381,30 @@ def build_contents_list(
 
     contents_list.extend(
         [
-            create_text_part(
-                (f"--- Current unit test script ({test_filename}) ---\n{test_content}"),
+            f"--- Current unit test script ({test_filename}) ---\n{test_content}",
+            (
+                "--- Pytest Assertion/Execution Errors (HIGHEST PRIORITY) ---\n"
+                f"{pytest_errors}\n\n"
+                "You MUST fix these assertion or execution failures first."
             ),
-            create_text_part(
-                (
-                    "--- Pytest Assertion/Execution Errors (HIGHEST PRIORITY) ---\n"
-                    f"{pytest_errors}\n\n"
-                    "You MUST fix these assertion or execution failures first."
-                ),
+            (
+                "--- Programmatic Branch & Coverage Analysis ---\n"
+                f"{hints_summary}\n\n"
+                "--- Uncovered Code Blocks Summary ---\n"
+                "The following code blocks are not or only partly covered:\n"
+                f"{uncovered_summary}\n\n"
+                "--- Coverage report (! marks uncovered lines) ---\n"
+                f"{coverage_content}"
             ),
-            create_text_part(
-                (
-                    "--- Programmatic Branch & Coverage Analysis ---\n"
-                    f"{hints_summary}\n\n"
-                    "--- Uncovered Code Blocks Summary ---\n"
-                    "The following code blocks are not or only partly covered:\n"
-                    f"{uncovered_summary}\n\n"
-                    "--- Coverage report (! marks uncovered lines) ---\n"
-                    f"{coverage_content}"
-                ),
+            (
+                "--- Pytest Warnings Summary ---\n"
+                f"{pytest_warnings}\n\n"
+                "Address these specific warnings if possible."
             ),
-            create_text_part(
-                (
-                    "--- Pytest Warnings Summary ---\n"
-                    f"{pytest_warnings}\n\n"
-                    "Address these specific warnings if possible."
-                ),
-            ),
-            create_text_part(f"--- Pytest output ---\n{pytest_output}"),
-            create_text_part(
-                (
-                    "Analyze these, fix any failures, warnings, or collection/import "
-                    "errors, and ensure tests pass with 100% coverage."
-                ),
+            f"--- Pytest output ---\n{pytest_output}",
+            (
+                "Analyze these, fix any failures, warnings, or collection/import "
+                "errors, and ensure tests pass with 100% coverage."
             ),
         ],
     )

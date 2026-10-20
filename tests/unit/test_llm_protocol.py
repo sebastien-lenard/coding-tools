@@ -20,6 +20,8 @@ class DummyModel(BaseModel):
 class DummyLLMClient:
     """Dummy LLM client implementation for testing the protocol."""
 
+    supports_caching: bool = True
+
     def generate_structured_response(
         self,
         contents_list: list[object],

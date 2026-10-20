@@ -1,9 +1,8 @@
 # src/coding_tools/llm_protocol.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
 
-"""Provider-agnostic protocol for LLM client wrappers."""
+"""Provider-agnostic protocol and shared models for LLM client wrappers."""
 
 from __future__ import annotations
 
@@ -13,6 +12,13 @@ from typing import Protocol, TypeVar
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
+
+
+class TestGenerationResponse(BaseModel):
+    """Define the expected JSON structure returned by code-generation LLMs."""
+
+    message: str
+    code: str
 
 
 @dataclass
@@ -28,6 +34,11 @@ class StructuredGenerationOptions:
 
 class LLMClientProtocol(Protocol):  # pragma: no cover
     """Defines high-level operations required from any LLM client."""
+
+    @property
+    def supports_caching(self) -> bool:
+        """Return whether this client adapter supports remote caching."""
+        ...
 
     def generate_structured_response(
         self,

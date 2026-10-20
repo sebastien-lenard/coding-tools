@@ -15,7 +15,6 @@ from typing import Any
 from google.genai import errors
 from google.genai.errors import ServerError
 
-from coding_tools.gemini_client import CACHE_ALLOWED
 from coding_tools.llm_remediation import (
     LLMRemediator,
     StageConfig,
@@ -144,7 +143,7 @@ def execute_workflow(
         if not success:
             return False, stage_name, status
 
-        if CACHE_ALLOWED:
+        if remediator.client.supports_caching:
             remediator.client.cleanup_files(uploaded_files, prefix)
     except (ServerError, errors.APIError):
         logger.exception(

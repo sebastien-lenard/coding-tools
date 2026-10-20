@@ -140,7 +140,6 @@ def test_run_stage_chain_success(mock_remediator_cls: MagicMock) -> None:
 
 @patch("coding_tools.unit_test_orchestrator.LLMRemediator")
 @patch("coding_tools.unit_test_orchestrator._run_stage_chain")
-@patch("coding_tools.unit_test_orchestrator.CACHE_ALLOWED", new=True)
 def test_execute_workflow_success_cache(
     mock_run_chain: MagicMock,
     mock_remediator_cls: MagicMock,
@@ -148,6 +147,7 @@ def test_execute_workflow_success_cache(
     """Test execute_workflow success flow with cache allowed."""
     remediator = mock_remediator_cls.return_value
     remediator.setup_cache.return_value = ("cache_name", ["file1"])
+    remediator.client.supports_caching = True
     mock_run_chain.return_value = (True, "ALL_STAGES", "SUCCESS")
 
     success, stage, status = unit_test_orchestrator.execute_workflow(
@@ -164,7 +164,6 @@ def test_execute_workflow_success_cache(
 
 @patch("coding_tools.unit_test_orchestrator.LLMRemediator")
 @patch("coding_tools.unit_test_orchestrator._run_stage_chain")
-@patch("coding_tools.unit_test_orchestrator.CACHE_ALLOWED", new=False)
 def test_execute_workflow_success_no_cache(
     mock_run_chain: MagicMock,
     mock_remediator_cls: MagicMock,
@@ -172,6 +171,7 @@ def test_execute_workflow_success_no_cache(
     """Test execute_workflow success flow without cache allowed."""
     remediator = mock_remediator_cls.return_value
     remediator.setup_cache.return_value = (None, [])
+    remediator.client.supports_caching = False
     mock_run_chain.return_value = (True, "ALL_STAGES", "SUCCESS")
 
     success, _stage, _status = unit_test_orchestrator.execute_workflow()

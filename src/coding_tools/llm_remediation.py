@@ -14,14 +14,11 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from coding_tools.gemini_client import (
-    CACHE_ALLOWED,
+from coding_tools.llm_prompts import build_contents_list, load_skill
+from coding_tools.llm_protocol import (
+    StructuredGenerationOptions,
     TestGenerationResponse,
-    build_contents_list,
-    create_text_part,
-    load_skill,
 )
-from coding_tools.llm_protocol import StructuredGenerationOptions
 from coding_tools.llm_router import get_llm_client
 from coding_tools.parsers import (
     extract_pytest_warnings,
@@ -81,12 +78,11 @@ class LLMRemediator:
     def __init__(
         self,
         client: LLMClientProtocol | None = None,
-        model_name: str = "gemini-3.5-flash-lite",
+        model_name: str | None = None,
     ) -> None:
         self.client: LLMClientProtocol = (
             client if client is not None else get_llm_client(model_name)
         )
-        self.model_name = model_name
 
     def is_syntactically_valid(self, code_content: str) -> bool:
         """Check if the code string is valid Python syntax."""
@@ -114,31 +110,25 @@ class LLMRemediator:
             )
         else:
             contents_list = [
-                create_text_part(
-                    (
-                        f"--- Current unit test script "
-                        f"({Path(ctx.test_file_path).name}) ---\n{test_content}"
-                    ),
+                (
+                    f"--- Current unit test script "
+                    f"({Path(ctx.test_file_path).name}) ---\n{test_content}"
                 ),
-                create_text_part(text=f"--- {stage.name} output ---\n{output}"),
-                create_text_part(
-                    (
-                        f"MANDATORY INSTRUCTION: You MUST modify the code to "
-                        f"resolve all {stage.name} errors. "
-                        f"Do NOT return the exact same code."
-                    ),
+                f"--- {stage.name} output ---\n{output}",
+                (
+                    f"MANDATORY INSTRUCTION: You MUST modify the code to "
+                    f"resolve all {stage.name} errors. "
+                    f"Do NOT return the exact same code."
                 ),
             ]
 
         if identical_attempts > 0:
             contents_list.append(
-                create_text_part(
-                    (
-                        "ERROR: Your previous output was IDENTICAL to the existing "
-                        "file, failing to fix the error. "
-                        "You are required to rewrite or update the failing test "
-                        "function implementation."
-                    ),
+                (
+                    "ERROR: Your previous output was IDENTICAL to the existing "
+                    "file, failing to fix the error. "
+                    "You are required to rewrite or update the failing test "
+                    "function implementation."
                 ),
             )
         return contents_list
@@ -186,7 +176,7 @@ class LLMRemediator:
                     ctx.prefix,
                     stage.name,
                 )
-                if CACHE_ALLOWED:
+                if self.client.supports_caching:
                     self.client.cleanup_files(uploaded_files, ctx.prefix)
                 return WorkflowStatus.FAILED, "FAILED"
 
@@ -204,7 +194,7 @@ class LLMRemediator:
                     ctx.prefix,
                     parsed_resp.code,
                 )
-                if CACHE_ALLOWED:
+                if self.client.supports_caching:
                     self.client.cleanup_files(uploaded_files, ctx.prefix)
                 return WorkflowStatus.FAILED, "FAILED"
 
@@ -218,7 +208,7 @@ class LLMRemediator:
                         stage.name,
                         output,
                     )
-                    if CACHE_ALLOWED:
+                    if self.client.supports_caching:
                         self.client.cleanup_files(uploaded_files, ctx.prefix)
                     return WorkflowStatus.FAILED, "No solution"
 
@@ -232,7 +222,7 @@ class LLMRemediator:
 
             break
 
-        if CACHE_ALLOWED:
+        if self.client.supports_caching:
             self.client.cleanup_files(uploaded_files, ctx.prefix)
 
         logger.info("[%s] LLM response: %s", ctx.prefix, parsed_resp.message)
@@ -354,24 +344,18 @@ class LLMRemediator:
             )
             if is_syntax_error:
                 return [
-                    create_text_part(
-                        text=(
-                            f"--- Current unit test script "
-                            f"({Path(t_path).name}) ---\n{t_content}"
-                        ),
+                    (
+                        f"--- Current unit test script "
+                        f"({Path(t_path).name}) ---\n{t_content}"
                     ),
-                    create_text_part(
-                        text=(
-                            "--- Pytest Syntax/Collection "
-                            f"Error Traceback ---\n{syntax_error_details}"
-                        ),
+                    (
+                        "--- Pytest Syntax/Collection "
+                        f"Error Traceback ---\n{syntax_error_details}"
                     ),
-                    create_text_part(
-                        text=(
-                            "The unit test script contains a fatal Python "
-                            "SyntaxError or collection issue preventing pytest. "
-                            "Please fix and return complete script."
-                        ),
+                    (
+                        "The unit test script contains a fatal Python "
+                        "SyntaxError or collection issue preventing pytest. "
+                        "Please fix and return complete script."
                     ),
                 ]
             return build_contents_list(t_path, s_path, t_content, "", py_out)

@@ -27,3 +27,6 @@ test_dummy_target.py
 # VS Code / Environment
 .vscode/
 .env
+
+# Config
+config/parameters/llm_config.jsonc
