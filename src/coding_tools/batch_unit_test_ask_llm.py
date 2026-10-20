@@ -98,7 +98,7 @@ async def run_workflow_with_iterations(
                     execute_workflow,
                     test_file,
                     source_file,
-                    allow_gemini=allow_gemini,
+                    allow_llm=allow_gemini,
                 )
 
                 final_stage = stage

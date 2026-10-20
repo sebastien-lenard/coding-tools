@@ -1,8 +1,8 @@
-# tests/unit/test_batch_unit_test_ask_gemini.py
+# tests/unit/test_batch_unit_test_ask_llm.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for batch_unit_test_ask_gemini module."""
+"""Unit tests for batch_unit_test_ask_llm module."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from coding_tools import batch_unit_test_ask_gemini as butag
+from coding_tools import batch_unit_test_ask_llm as butag
 
 
 @pytest.mark.parametrize(
@@ -52,7 +52,7 @@ def test_ensure_test_file_exists(tmp_path: Path) -> None:
 async def test_run_workflow_with_iterations_success() -> None:
     """Test successful workflow execution on first iteration."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         return_value=(True, "All Stages", "SUCCESS"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
@@ -71,7 +71,7 @@ async def test_run_workflow_with_iterations_success() -> None:
 async def test_run_workflow_with_iterations_no_solution() -> None:
     """Test workflow execution stopping on 'No solution' status."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         return_value=(False, "Pytest/Coverage", "No solution"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
@@ -90,7 +90,7 @@ async def test_run_workflow_with_iterations_no_solution() -> None:
 async def test_run_workflow_with_iterations_fixed() -> None:
     """Test workflow execution with FIXED status followed by success."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         side_effect=[
             (False, "Pytest/Coverage", "FIXED"),
             (True, "All Stages", "SUCCESS"),
@@ -112,7 +112,7 @@ async def test_run_workflow_with_iterations_fixed() -> None:
 async def test_run_workflow_with_iterations_failure_then_success() -> None:
     """Test workflow execution with failure followed by success."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         side_effect=[
             (False, "Pytest/Coverage", "FAILED"),
             (True, "All Stages", "SUCCESS"),
@@ -134,7 +134,7 @@ async def test_run_workflow_with_iterations_failure_then_success() -> None:
 async def test_run_workflow_with_iterations_exhausted() -> None:
     """Test workflow execution exhausting max iterations."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         return_value=(False, "Pytest/Coverage", "FAILED"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
@@ -153,7 +153,7 @@ async def test_run_workflow_with_iterations_exhausted() -> None:
 async def test_run_workflow_with_iterations_exception() -> None:
     """Test workflow execution handling exceptions properly."""
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         side_effect=RuntimeError("Boom"),
     ):
         result = await butag.run_workflow_with_iterations(
@@ -172,7 +172,7 @@ async def test_run_workflow_with_semaphore() -> None:
     """Test workflow execution using an asyncio semaphore."""
     semaphore = asyncio.Semaphore(1)
     with patch(
-        "coding_tools.batch_unit_test_ask_gemini.execute_workflow",
+        "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         return_value=(True, "All Stages", "SUCCESS"),
     ):
         result = await butag.run_workflow_with_iterations(
@@ -231,8 +231,8 @@ def test_main_file_target(tmp_path: Path) -> None:
 
     test_file_str = butag.get_test_file_path(str(py_file))
 
-    with patch("sys.argv", ["batch_unit_test_ask_gemini.py", str(py_file)]), patch(
-        "coding_tools.batch_unit_test_ask_gemini.run_workflow_with_iterations",
+    with patch("sys.argv", ["batch_unit_test_ask_llm.py", str(py_file)]), patch(
+        "coding_tools.batch_unit_test_ask_llm.run_workflow_with_iterations",
         new_callable=AsyncMock,
     ) as mock_run:
         mock_run.return_value = {
@@ -250,14 +250,14 @@ def test_main_invalid_file_target(tmp_path: Path) -> None:
     txt_file = tmp_path / "notes.txt"
     txt_file.write_text("hello", encoding="utf-8")
 
-    with patch("sys.argv", ["batch_unit_test_ask_gemini.py", str(txt_file)]):
+    with patch("sys.argv", ["batch_unit_test_ask_llm.py", str(txt_file)]):
         butag.main()
 
 
 def test_main_nonexistent_target() -> None:
     """Test main entry point with a nonexistent path target."""
     with patch(
-        "sys.argv", ["batch_unit_test_ask_gemini.py", "nonexistent_path_abc_123"],
+        "sys.argv", ["batch_unit_test_ask_llm.py", "nonexistent_path_abc_123"],
     ):
         butag.main()
 
@@ -271,8 +271,8 @@ def test_main_dir_target(tmp_path: Path) -> None:
     init_file = src_dir / "__init__.py"
     init_file.write_text("", encoding="utf-8")
 
-    with patch("sys.argv", ["batch_unit_test_ask_gemini.py", str(tmp_path)]), patch(
-        "coding_tools.batch_unit_test_ask_gemini.run_workflow_with_iterations",
+    with patch("sys.argv", ["batch_unit_test_ask_llm.py", str(tmp_path)]), patch(
+        "coding_tools.batch_unit_test_ask_llm.run_workflow_with_iterations",
         new_callable=AsyncMock,
     ) as mock_run:
         mock_run.return_value = {
