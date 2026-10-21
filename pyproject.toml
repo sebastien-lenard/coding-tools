@@ -31,6 +31,7 @@ workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
 function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
+workspace-guard = "coding_tools.workspace_guard:main"
 
 [project.optional-dependencies]
 gemini = [
