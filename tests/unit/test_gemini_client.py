@@ -15,6 +15,7 @@ from google.genai import errors
 from pydantic import BaseModel
 
 import coding_tools.gemini_client as gs
+from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 
 
 class DummyResponse(BaseModel):
@@ -64,6 +65,17 @@ def test_upload_static_file() -> None:
     res = gs.upload_static_file(mock_client, "dummy.txt", "TEST")
     assert res == mock_file
     mock_client.files.upload.assert_called_once()
+
+
+def test_upload_static_file_api_error() -> None:
+    """Test uploading a static reference file raising APIError."""
+    mock_client = MagicMock()
+    api_err = errors.APIError(500, response_json={"error": "Upload failed"})
+    api_err.message = "Upload failed"
+    mock_client.files.upload.side_effect = api_err
+
+    with pytest.raises(LLMAPIError, match="Upload failed"):
+        gs.upload_static_file(mock_client, "dummy.txt", "TEST")
 
 
 def test_cleanup_files_success() -> None:
@@ -216,7 +228,7 @@ def test_call_gemini_with_retry_503_exhausted(monkeypatch: pytest.MonkeyPatch) -
         prefix="TEST",
         spinner_msg="Waiting",
     )
-    with pytest.raises(errors.ServerError):
+    with pytest.raises(LLMServerError):
         gs.call_gemini_with_retry(params)
 
 
@@ -235,12 +247,31 @@ def test_call_gemini_with_retry_other_server_error() -> None:
         prefix="TEST",
         spinner_msg="Waiting",
     )
-    with pytest.raises(errors.ServerError):
+    with pytest.raises(LLMServerError):
+        gs.call_gemini_with_retry(params)
+
+
+def test_call_gemini_with_retry_api_error() -> None:
+    """Test APIError raising LLMAPIError during generation."""
+    mock_client = MagicMock()
+    api_err = errors.APIError(400, response_json={"error": "Bad Request"})
+    api_err.message = "Bad Request"
+    mock_client.models.generate_content.side_effect = api_err
+
+    params = gs.RetryRequestParameters(
+        client=mock_client,
+        model_name="gemini-model",
+        contents_list=[],
+        config_kwargs={},
+        prefix="TEST",
+        spinner_msg="Waiting",
+    )
+    with pytest.raises(LLMAPIError, match="Bad Request"):
         gs.call_gemini_with_retry(params)
 
 
 def test_call_gemini_with_retry_response_none() -> None:
-    """Test RuntimeError when response is None after retries."""
+    """Test LLMServerError when response is None after retries."""
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = None
     params = gs.RetryRequestParameters(
@@ -252,7 +283,7 @@ def test_call_gemini_with_retry_response_none() -> None:
         spinner_msg="Waiting",
     )
     with pytest.raises(
-        RuntimeError,
+        LLMServerError,
         match="Failed to generate content after max retries",
     ):
         gs.call_gemini_with_retry(params)
@@ -347,6 +378,47 @@ def test_setup_cache_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     cache_name, uploaded = adapter.setup_cache(str(src), "TEST")
     assert cache_name == "cache/123"
     assert len(uploaded) == 3
+
+
+def test_setup_cache_api_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Test setup_cache raising LLMAPIError when cache creation fails."""
+    monkeypatch.setattr(gs, "is_caching_allowed", lambda _provider: True)
+    monkeypatch.setattr(
+        gs,
+        "get_provider_mapping",
+        lambda: {"gemini": {"default_model": "gemini-test"}},
+    )
+    monkeypatch.chdir(tmp_path)
+
+    skills_dir = tmp_path / "config" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "unit_test_generation.md").write_text("skill", encoding="utf-8")
+
+    (tmp_path / "project.toml").write_text("[project]", encoding="utf-8")
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "conftest.py").write_text("conftest", encoding="utf-8")
+    src = tmp_path / "src.py"
+    src.write_text("src", encoding="utf-8")
+
+    mock_client = MagicMock()
+    f1 = MagicMock()
+    f1.uri = "uri_conf"
+    f2 = MagicMock()
+    f2.uri = "uri_conftest"
+    f3 = MagicMock()
+    f3.uri = "uri_source"
+    mock_client.files.upload.side_effect = [f1, f2, f3]
+
+    api_err = errors.APIError(500, response_json={"error": "Cache failed"})
+    api_err.message = "Cache failed"
+    mock_client.caches.create.side_effect = api_err
+
+    adapter = gs.GeminiClientAdapter()
+    adapter.client = mock_client
+
+    with pytest.raises(LLMAPIError, match="Cache failed"):
+        adapter.setup_cache(str(src), "TEST")
 
 
 def test_setup_cache_disabled() -> None:

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from coding_tools.config import get_provider_mapping, is_caching_allowed
 from coding_tools.llm_prompts import load_skill
+from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
@@ -84,10 +85,18 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
 def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
     """Upload a static reference file to Gemini."""
     logger.info("[%s] Uploading static reference file: %s", prefix, file_path)
-    return client.files.upload(
-        file=file_path,
-        config=types.UploadFileConfig(mime_type="text/plain"),
-    )
+    try:
+        return client.files.upload(
+            file=file_path,
+            config=types.UploadFileConfig(mime_type="text/plain"),
+        )
+    except errors.APIError as e:
+        msg = e.message or "Unknown Gemini API error during file upload"
+        raise LLMAPIError(
+            message=msg,
+            status_code=getattr(e, "code", None),
+            error_code=getattr(e, "status", None),
+        ) from e
 
 
 def validate_file_uris(
@@ -160,13 +169,29 @@ def call_gemini_with_retry(
                 "[%s] Gemini Server Error persist after retries",
                 params.prefix,
             )
-            raise
+            msg = e.message or "Gemini Server Error persist after retries"
+            raise LLMServerError(
+                message=msg,
+                status_code=getattr(e, "code", None),
+                retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
+            ) from e
+        except errors.APIError as e:
+            msg = e.message or "Unknown Gemini API error during generation"
+            raise LLMAPIError(
+                message=msg,
+                status_code=getattr(e, "code", None),
+                error_code=getattr(e, "status", None),
+            ) from e
         else:
             break
 
     if response is None:
         msg = "Failed to generate content after max retries due to server errors."
-        raise RuntimeError(msg)
+        raise LLMServerError(
+            message=msg,
+            status_code=HTTP_SERVICE_UNAVAILABLE,
+            retryable=False,
+        )
     return response
 
 
@@ -248,33 +273,41 @@ class GeminiClientAdapter:
         )
 
         logger.info("[%s] Creating context cache...", prefix)
-        cached_content = self.client.caches.create(
-            model=self.model_name,
-            config=types.CreateCachedContentConfig(
-                display_name=f"unit-test-context-{prefix}",
-                ttl="3600s",
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_uri(
-                                file_uri=source_uri,
-                                mime_type="text/plain",
-                            ),
-                            types.Part.from_uri(
-                                file_uri=config_uri,
-                                mime_type="text/plain",
-                            ),
-                            types.Part.from_uri(
-                                file_uri=conftest_uri,
-                                mime_type="text/plain",
-                            ),
-                        ],
-                    ),
-                ],
-                system_instruction=load_skill("unit_test_generation.md"),
-            ),
-        )
+        try:
+            cached_content = self.client.caches.create(
+                model=self.model_name,
+                config=types.CreateCachedContentConfig(
+                    display_name=f"unit-test-context-{prefix}",
+                    ttl="3600s",
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_uri(
+                                    file_uri=source_uri,
+                                    mime_type="text/plain",
+                                ),
+                                types.Part.from_uri(
+                                    file_uri=config_uri,
+                                    mime_type="text/plain",
+                                ),
+                                types.Part.from_uri(
+                                    file_uri=conftest_uri,
+                                    mime_type="text/plain",
+                                ),
+                            ],
+                        ),
+                    ],
+                    system_instruction=load_skill("unit_test_generation.md"),
+                ),
+            )
+        except errors.APIError as e:
+            msg = e.message or "Unknown Gemini API error during cache creation"
+            raise LLMAPIError(
+                message=msg,
+                status_code=getattr(e, "code", None),
+                error_code=getattr(e, "status", None),
+            ) from e
         return cached_content.name, uploaded_files  # type: ignore[return-value]
 
     def cleanup_files(self, files: list[object], prefix: str) -> None:

@@ -12,9 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from google.genai import errors
-from google.genai.errors import ServerError
-
+from coding_tools.llm_protocol import LLMError
 from coding_tools.llm_remediation import (
     LLMRemediator,
     StageConfig,
@@ -145,7 +143,7 @@ def execute_workflow(
 
         if remediator.client.supports_caching:
             remediator.client.cleanup_files(uploaded_files, prefix)
-    except (ServerError, errors.APIError):
+    except LLMError:
         logger.exception(
             "[%s] LLM API / Server Error encountered",
             prefix,

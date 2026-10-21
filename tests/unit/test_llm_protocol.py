@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from coding_tools.llm_protocol import LLMClientProtocol, StructuredGenerationOptions
+from coding_tools.llm_protocol import (
+    LLMAPIError,
+    LLMClientProtocol,
+    LLMServerError,
+    StructuredGenerationOptions,
+)
 
 
 class DummyModel(BaseModel):
@@ -88,3 +93,19 @@ def test_llm_client_protocol_implementation() -> None:
     assert cache_name == "cache_1"
     assert files == []
     client.cleanup_files([], "p")
+
+
+def test_llm_api_error() -> None:
+    """Test LLMAPIError initialization and attributes."""
+    err = LLMAPIError("api error", status_code=400, error_code="INVALID_ARGUMENT")
+    assert str(err) == "api error"
+    assert err.status_code == 400
+    assert err.error_code == "INVALID_ARGUMENT"
+
+
+def test_llm_server_error() -> None:
+    """Test LLMServerError initialization and attributes."""
+    err = LLMServerError("server error", status_code=503, retryable=True)
+    assert str(err) == "server error"
+    assert err.status_code == 503
+    assert err.retryable is True
