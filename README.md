@@ -140,6 +140,33 @@ bundle-sources [project_path] [OPTIONS]
 
 ---
 
+## 5. Function Signatures & Dependencies Mapper (`function-signatures-dependencies`)
+
+`function-signatures-dependencies` is a static AST analysis tool that parses a project's `src` folder and generates a clean, token-efficient Markdown architecture map designed specifically for LLM consumption.
+
+### Core Use Case
+When working with an LLM on an existing codebase, the model needs to understand module structures, class inheritance, function signatures, uncaught exceptions, and call graphs without wasting tokens on full implementation bodies. This tool builds a comprehensive architectural snapshot complete with a Mermaid.js module dependency graph and the project's `pyproject.toml`.
+
+### Features
+- **Static AST Inspection:** Parses project Python source files without executing code, ensuring safety and speed.
+- **Detailed Structural Extraction:** Collects global constants, classes, base inheritance, decorators, function signatures, return type annotations, and uncaught exceptions.
+- **Call Graph Mapping:** Cross-references function and method calls across modules to record explicit `Calls:` and `Called By:` vectors.
+- **Mermaid.js Dependency Graph:** Automatically maps internal module-to-module import relationships into an interactive flowchart.
+- **Config Appending:** Automatically attaches `pyproject.toml` at the end for complete project context.
+
+### CLI Command Options
+```bash
+function-signatures-dependencies [project_path] [OPTIONS]
+```
+
+#### Arguments
+* **`project_path`** *(Positional, Optional)*: Path to the target project directory (defaults to current directory `.` ).
+
+#### Options
+* **`-o`, `--output`** *(String)*: Destination markdown file path (defaults to `[project_name]_structure.md` at the project root).
+
+---
+
 ## Installation & Setup
 
 This project uses **uv** for fast and reliable Python package and dependency management.
@@ -160,7 +187,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ### 2. Synchronize the Environment & Register Commands
 
-Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`batch-unit-test`, `workspace-stamper`, `backup-untracked`, `bundle-sources`) locally:
+Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`batch-unit-test`, `workspace-stamper`, `backup-untracked`, `bundle-sources`, `function-signatures-dependencies`) locally:
 ```bash
 uv sync --all-extras
 ```
@@ -178,6 +205,7 @@ uv run --extra ai batch-unit-test --help
 uv run workspace-stamper --help
 uv run backup-untracked --help
 uv run bundle-sources --help
+uv run function-signatures-dependencies --help
 ```
 
 ### Option B: Editable Install (For direct command-line access)
@@ -191,6 +219,7 @@ batch-unit-test --help
 workspace-stamper --help
 backup-untracked --help
 bundle-sources --help
+function-signatures-dependencies --help
 ```
 
 ---
@@ -245,6 +274,18 @@ uv run bundle-sources .
 **Example 2: Bundle a target project and save to a custom output path**
 ```bash
 uv run bundle-sources /path/to/target/project -o /path/to/output/codebase_prompt.txt -v
+```
+
+### Running Function Signatures & Dependencies Mapper
+
+**Example 1: Analyze the current project and output to default `[project_name]_structure.md`**
+```bash
+uv run function-signatures-dependencies .
+```
+
+**Example 2: Analyze a target project and save to a custom markdown file**
+```bash
+uv run function-signatures-dependencies /path/to/target/project -o /path/to/output/architecture_map.md
 ```
 
 ---
