@@ -33,7 +33,7 @@ bundle-sources = "coding_tools.bundle_sources:main"
 function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
 
 [project.optional-dependencies]
-ai = [
+gemini = [
     "google-genai>=2.16.0",
 ]
 

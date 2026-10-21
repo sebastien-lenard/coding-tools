@@ -201,7 +201,7 @@ You have two options for running the commands provided by this package:
 ### Option A: Using `uv run` (Recommended — No global installation needed)
 By prefixing your command with `uv run`, `uv` automatically executes the command inside the project's isolated virtual environment, ensuring all package dependencies and entry points are correctly resolved:
 ```bash
-uv run --extra ai batch-unit-test --help
+uv run --extra gemini batch-unit-test --help
 uv run workspace-stamper --help
 uv run backup-untracked --help
 uv run bundle-sources --help
@@ -232,12 +232,12 @@ function-signatures-dependencies --help
 
 **Example 1: Process the entire `src` directory with default max-iterations (5)**
 ```bash
-uv run --extra ai batch-unit-test src
+uv run --extra gemini batch-unit-test src
 ```
 
 **Example 2: Process a single source file with custom max-iterations**
 ```bash
-uv run --extra ai batch-unit-test src/coding_tools/workspace_stamper.py --max-iterations 3
+uv run --extra gemini batch-unit-test src/coding_tools/workspace_stamper.py --max-iterations 3
 ```
 
 ### Running Workspace Stamper
