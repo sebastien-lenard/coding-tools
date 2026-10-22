@@ -121,7 +121,7 @@ def test_missing_license_triggers_warning_but_stamps_successfully(
     engine = WorkspaceStamper(workspace=ws)
 
     with caplog.at_level("WARNING"):
-        engine._evaluate_legal_infrastructure()
+        engine._evaluate_legal_infrastructure("test")
 
     assert ws.run_license_stamp
     assert "is missing from project root" in caplog.text
@@ -141,7 +141,7 @@ def test_missing_notice_triggers_warning_but_stamps_rest(
     engine = WorkspaceStamper(workspace=ws)
 
     with caplog.at_level("WARNING"):
-        engine._evaluate_legal_infrastructure()
+        engine._evaluate_legal_infrastructure("test")
 
     assert ws.run_license_stamp
     assert ws.extracted_copyright is None
@@ -162,20 +162,34 @@ def test_unparseable_license_captured_and_logged(
     engine = WorkspaceStamper(workspace=ws)
 
     with caplog.at_level("INFO"):
-        engine._evaluate_legal_infrastructure()
+        engine._evaluate_legal_infrastructure("test")
 
     assert "LICENSE headers detected:" in caplog.text
 
 
-def test_evaluate_legal_infrastructure_os_error(tmp_path: Path) -> None:
+def test_evaluate_legal_infrastructure_os_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Captures read_text raises OSError inside infrastructure parsing."""
-    (tmp_path / FILE_LICENSE).mkdir()
-    (tmp_path / FILE_NOTICE).mkdir()
-
+    create_compliance_environment(tmp_path)
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+
+    def mock_read_text(*args: object, **kwargs: object) -> str:
+        msg = "Disk error"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text)
+
+    with caplog.at_level("WARNING"):
+        engine._evaluate_legal_infrastructure("test")
     assert ws.extracted_copyright is None
+    assert (
+        "Could not read LICENSE file" in caplog.text
+        or "Could not read NOTICE file" in caplog.text
+    )
 
 
 def test_evaluate_legal_infrastructure_empty_notice(tmp_path: Path) -> None:
@@ -185,7 +199,7 @@ def test_evaluate_legal_infrastructure_empty_notice(tmp_path: Path) -> None:
 
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
     assert ws.extracted_copyright is None
 
 
@@ -196,7 +210,7 @@ def test_evaluate_legal_infrastructure_no_copyright_match(tmp_path: Path) -> Non
 
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
     assert ws.extracted_copyright is None
 
 
@@ -206,7 +220,7 @@ def test_evaluate_legal_infrastructure_multi_copyright(tmp_path: Path) -> None:
     create_compliance_environment(tmp_path, notice_content=content)
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     expected = (
         f"# {ws_module.COPYRIGHT_TAG}: 2026 Primary Holder\n"
@@ -249,7 +263,7 @@ def test_generates_both_path_and_license_on_empty_file(tmp_path: Path) -> None:
         extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     target_file = tmp_path / "main.py"
     content, modified = engine._generate_updated_content(target_file, "")
@@ -290,7 +304,7 @@ def test_only_license_stamped_when_path_disabled(tmp_path: Path) -> None:
         extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     target_file = tmp_path / "main.py"
     content, modified = engine._generate_updated_content(target_file, "print('ok')")
@@ -309,7 +323,7 @@ def test_preserves_interpreter_directives(tmp_path: Path) -> None:
         extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     original = "#!/usr/bin/env python3\n# coding: utf-8\nprint('code')"
     target_file = tmp_path / "main.py"
@@ -331,7 +345,7 @@ def test_overwrites_legacy_and_dirty_spdx_lines(tmp_path: Path) -> None:
         extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     dirty_input = (
         "# main.py\n"
@@ -510,7 +524,7 @@ def test_process_file_no_modification(tmp_path: Path) -> None:
         run_license_stamp=False,
     )
     engine = WorkspaceStamper(workspace=ws)
-    report = engine._process_file(script)
+    report = engine._process_file(script, "test")
     assert report.status == FileComplianceStatus.COMPLIANT
 
 
@@ -518,7 +532,7 @@ def test_process_file_os_error(tmp_path: Path) -> None:
     """_process_file returns tuple statuses indicating failures on system blocks."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    report = engine._process_file(tmp_path)
+    report = engine._process_file(tmp_path, "test")
     assert report.status == FileComplianceStatus.IO_ERROR
 
 
@@ -526,7 +540,7 @@ def test_is_mutation_authorized_no_changes(tmp_path: Path) -> None:
     """Safety authorization check passes on zero change baselines."""
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
-    assert engine._is_mutation_authorized(tmp_path / "main.py", "pass", "pass")
+    assert engine._is_mutation_authorized(tmp_path / "main.py", "pass", "pass", "test")
 
 
 def test_is_mutation_authorized_with_approved_changes(tmp_path: Path) -> None:
@@ -534,7 +548,7 @@ def test_is_mutation_authorized_with_approved_changes(tmp_path: Path) -> None:
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
     updated = "# main.py\n# SPDX-License-Identifier: MIT\npass"
-    assert engine._is_mutation_authorized(tmp_path / "main.py", "pass", updated)
+    assert engine._is_mutation_authorized(tmp_path / "main.py", "pass", updated, "test")
 
 
 def test_is_mutation_authorized_ignores_empty_line_insertions(tmp_path: Path) -> None:
@@ -542,11 +556,12 @@ def test_is_mutation_authorized_ignores_empty_line_insertions(tmp_path: Path) ->
     ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
     engine = WorkspaceStamper(workspace=ws)
 
-    # Introduce a modification that consists purely of blank lines / whitespace
     original = "print('hello')"
     updated = "print('hello')\n\n   \n"
 
-    assert engine._is_mutation_authorized(tmp_path / "main.py", original, updated)
+    assert engine._is_mutation_authorized(
+        tmp_path / "main.py", original, updated, "test",
+    )
 
 
 def test_is_mutation_authorized_ignores_tag_mutations(tmp_path: Path) -> None:
@@ -555,9 +570,29 @@ def test_is_mutation_authorized_ignores_tag_mutations(tmp_path: Path) -> None:
     engine = WorkspaceStamper(workspace=ws)
 
     original = "pass"
-    updated = f"{ws_module.COPYRIGHT_TAG}: 2026\n# {ws_module.LICENSE_TAG}: MIT\npass"
+    updated = (
+        f"{ws_module.COPYRIGHT_TAG}: 2026\n"
+        f"# {ws_module.LICENSE_TAG}: MIT\npass"
+    )
 
-    assert engine._is_mutation_authorized(tmp_path / "main.py", original, updated)
+    assert engine._is_mutation_authorized(
+        tmp_path / "main.py", original, updated, "test",
+    )
+
+
+def test_is_mutation_authorized_isolated_tags(tmp_path: Path) -> None:
+    """Tests individual COPYRIGHT_TAG and LICENSE_TAG in mutation authorization."""
+    ws = TargetWorkspace(project_dir=tmp_path, target_path=tmp_path)
+    engine = WorkspaceStamper(workspace=ws)
+    original = "pass"
+    updated1 = f"# {ws_module.COPYRIGHT_TAG}: 2026\npass"
+    updated2 = f"# {ws_module.LICENSE_TAG}: MIT\npass"
+    assert engine._is_mutation_authorized(
+        tmp_path / "main.py", original, updated1, "test",
+    )
+    assert engine._is_mutation_authorized(
+        tmp_path / "main.py", original, updated2, "test",
+    )
 
 
 # =====================================================================
@@ -603,7 +638,7 @@ def test_engine_blocked_by_permission_error(
     script.write_bytes(b"\x80\x81\xff")
 
     with caplog.at_level("WARNING"):
-        assert not engine.run()  # IO_ERROR should cause overall run to fail
+        assert not engine.run()
 
 
 def test_process_file_failure_captured_gracefully(
@@ -625,7 +660,7 @@ def test_process_file_failure_captured_gracefully(
     monkeypatch.setattr(Path, "write_text", mock_write_text)
 
     with caplog.at_level("ERROR"):
-        report = engine._process_file(target_file)
+        report = engine._process_file(target_file, "test")
 
     assert report.status == FileComplianceStatus.IO_ERROR
     assert "Failed execution lifecycle on target" in caplog.text
@@ -672,7 +707,7 @@ def test_adds_copyright_when_license_already_present(tmp_path: Path) -> None:
         extracted_license_id="Apache-2.0",
     )
     engine = WorkspaceStamper(workspace=ws)
-    engine._evaluate_legal_infrastructure()
+    engine._evaluate_legal_infrastructure("test")
 
     target_file = tmp_path / "main.py"
     existing = "# SPDX-License-Identifier: Apache-2.0\nprint('ok')"

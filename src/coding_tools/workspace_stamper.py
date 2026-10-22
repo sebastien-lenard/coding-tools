@@ -73,23 +73,25 @@ class WorkspaceStamper(BaseModel):
 
     def run(self) -> bool:
         """Execute compliance checking, synthesizing reports for the process run."""
+        prefix = self.workspace.target_path.name
         logger.info(
-            "Initializing compliance engine for target: %s",
+            "[%s] Initializing compliance engine for target: %s",
+            prefix,
             self.workspace.target_path,
         )
 
         if self.workspace.run_license_stamp:
-            self._evaluate_legal_infrastructure()
+            self._evaluate_legal_infrastructure(prefix)
 
         py_files = self.workspace.resolve_files()
         if not py_files:
-            logger.info("No actionable Python targets identified.")
+            logger.info("[%s] No actionable Python targets identified.", prefix)
             return True
 
         reports: list[FileProcessReport] = []
 
         for file_path in py_files:
-            report = self._process_file(file_path)
+            report = self._process_file(file_path, prefix)
             reports.append(report)
 
         # Executive Metrics Aggregation
@@ -108,7 +110,9 @@ class WorkspaceStamper(BaseModel):
         )
 
         logger.info(
-            "Processed %d files. Compliant: %d, Mutated: %d, Blocked: %d, Errors: %d.",
+            "[%s] Processed %d files. Compliant: %d, Mutated: %d, Blocked: %d, "
+            "Errors: %d.",
+            prefix,
             total_processed,
             compliant_count,
             mutated_count,
@@ -119,14 +123,15 @@ class WorkspaceStamper(BaseModel):
         # Strict execution boundary: Blocked syntax or system IO errors fail the run.
         return not (blocked_count > 0 or io_errors_count > 0)
 
-    def _evaluate_legal_infrastructure(self) -> None:
+    def _evaluate_legal_infrastructure(self, prefix: str) -> None:
         """Process legal headers, loading context rules from root workspace assets."""
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
         if not license_file.exists():
             logger.warning(
-                "Compliance notice: '%s' is missing from project root (%s).",
+                "[%s] Compliance notice: '%s' is missing from project root (%s).",
+                prefix,
                 FILE_LICENSE,
                 self.workspace.project_dir,
             )
@@ -134,13 +139,18 @@ class WorkspaceStamper(BaseModel):
             try:
                 lines = license_file.read_text(encoding="utf-8").splitlines()
                 first_two = [line.strip() for line in lines[:2] if line.strip()]
-                logger.info("LICENSE headers detected: %s", " | ".join(first_two))
+                logger.info(
+                    "[%s] LICENSE headers detected: %s",
+                    prefix,
+                    " | ".join(first_two),
+                )
             except OSError as e:
-                logger.warning("Could not read LICENSE file: %s", e)
+                logger.warning("[%s] Could not read LICENSE file: %s", prefix, e)
 
         if not notice_file.exists():
             logger.warning(
-                "Compliance notice: '%s' is missing from project root (%s).",
+                "[%s] Compliance notice: '%s' is missing from project root (%s).",
+                prefix,
                 FILE_NOTICE,
                 self.workspace.project_dir,
             )
@@ -162,11 +172,13 @@ class WorkspaceStamper(BaseModel):
                     self.workspace.extracted_copyright = "\n".join(copyright_lines)
                 else:
                     logger.warning(
-                        "Could not locate a valid 'Copyright' string sequence in %s.",
+                        "[%s] Could not locate a valid 'Copyright' string "
+                        "sequence in %s.",
+                        prefix,
                         FILE_NOTICE,
                     )
             except OSError as e:
-                logger.warning("Could not read NOTICE file: %s", e)
+                logger.warning("[%s] Could not read NOTICE file: %s", prefix, e)
 
     def _find_insertion_point(self, lines: list[str]) -> int:
         """Locate safe insertion point past interpreter lines."""
@@ -301,7 +313,7 @@ class WorkspaceStamper(BaseModel):
 
         return "".join(lines), is_modified
 
-    def _process_file(self, file_path: Path) -> FileProcessReport:
+    def _process_file(self, file_path: Path, prefix: str) -> FileProcessReport:
         """Process an isolated target path and return an explicit operational report."""
         try:
             content = file_path.read_text(encoding="utf-8")
@@ -313,7 +325,12 @@ class WorkspaceStamper(BaseModel):
             if not is_modified:
                 return FileProcessReport(file_path, FileComplianceStatus.COMPLIANT)
 
-            if not self._is_mutation_authorized(file_path, content, new_content):
+            if not self._is_mutation_authorized(
+                file_path,
+                content,
+                new_content,
+                prefix,
+            ):
                 return FileProcessReport(
                     file_path,
                     FileComplianceStatus.BLOCKED_MUTATION,
@@ -323,7 +340,11 @@ class WorkspaceStamper(BaseModel):
             return FileProcessReport(file_path, FileComplianceStatus.MUTATED)
 
         except (OSError, UnicodeDecodeError, PermissionError):
-            logger.exception("Failed execution lifecycle on target %s", file_path.name)
+            logger.exception(
+                "[%s] Failed execution lifecycle on target %s",
+                prefix,
+                file_path.name,
+            )
             return FileProcessReport(file_path, FileComplianceStatus.IO_ERROR)
 
     def _is_mutation_authorized(
@@ -331,9 +352,9 @@ class WorkspaceStamper(BaseModel):
         file_path: Path,
         original_content: str,
         new_content: str,
+        prefix: str,
     ) -> bool:
         """Enforce strict safety verification checks dynamically in-memory."""
-        # Normalize line feeds to isolate layout checks from environment variations
         orig_normalized = original_content.replace("\r\n", "\n").splitlines()
         new_normalized = new_content.replace("\r\n", "\n").splitlines()
 
@@ -362,9 +383,12 @@ class WorkspaceStamper(BaseModel):
             )
 
         if errors:
-            logger.critical("SAFETY ENGINE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!")
+            logger.critical(
+                "[%s] SAFETY ENGINE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!",
+                prefix,
+            )
             for err in errors:
-                logger.error("%s", err)
+                logger.error("[%s] %s", prefix, err)
             return False
 
         return True
