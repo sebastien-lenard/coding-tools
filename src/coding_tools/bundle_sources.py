@@ -1,4 +1,4 @@
-# bundle_sources.py
+# src/coding_tools/bundle_sources.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Bundle project source files into a single text file, stripping redundant headers."""

@@ -62,8 +62,9 @@ def setup_mock_project(tmp_path: Path) -> dict[str, Path]:
 
 def test_pydantic_enforces_directory_existence_on_init() -> None:
     """Verifies that non-existent directory targets fail Pydantic validation."""
+    invalid_path = Path("this/path/does/not/exist/anywhere/at/all")
     with pytest.raises(ValidationError):
-        UntrackedBackupManager(project_path=Path("this/path/does/not/exist/anywhere"))
+        UntrackedBackupManager(project_path=invalid_path)
 
 
 # =====================================================================
@@ -239,7 +240,7 @@ def test_main_gateway_execution_success(tmp_path: Path) -> None:
 
 def test_main_gateway_execution_failure() -> None:
     """Verifies that the CLI gateway flags systemic errors with status exit code 1."""
-    test_args = ["backup_untracked.py", "non_existent_directory_target"]
+    test_args = ["backup_untracked.py", "non_existent_directory_target_abc"]
     with patch("sys.argv", test_args), pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
