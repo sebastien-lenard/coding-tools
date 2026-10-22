@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from coding_tools.llm_prompts import build_contents_list, load_skill
 from coding_tools.llm_protocol import (
+    LLMResponse,
     StructuredGenerationOptions,
-    TestGenerationResponse,
 )
 from coding_tools.llm_router import get_llm_client
 from coding_tools.parsers import (
@@ -153,7 +153,7 @@ class LLMRemediator:
 
             try:
                 options = StructuredGenerationOptions(
-                    response_schema=TestGenerationResponse,
+                    response_schema=LLMResponse,
                     prefix=ctx.prefix,
                     spinner_msg=(f"Sending {stage.name} fix request to LLM..."),
                     system_instruction=system_instruction_text,
@@ -163,7 +163,7 @@ class LLMRemediator:
                     contents_list=contents_list,
                     options=options,
                 )
-                parsed_resp = cast("TestGenerationResponse", raw_resp)
+                parsed_resp = cast("LLMResponse", raw_resp)
             except Exception:
                 logger.exception(
                     "[%s] Failed during structured LLM execution for %s",

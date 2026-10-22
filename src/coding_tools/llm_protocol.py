@@ -47,7 +47,7 @@ class LLMServerError(LLMError):
         self.retryable = retryable
 
 
-class TestGenerationResponse(BaseModel):
+class LLMResponse(BaseModel):
     """Define the expected JSON structure returned by code-generation LLMs."""
 
     message: str

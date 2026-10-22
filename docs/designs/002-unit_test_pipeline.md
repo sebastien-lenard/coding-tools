@@ -122,7 +122,7 @@ When `batch-unit-test` runs against a target source file, it executes up to **5 
    - `FIXED`: Gemini successfully generated a valid, non-identical code fix passing all validation gates, which was persisted to disk. This triggers the iteration controller to feed the updated file into the next test cycle.
 
 2. **Schema & Group Separation**:
-   - **Schema Validation Group**: Validates response structure via Pydantic (`TestGenerationResponse`).
+   - **Schema Validation Group**: Validates response structure via Pydantic (`LLMResponse`).
    - **Static Inspection Group**: Evaluates code length, `ast.parse` syntax, `tmp_path` static AST usage, and SPDX compliance.
    - **Runtime Workspace Guard Group (`workspace_guard.py`)**: Monitors file system state changes during test execution in Stage 1 to detect unauthorized file pollution outside approved temporary directories.
 
