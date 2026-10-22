@@ -131,8 +131,6 @@ def test_bundler_skips_missing_optional_files(
     src_dir.mkdir()
     (src_dir / "app.py").write_text("print('app')", encoding="utf-8")
 
-    # Also add an ignored directory with a python file
-    # to test the ignore condition branch
     ignored_dir = src_dir / "__pycache__"
     ignored_dir.mkdir()
     (ignored_dir / "cached.py").write_text("print('cached')", encoding="utf-8")
@@ -283,10 +281,7 @@ def test_main_gateway_execution_failure() -> None:
 def test_script_execution_entrypoint(
     setup_mock_project: dict[str, Path],
 ) -> None:
-    """Asserts execution coverage over the primary standard file entrypoint block.
-
-    Uses runpy to safely invoke the module execution path directly without subprocesses.
-    """
+    """Asserts execution coverage over the primary standard file entrypoint block."""
     proj = setup_mock_project
     target_file_path = str(Path(bundle_sources.__file__).resolve())
     test_args = ["bundle_sources.py", str(proj["project_dir"])]

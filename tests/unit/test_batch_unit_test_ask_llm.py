@@ -301,12 +301,16 @@ def test_main_dir_target(
         mock_run.assert_awaited()
 
 
-def test_if_name_main() -> None:
+def test_if_name_main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test module execution block if __name__ == '__main__':."""
+    monkeypatch.chdir(tmp_path)
     def mock_run(coro: Coroutine[Any, Any, Any]) -> None:
         coro.close()
 
-    with patch("asyncio.run", side_effect=mock_run):
+    with (
+        patch("asyncio.run", side_effect=mock_run),
+        patch("sys.argv", ["batch_unit_test_ask_llm.py"]),
+    ):
         ws_module = sys.modules[butag.__name__]
         assert ws_module.__file__ is not None, "Module file path cannot be None"
         target_file_path = str(Path(ws_module.__file__).resolve())

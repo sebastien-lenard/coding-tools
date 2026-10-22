@@ -4,6 +4,7 @@
 """Unit test suite validating the untracked code backup workflows."""
 
 import runpy
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +17,27 @@ from coding_tools.backup_untracked import UntrackedBackupManager, main
 # =====================================================================
 # SYSTEM FIXTURES
 # =====================================================================
+
+
+@pytest.fixture(autouse=True)
+def cleanup_coverage_annotations() -> Iterator[None]:
+    """Ensure coverage annotations directory is clean and writable."""
+    ann_dir = Path(".coverage_annotations")
+    if ann_dir.exists():
+        for p in ann_dir.glob("*"):
+            try:
+                p.chmod(0o777)
+                p.unlink()
+            except OSError:
+                pass
+    yield
+    if ann_dir.exists():
+        for p in ann_dir.glob("*"):
+            try:
+                p.chmod(0o777)
+                p.unlink()
+            except OSError:
+                pass
 
 
 @pytest.fixture
@@ -251,8 +273,6 @@ def test_script_execution_entrypoint(tmp_path: Path) -> None:
 
     Uses runpy to safely invoke the module execution path directly without subprocesses.
     """
-    target_file_path = str(Path(backup_untracked.__file__).resolve())
-
     project_dir = tmp_path / "entrypoint_project"
     output_dir = tmp_path / "entrypoint_backup"
     project_dir.mkdir()
@@ -262,5 +282,6 @@ def test_script_execution_entrypoint(tmp_path: Path) -> None:
     config_file.write_text(f"{output_dir.as_posix()}\n", encoding="utf-8")
 
     test_args = ["backup_untracked.py", str(project_dir)]
+    target_file_path = str(Path(backup_untracked.__file__).resolve())
     with patch("sys.argv", test_args), pytest.raises(SystemExit):
         runpy.run_path(target_file_path, run_name="__main__")

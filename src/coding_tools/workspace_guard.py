@@ -192,6 +192,7 @@ class WorkspaceGuard(BaseModel):
             cmd_list.extend(
                 [
                     f"--cov={module_path}",
+                    "--cov-branch",
                     "--cov-report=term-missing",
                     "--cov-report=annotate:.coverage_annotations",
                 ],

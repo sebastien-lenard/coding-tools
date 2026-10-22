@@ -48,6 +48,7 @@ def run_pytest_command(
         "pytest",
         "--import-mode=importlib",
         f"--cov={module_path}",
+        "--cov-branch",
         "--cov-report=term-missing",
         "--cov-report=annotate:.coverage_annotations",
         test_file_path,
