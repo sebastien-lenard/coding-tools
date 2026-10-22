@@ -4,10 +4,15 @@
 
 """Unit tests for workspace_guard.py."""
 
+from __future__ import annotations
+
 import contextlib
 import runpy
 import sys
-from collections.abc import Generator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -18,16 +23,16 @@ from coding_tools.workspace_guard import WorkspaceGuard
 
 @pytest.fixture(autouse=True)
 def clean_cover_files() -> Generator[None, None, None]:
-    """Clean up cover files before and after tests."""
-    cover_files = list(Path("src/coding_tools").glob("*cover"))
-    for cf in cover_files:
-        with contextlib.suppress(FileNotFoundError, OSError):
-            cf.unlink()
+    """Clean up workspace_guard coverage annotation file before and after tests.
+
+    NB: Only the target coverage file is deleted, not other coverage files
+    """
+    cover_file = Path("src/coding_tools/workspace_guard.py,cover")
+    with contextlib.suppress(FileNotFoundError, OSError):
+        cover_file.unlink()
     yield
-    cover_files = list(Path("src/coding_tools").glob("*cover"))
-    for cf in cover_files:
-        with contextlib.suppress(FileNotFoundError, OSError):
-            cf.unlink()
+    with contextlib.suppress(FileNotFoundError, OSError):
+        cover_file.unlink()
 
 
 class MockResult:
@@ -103,12 +108,15 @@ def test_check_static_isolation_syntax_error(tmp_path: Path) -> None:
     assert any("SyntaxError" in e for e in errs)
 
 
-@pytest.mark.parametrize("io_snippet", [
-    "def test_io_write_text():\n    Path('foo').write_text('bar')\n",
-    "def test_io_write_bytes():\n    Path('foo').write_bytes(b'bar')\n",
-    "def test_io_mkdir():\n    Path('foo').mkdir()\n",
-    "def test_io_open():\n    Path('foo').open('w')\n",
-])
+@pytest.mark.parametrize(
+    "io_snippet",
+    [
+        "def test_io_write_text():\n    Path('foo').write_text('bar')\n",
+        "def test_io_write_bytes():\n    Path('foo').write_bytes(b'bar')\n",
+        "def test_io_mkdir():\n    Path('foo').mkdir()\n",
+        "def test_io_open():\n    Path('foo').open('w')\n",
+    ],
+)
 def test_check_static_isolation_violations(
     tmp_path: Path,
     io_snippet: str,
@@ -146,9 +154,8 @@ def test_snapshot_and_pollution(tmp_path: Path) -> None:
     guard = WorkspaceGuard(project_path=tmp_path)
     baseline = guard.snapshot_workspace()
 
-    (tmp_path / "unit-test-report.py").write_text("report = 1")
-    (tmp_path / "based-pyright-report.py").write_text("report = 1")
-    (tmp_path / "ruff-report.py").write_text("report = 1")
+    (tmp_path / "notes.txt").write_text("report = 1")
+    (tmp_path / "report.log").write_text("report = 1")
 
     is_clean_allowed, violations_allowed = guard.check_runtime_pollution(
         baseline,
@@ -170,7 +177,7 @@ def test_snapshot_and_pollution(tmp_path: Path) -> None:
     assert is_clean is False
     assert any("bad_file2.py" in v for v in violations)
     assert any("sub" in v for v in violations)
-    assert not any("unit-test-report.py" in v for v in violations)
+    assert not any("notes.txt" in v for v in violations)
     assert not any("ignored_file.py" in v for v in violations)
     assert not any("test_ignored_py.py" in v for v in violations)
 
@@ -334,6 +341,7 @@ def test_run_checks_and_summary(
 
     class MockFailResult(MockResult):
         returncode = 1
+
     monkeypatch.setattr(
         "subprocess.run",
         lambda *args, **kwargs: MockFailResult(),
@@ -345,6 +353,7 @@ def test_run_checks_and_summary(
     def mock_run_with_pollution(*args: object, **kwargs: object) -> MockResult:
         (tmp_path / "unauthorized_pollution.py").write_text("polluted = 1")
         return MockResult()
+
     monkeypatch.setattr("subprocess.run", mock_run_with_pollution)
     r_passed_poll, r_res_poll = workspace_guard._run_runtime_checks(guard, [f])
     assert r_passed_poll is False

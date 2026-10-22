@@ -16,6 +16,8 @@ from typing import Any
 
 from pydantic import BaseModel, DirectoryPath
 
+from coding_tools.file_handler import ALL_TOOL_OUTPUT_DIRS, get_pytest_log_path
+
 logger = logging.getLogger("coding_tools.workspace_guard")
 
 IGNORED_DIRS = {
@@ -27,6 +29,7 @@ IGNORED_DIRS = {
     ".ruff_cache",
     "build",
     "dist",
+    *ALL_TOOL_OUTPUT_DIRS,
 }
 CHECKED_EXTENSIONS = {".py"}
 
@@ -140,12 +143,6 @@ class WorkspaceGuard(BaseModel):
         violations: list[str] = []
         unauthorized_list: list[str] = []
         for f in new_files:
-            if f.parent == Path() and (
-                f.name.startswith("unit-test-")
-                or f.name.startswith("based-pyright-")
-                or f.name.startswith("ruff-")
-            ):
-                continue
             unauthorized_list.append(str(f))
             violations.append(
                 f"Unauthorized file pollution detected in workspace: {f}",
@@ -178,7 +175,6 @@ class WorkspaceGuard(BaseModel):
         """Capture baseline, run pytest on the test file, and check pollution."""
         baseline = self.snapshot_workspace(prefix)
         path = Path(test_file_path)
-        test_stem = path.stem
 
         cmd_list = [
             "uv",
@@ -197,7 +193,7 @@ class WorkspaceGuard(BaseModel):
                 [
                     f"--cov={module_path}",
                     "--cov-report=term-missing",
-                    "--cov-report=annotate",
+                    "--cov-report=annotate:.coverage_annotations",
                 ],
             )
         cmd_list.append(str(path))
@@ -212,7 +208,7 @@ class WorkspaceGuard(BaseModel):
             check=False,
         )
 
-        output_path = Path(f"unit-test-{test_stem}.txt")
+        output_path = get_pytest_log_path(test_file_path)
         full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
         output_path.write_text(full_content, encoding="utf-8")
 

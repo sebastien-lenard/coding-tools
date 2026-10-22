@@ -12,6 +12,12 @@ import logging
 import subprocess
 from pathlib import Path
 
+from coding_tools.file_handler import (
+    get_basedpyright_log_path,
+    get_coverage_annotation_path,
+    get_pytest_log_path,
+    get_ruff_log_path,
+)
 from coding_tools.workspace_guard import WorkspaceGuard
 from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
 
@@ -29,8 +35,6 @@ def run_pytest_command(
     prefix: str,
 ) -> None:
     """Execute the pytest command and save command + output to a unique test log."""
-    test_stem = Path(test_file_path).stem
-
     source_path = Path(source_file_path)
     try:
         relative_source = source_path.relative_to("src")
@@ -45,7 +49,7 @@ def run_pytest_command(
         "--import-mode=importlib",
         f"--cov={module_path}",
         "--cov-report=term-missing",
-        "--cov-report=annotate",
+        "--cov-report=annotate:.coverage_annotations",
         test_file_path,
     ]
     cmd_str = " ".join(cmd_list)
@@ -58,14 +62,13 @@ def run_pytest_command(
         check=False,
     )
 
-    output_path = Path(f"unit-test-{test_stem}.txt")
+    output_path = get_pytest_log_path(test_file_path)
     full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
     output_path.write_text(full_content, encoding="utf-8")
 
 
 def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
     """Execute basedpyright and save command + output to a unique pyright log."""
-    test_stem = Path(test_file_path).stem
     cmd_list = [
         "uv",
         "run",
@@ -82,7 +85,7 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
         check=False,
     )
 
-    output_path = Path(f"based-pyright-{test_stem}.txt")
+    output_path = get_basedpyright_log_path(test_file_path)
     full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
     output_path.write_text(full_content, encoding="utf-8")
     return full_content
@@ -90,7 +93,6 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
 
 def run_ruff_command(test_file_path: str, prefix: str) -> str:
     """Execute ruff check with --fix and save command + output to a unique ruff log."""
-    test_stem = Path(test_file_path).stem
     cmd_list = [
         "uv",
         "run",
@@ -119,7 +121,7 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
 
     logger.info("[%s] Ruff Execution Result: %s", prefix, summary_line)
 
-    output_path = Path(f"ruff-{test_stem}.txt")
+    output_path = get_ruff_log_path(test_file_path)
     full_content = (
         f"$ {cmd_str}\n\nRuff Summary: {summary_line}\n\n"
         f"{result.stdout}\n{result.stderr}"
@@ -335,9 +337,11 @@ def extract_uncovered_blocks(coverage_text: str) -> list[str]:
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
     """Inspect uncovered/partial lines and build precise instructions."""
-    cover_path = Path(f"{source_file_path},cover")
+    cover_path = get_coverage_annotation_path(source_file_path)
     if not cover_path.exists():
-        return []
+        cover_path = Path(f"{source_file_path},cover")
+        if not cover_path.exists():
+            return []
 
     source_path = Path(source_file_path)
     if not source_path.exists():
@@ -388,11 +392,12 @@ def read_local_files(
         "[%s] Reading local dynamic test, coverage, and log files for payload...",
         prefix,
     )
-    test_stem = Path(test_file_path).stem
-
     test_content = Path(test_file_path).read_text(encoding="utf-8")
 
-    cover_path = Path(f"{source_file_path},cover")
+    cover_path = get_coverage_annotation_path(source_file_path)
+    if not cover_path.exists():
+        cover_path = Path(f"{source_file_path},cover")
+
     if cover_path.exists():
         coverage_content = cover_path.read_text(encoding="utf-8")
     else:
@@ -400,7 +405,7 @@ def read_local_files(
             "No coverage report generated due to pytest collection or execution error."
         )
 
-    pytest_output = Path(f"unit-test-{test_stem}.txt").read_text(encoding="utf-8")
+    pytest_output = get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
 
     return test_content, coverage_content, pytest_output
 
