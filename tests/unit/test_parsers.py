@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from coding_tools import parsers
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from coding_tools.file_handler import (
+    get_basedpyright_log_path,
+    get_pytest_log_path,
+    get_ruff_log_path,
+)
+from coding_tools.workspace_guard import WorkspaceGuard
 
 
 @dataclass
@@ -54,18 +57,20 @@ def test_run_pytest_command(
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
+    test_file = "tests/unit/test_dummy.py"
     parsers.run_pytest_command(
-        "tests/unit/test_dummy.py",
+        test_file,
         "src/coding_tools/parsers.py",
         "PREFIX",
     )
     assert len(captured_cmds) == 1
-    log_file = tmp_path / "unit-test-test_dummy.txt"
+    log_file = get_pytest_log_path(test_file)
     assert log_file.exists()
     assert "1 passed" in log_file.read_text(encoding="utf-8")
 
+    # Test with path that raises ValueError on relative_to("src")
     parsers.run_pytest_command(
-        "tests/unit/test_dummy.py",
+        test_file,
         "other_dir/parsers.py",
         "PREFIX",
     )
@@ -94,12 +99,13 @@ def test_run_basedpyright_command(
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
+    test_file = "tests/unit/test_dummy.py"
     res = parsers.run_basedpyright_command(
-        "tests/unit/test_dummy.py",
+        test_file,
         "PREFIX",
     )
     assert "0 errors" in res
-    assert (tmp_path / "based-pyright-test_dummy.txt").exists()
+    assert get_basedpyright_log_path(test_file).exists()
 
 
 def test_run_ruff_command(
@@ -124,12 +130,13 @@ def test_run_ruff_command(
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
+    test_file = "tests/unit/test_dummy.py"
     res = parsers.run_ruff_command(
-        "tests/unit/test_dummy.py",
+        test_file,
         "PREFIX",
     )
     assert "All checks passed!" in res
-    assert (tmp_path / "ruff-test_dummy.txt").exists()
+    assert get_ruff_log_path(test_file).exists()
 
 
 def test_run_ruff_command_non_zero_exit_without_found(
@@ -154,12 +161,13 @@ def test_run_ruff_command_non_zero_exit_without_found(
 
     monkeypatch.setattr(subprocess, "run", mock_run)
 
+    test_file = "tests/unit/test_dummy.py"
     res = parsers.run_ruff_command(
-        "tests/unit/test_dummy.py",
+        test_file,
         "PREFIX",
     )
     assert "Ruff failed with exit code 1" in res
-    assert (tmp_path / "ruff-test_dummy.txt").exists()
+    assert get_ruff_log_path(test_file).exists()
 
 
 @pytest.mark.parametrize(
@@ -191,7 +199,8 @@ def test_run_ruff_command_non_zero_exit_without_found(
         ),
         PytestResultTestCase(
             output=(
-                "tests coverage\ncoding_tools/foo.py   10   0   100%\n"
+                "--- coverage --- \n"
+                "coding_tools/foo.py   10   0   100%\n"
                 "TOTAL   10   0   100%\n=== 1 passed ==="
             ),
             expected_summary="=== 1 passed ===",
@@ -202,7 +211,8 @@ def test_run_ruff_command_non_zero_exit_without_found(
         ),
         PytestResultTestCase(
             output=(
-                "tests coverage\ncoding_tools/foo.py   10   2   80%   5 6\n"
+                "=== coverage === \n"
+                "coding_tools/foo.py   10   2   80%   5 6\n"
                 "TOTAL   10   2   80%\n=== 1 passed ==="
             ),
             expected_summary="=== 1 passed ===",
@@ -213,7 +223,8 @@ def test_run_ruff_command_non_zero_exit_without_found(
         ),
         PytestResultTestCase(
             output=(
-                "tests coverage\ncoding_tools/foo.py   10   2   80%\n"
+                "--- coverage --- \n"
+                "coding_tools/foo.py   10   2   80%\n"
                 "TOTAL   10   2   80%\n=== 1 passed ==="
             ),
             expected_summary="=== 1 passed ===",
@@ -241,7 +252,7 @@ def test_parse_pytest_results(
 def test_parse_pytest_results_with_source_filter() -> None:
     """Test parsing pytest results with source file filtering."""
     output = (
-        "tests coverage\n"
+        "--- coverage ---\n"
         "src/coding_tools/bar.py   10   0   100%\n"
         "src/coding_tools/foo.py   10   0   100%\n"
         "TOTAL   20   0   100%\n"
@@ -254,6 +265,14 @@ def test_parse_pytest_results_with_source_filter() -> None:
     assert is_100 is True
     assert missing == "None (100% coverage)"
 
+    # Also test non-matching basename / normalized path branch
+    _, missing2, _, is_1002, _, _ = parsers.parse_pytest_results(
+        output,
+        source_file_path="src/coding_tools/other.py",
+    )
+    assert is_1002 is False
+    assert missing2 == "None"
+
 
 def test_is_syntactically_valid() -> None:
     """Test is_syntactically_valid for valid and invalid syntax."""
@@ -264,7 +283,7 @@ def test_is_syntactically_valid() -> None:
 def test_extract_pytest_warnings() -> None:
     """Test extracting pytest warnings."""
     output_with_warnings = (
-        "\\\nSome output\n-- Warnings summary --\n"
+        "\\\nSome output\n-- warnings summary --\n"
         "Line 1 warning\nLine 2 warning\n"
         "-- Docs: https://docs.pytest.org\nSome more output\n"
     )
@@ -295,6 +314,7 @@ def test_parse_basedpyright_summary() -> None:
 def test_parse_ruff_summary() -> None:
     """Test parsing ruff summary."""
     assert parsers.parse_ruff_summary("All checks passed!") == "All checks passed!"
+    assert parsers.parse_ruff_summary("Ruff Status: ok") == "Ruff Status: ok"
     assert parsers.parse_ruff_summary("Found 2 error(s).") == "Found 2 error(s)."
     assert parsers.parse_ruff_summary("some random output\nother line") == (
         "other line"
@@ -369,52 +389,163 @@ def test_read_local_files(
     test_file = tmp_path / "test_dummy.py"
     test_file.write_text("def test_foo(): pass", encoding="utf-8")
 
-    log_file = tmp_path / "unit-test-test_dummy.txt"
+    log_file = get_pytest_log_path(str(test_file))
+    log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.write_text("pytest log content", encoding="utf-8")
 
-    cover_file = tmp_path / "src_parsers.py,cover"
+    source_file = tmp_path / "src_parsers.py"
+    cover_file = Path(f"{source_file},cover")
     cover_file.write_text("coverage content", encoding="utf-8")
 
     test_content, coverage_content, pytest_output = parsers.read_local_files(
         str(test_file),
-        str(tmp_path / "src_parsers.py"),
+        str(source_file),
         "PREFIX",
     )
     assert test_content == "def test_foo(): pass"
     assert coverage_content == "coverage content"
     assert pytest_output == "pytest log content"
 
-    cover_file.unlink()
+    cover_file.unlink(missing_ok=True)
     _, coverage_content_missing, _ = parsers.read_local_files(
         str(test_file),
-        str(tmp_path / "src_parsers.py"),
+        str(source_file),
         "PREFIX",
     )
     assert "No coverage report generated" in coverage_content_missing
 
 
+def test_run_preflight_compliance_and_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test running preflight compliance and validation."""
+    monkeypatch.chdir(tmp_path)
+    test_file = tmp_path / "test_dummy.py"
+    test_file.write_text(
+        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
+        "# SPDX-License-Identifier: Apache-2.0\n"
+        "def test_sample():\n"
+        "    assert True\n"
+        "    assert 1 == 1\n"
+        "    assert 2 == 2\n",
+        encoding="utf-8",
+    )
+
+    success, errors = parsers.run_preflight_compliance_and_validation(
+        str(test_file),
+        "PREFIX",
+    )
+    assert success is True
+    assert errors == []
+
+    success_missing, errors_missing = parsers.run_preflight_compliance_and_validation(
+        str(tmp_path / "non_existent.py"),
+        "PREFIX",
+    )
+    assert success_missing is False
+    assert "Test file does not exist." in errors_missing
+
+    bad_file = tmp_path / "test_bad.py"
+    bad_file.write_text("x = (", encoding="utf-8")
+    success_bad, errors_bad = parsers.run_preflight_compliance_and_validation(
+        str(bad_file),
+        "PREFIX",
+    )
+    assert success_bad is False
+    assert any("Priority" in e for e in errors_bad)
+
+    # Test missing SPDX header
+    no_spdx_file = tmp_path / "test_no_spdx.py"
+    no_spdx_file.write_text(
+        "def test_sample():\n"
+        "    assert True\n"
+        "    assert 1 == 1\n"
+        "    assert 2 == 2\n"
+        "    assert 3 == 3\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(parsers.WorkspaceStamper, "run", lambda self, path="": None)
+    success_no_spdx, errors_no_spdx = parsers.run_preflight_compliance_and_validation(
+        str(no_spdx_file),
+        "PREFIX",
+    )
+    assert success_no_spdx is False
+    assert any("Priority 4" in e for e in errors_no_spdx)
+
+    # Test stamper exception handler
+    def mock_stamper_run(self: parsers.WorkspaceStamper, path: str = "") -> None:
+        msg = "stamper error"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(parsers.WorkspaceStamper, "run", mock_stamper_run)
+    success_stamp, _errors_stamp = parsers.run_preflight_compliance_and_validation(
+        str(test_file),
+        "PREFIX",
+    )
+    assert success_stamp is True
+
+
 @pytest.mark.parametrize(
     ("code", "expected_valid", "expected_reason"),
     [
-        ("# comment\nline2\nline3\nline4\nline5\nline6", True, "Valid"),
+        (
+            (
+                "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
+                "# SPDX-License-Identifier: Apache-2.0\n"
+                "line2\nline3\nline4\nline5\nline6"
+            ),
+            True,
+            "Valid",
+        ),
         ("print('hello')\n" * 3, False, "Code line count"),
         (
             "x = 1\nx = 2\nx = 3\nx = 4\nx = 5\nx = 6",
             False,
             "missing required comment tags",
         ),
-        ("# comment\nx = (\nline3\nline4\nline5\nline6", False, "SyntaxError"),
+        (
+            (
+                "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
+                "# SPDX-License-Identifier: Apache-2.0\n"
+                "x = (\nline3\nline4\nline5\nline6"
+            ),
+            False,
+            "SyntaxError",
+        ),
     ],
 )
 def test_validate_llm_code(
     code: str,
     expected_valid: bool,
     expected_reason: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test validating LLM code."""
+    monkeypatch.chdir(tmp_path)
     is_valid, reason = parsers.validate_llm_code(code)
     assert is_valid == expected_valid
     assert expected_reason in reason
+
+
+def test_validate_llm_code_isolation_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test validate_llm_code when static isolation fails."""
+    monkeypatch.chdir(tmp_path)
+    def mock_check(*args: object, **kwargs: object) -> tuple[bool, list[str]]:
+        return False, ["Violation found"]
+
+    monkeypatch.setattr(WorkspaceGuard, "check_static_isolation", mock_check)
+    is_valid, reason = parsers.validate_llm_code(
+        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
+        "# SPDX-License-Identifier: Apache-2.0\n"
+        "line2\nline3\nline4\nline5\nline6",
+    )
+    assert is_valid is False
+    assert "Static Isolation Violation" in reason
 
 
 def test_process_and_save_code(
@@ -434,8 +565,12 @@ def test_process_and_save_code(
 
     monkeypatch.setattr(parsers.logger, "info", mock_info)
 
-    parsers.process_and_save_code("new code", str(test_file), "PREFIX")
-    assert test_file.read_text(encoding="utf-8") == "new code"
+    parsers.process_and_save_code(
+        "new code content here",
+        str(test_file),
+        "PREFIX",
+    )
+    assert test_file.read_text(encoding="utf-8") == "new code content here"
     assert len(captured_diffs) == 1
 
 

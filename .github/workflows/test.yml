@@ -21,6 +21,7 @@ jobs:
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GEMINI_API_KEY: "dummy-key-for-ci"
 
     steps:
     - name: Checkout code
@@ -34,6 +35,9 @@ jobs:
         # This automatically installs Python 3.12.9
         python-version: "3.12.9"
         enable-cache: true
+    
+    - name: Install dependencies with extras
+      run: uv sync --all-extras --dev
 
     - name: Create dummy .env file
       run: cp .env.example .env

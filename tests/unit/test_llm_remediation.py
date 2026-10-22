@@ -6,7 +6,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 from coding_tools.llm_remediation import (
@@ -87,10 +86,19 @@ def test_build_workflow_contents_custom(tmp_path: Path) -> None:
         stage,
         "print('test')",
         "output",
-        1,
+        0,
     )
     assert contents[0] == custom_contents[0]
-    assert len(contents) == 2
+    assert len(contents) == 1
+
+    contents_retry = remediator._build_workflow_contents(
+        ctx,
+        stage,
+        "print('test')",
+        "output",
+        1,
+    )
+    assert len(contents_retry) == 2
 
 
 def test_build_workflow_contents_default(tmp_path: Path) -> None:
@@ -118,7 +126,16 @@ def test_build_workflow_contents_default(tmp_path: Path) -> None:
         "output",
         0,
     )
-    assert len(contents) == 3
+    assert len(contents) == 2
+
+    contents_retry = remediator._build_workflow_contents(
+        ctx,
+        stage,
+        "print('test')",
+        "output",
+        1,
+    )
+    assert len(contents_retry) == 3
 
 
 @patch("coding_tools.llm_remediation.load_skill", return_value="skill instruction")
@@ -404,8 +421,8 @@ def test_run_workflow_stage_remediation(
     mock_process.assert_called_once()
 
 
-def test_run_pytest_stage(tmp_path: Path) -> None:
-    """Test pytest runner stage workflow."""
+def test_run_pytest_stage_preflight(tmp_path: Path) -> None:
+    """Test pytest stage preflight failure and success workflows."""
     test_file = tmp_path / "test_foo.py"
     test_file.write_text("test content", encoding="utf-8")
     ctx = WorkflowContext(
@@ -417,127 +434,149 @@ def test_run_pytest_stage(tmp_path: Path) -> None:
     remediator = LLMRemediator(client=MagicMock())
 
     with (
-        patch("coding_tools.llm_remediation.run_pytest_command") as mock_run_command,
+        patch(
+            "coding_tools.llm_remediation.run_preflight_compliance_and_validation",
+            return_value=(False, ["error1"]),
+        ),
+        patch.object(
+            remediator,
+            "_process_llm_remediation",
+            return_value=(WorkflowStatus.FIXED, "FIXED"),
+        ) as mock_remed,
+    ):
+        status, name, msg = remediator.run_pytest_stage(None, [], ctx)
+        assert status == WorkflowStatus.FIXED
+        assert name == "Pytest/Coverage"
+        assert msg == "FIXED"
+        mock_remed.assert_called_once()
+
+    ctx_no_llm = WorkflowContext(
+        test_file_path=str(test_file),
+        source_file_path="source.py",
+        prefix="pref",
+        allow_llm=False,
+    )
+    with patch(
+        "coding_tools.llm_remediation.run_preflight_compliance_and_validation",
+        return_value=(False, ["error1"]),
+    ):
+        status, name, msg = remediator.run_pytest_stage(None, [], ctx_no_llm)
+        assert status == WorkflowStatus.FAILED
+        assert name == "Pytest/Coverage"
+        assert msg == "FAILED"
+
+
+def test_run_pytest_stage_command(tmp_path: Path) -> None:
+    """Test building pytest run command and workspace guard checks."""
+    test_file = tmp_path / "test_foo.py"
+    test_file.write_text("test content", encoding="utf-8")
+    ctx = WorkflowContext(
+        test_file_path=str(test_file),
+        source_file_path="source.py",
+        prefix="pref",
+        allow_llm=True,
+    )
+    remediator = LLMRemediator(client=MagicMock())
+
+    with (
+        patch("coding_tools.llm_remediation.WorkspaceGuard") as mock_guard_cls,
         patch(
             "coding_tools.llm_remediation.read_local_files",
             return_value=("t_code", "s_code", "py_out"),
-        ) as mock_read_files,
-        patch(
-            "coding_tools.llm_remediation.parse_pytest_results",
-        ) as mock_parse_results,
-        patch(
-            "coding_tools.llm_remediation.extract_pytest_warnings",
-        ) as mock_extract_warnings,
-        patch(
-            "coding_tools.llm_remediation.build_contents_list",
-        ) as mock_build_contents,
+        ),
     ):
-        mock_parse_results.return_value = ("1 passed", [], 1, True, False, "")
-        mock_extract_warnings.return_value = "None"
-        res, _name, _msg = remediator.run_pytest_stage(None, [], ctx)
-        assert res == WorkflowStatus.SUCCESS
-        mock_run_command.assert_called_once_with(
+        mock_guard = mock_guard_cls.return_value
+        mock_guard.execute_test_and_guard.side_effect = [(False, ["violation1"])]
+        run_cmd = remediator._build_pytest_run_command(ctx)
+        res_output = run_cmd()
+        assert "Runtime Workspace Guard Violations" in res_output
+
+        mock_guard.execute_test_and_guard.side_effect = [(True, [])]
+        res_output_clean = run_cmd()
+        assert "Runtime Workspace Guard Violations" not in res_output_clean
+
+
+def test_run_pytest_stage_evaluation(tmp_path: Path) -> None:
+    """Test evaluating pytest success results."""
+    ctx = WorkflowContext(
+        test_file_path=str(tmp_path / "t.py"),
+        source_file_path="source.py",
+        prefix="pref",
+        allow_llm=True,
+    )
+    remediator = LLMRemediator(client=MagicMock())
+    check_func = remediator._evaluate_pytest_success(ctx)
+    with patch("coding_tools.llm_remediation.parse_pytest_results") as mock_parse:
+        mock_parse.return_value = ("1 passed", [], True, True, False, "")
+        assert check_func("some output") is True
+
+        mock_parse.return_value = ("error", [], True, False, True, "syntax details")
+        assert check_func("some output") is False
+
+        mock_parse.return_value = ("1 failed", [], False, False, False, "")
+        assert check_func("some output") is False
+
+        mock_parse.return_value = ("error in execution", [], True, False, False, "")
+        assert check_func("some output") is False
+
+        mock_parse.return_value = ("1 passed", [], True, True, False, "")
+        assert check_func("Runtime Workspace Guard Violations") is False
+
+
+def test_run_pytest_stage_custom_contents(tmp_path: Path) -> None:
+    """Test building custom contents for pytest stage."""
+    test_file = tmp_path / "test_foo.py"
+    test_file.write_text("test content", encoding="utf-8")
+    remediator = LLMRemediator(client=MagicMock())
+
+    with patch("coding_tools.llm_remediation.parse_pytest_results") as mock_parse:
+        mock_parse.return_value = ("error", [], True, False, True, "syntax details")
+        custom_content = remediator._build_pytest_custom_contents(
             str(test_file),
             "source.py",
-            "pref",
+            "test content",
+            "py_output",
         )
-        mock_read_files.assert_called_once_with(
-            str(test_file),
-            "source.py",
-            "pref",
-        )
+        assert len(custom_content) == 3
 
-        mock_parse_results.return_value = (
-            "summary",
-            [],
-            0,
-            False,
-            True,
-            "syntax details",
-        )
-        with patch.object(
-            remediator,
-            "run_workflow_stage",
-            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
-        ):
-            res, _, _ = remediator.run_pytest_stage(None, [], ctx)
-            assert res is False
-
-        mock_parse_results.return_value = ("1 passed", [], 1, True, False, "")
-        mock_extract_warnings.return_value = "None"
-        with patch.object(
-            remediator,
-            "run_workflow_stage",
-            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
-        ):
-            res, _, _ = remediator.run_pytest_stage(None, [], ctx)
-            assert res is True
-
-        mock_parse_results.return_value = (
-            "1 failed",
-            ["10"],
-            1,
-            False,
-            False,
-            "",
-        )
-        mock_extract_warnings.return_value = "Some warning"
-        with patch.object(
-            remediator,
-            "run_workflow_stage",
-            side_effect=lambda c, u, x, s: (s.is_success("py_out"), s.name, "res"),
-        ):
-            res, _, _ = remediator.run_pytest_stage(None, [], ctx)
-            assert res is False
-
-        mock_parse_results.return_value = (
-            "summary",
-            [],
-            0,
-            False,
-            True,
-            "syntax error details",
-        )
-        stage_config_holder: dict[str, Any] = {}
-
-        def capture_run_workflow(
-            c: str | None,
-            u: list[str],
-            x: WorkflowContext,
-            s: StageConfig,
-        ) -> tuple[WorkflowStatus, str, str]:
-            stage_config_holder["stage"] = s
-            return WorkflowStatus.SUCCESS, s.name, "SUCCESS"
-
-        with patch.object(
-            remediator,
-            "run_workflow_stage",
-            side_effect=capture_run_workflow,
-        ):
-            remediator.run_pytest_stage(None, [], ctx)
-            stage = stage_config_holder["stage"]
-
-            contents_syntax = stage.build_custom_contents(
-                "t.py",
-                "s.py",
-                "tc",
-                "py_out",
+        mock_parse.return_value = ("1 passed", [], True, True, False, "")
+        with patch(
+            "coding_tools.llm_remediation.build_contents_list",
+            return_value=["built"],
+        ) as mock_bcl:
+            custom_content_ok = remediator._build_pytest_custom_contents(
+                str(test_file),
+                "source.py",
+                "test content",
+                "py_output",
             )
-            assert len(contents_syntax) == 3
+            assert custom_content_ok == ["built"]
+            mock_bcl.assert_called_once()
 
-            mock_parse_results.return_value = (
-                "summary",
-                [],
-                1,
-                True,
-                False,
-                "",
-            )
-            mock_build_contents.return_value = ["default_part"]
-            contents_normal = stage.build_custom_contents(
-                "t.py",
-                "s.py",
-                "tc",
-                "py_out",
-            )
-            assert contents_normal == ["default_part"]
+
+def test_run_pytest_stage_success(tmp_path: Path) -> None:
+    """Test successful pytest stage execution workflow."""
+    ctx = WorkflowContext(
+        test_file_path=str(tmp_path / "t.py"),
+        source_file_path="source.py",
+        prefix="pref",
+        allow_llm=True,
+    )
+    remediator = LLMRemediator(client=MagicMock())
+
+    with (
+        patch(
+            "coding_tools.llm_remediation.run_preflight_compliance_and_validation",
+            return_value=(True, []),
+        ),
+        patch.object(
+            remediator,
+            "run_workflow_stage",
+            return_value=(WorkflowStatus.SUCCESS, "Pytest/Coverage", "SUCCESS"),
+        ) as mock_run_stage,
+    ):
+        status, name, msg = remediator.run_pytest_stage(None, [], ctx)
+        assert status == WorkflowStatus.SUCCESS
+        assert name == "Pytest/Coverage"
+        assert msg == "SUCCESS"
+        mock_run_stage.assert_called_once()

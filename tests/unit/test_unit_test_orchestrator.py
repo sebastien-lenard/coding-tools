@@ -9,9 +9,9 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-from google.genai.errors import APIError, ServerError
 
 from coding_tools import unit_test_orchestrator
+from coding_tools.llm_protocol import LLMError
 from coding_tools.llm_remediation import WorkflowStatus
 
 
@@ -196,21 +196,13 @@ def test_execute_workflow_chain_failure(
     assert status == "FAILED"
 
 
-@pytest.mark.parametrize(
-    "exc",
-    [
-        ServerError(code=500, response_json={"error": {"message": "server error"}}),
-        APIError(code=400, response_json={"error": {"message": "api error"}}),
-    ],
-)
 @patch("coding_tools.unit_test_orchestrator.LLMRemediator")
 def test_execute_workflow_api_errors(
     mock_remediator_cls: MagicMock,
-    exc: Exception,
 ) -> None:
-    """Test execute_workflow catches ServerError and APIError."""
+    """Test execute_workflow catches LLMError."""
     remediator = mock_remediator_cls.return_value
-    remediator.setup_cache.side_effect = exc
+    remediator.setup_cache.side_effect = LLMError("API error")
 
     success, stage, status = unit_test_orchestrator.execute_workflow()
     assert success is False

@@ -274,7 +274,7 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-ai = [
+gemini = [
     { name = "google-genai" },
 ]
 
@@ -288,10 +288,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "google-genai", marker = "extra == 'ai'", specifier = ">=2.16.0" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=2.16.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
 ]
-provides-extras = ["ai"]
+provides-extras = ["gemini"]
 
 [package.metadata.requires-dev]
 dev = [

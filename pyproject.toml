@@ -11,7 +11,7 @@ name = "coding-tools"
 version = "0.1.0"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-description = "Automated workflows for workspace stamping and untracked file backups."
+description = "Automated workflows for workspace stamping, untracked file backups, and codebase structure mapping."
 readme = "README.md"
 requires-python = ">=3.12.9"
 authors = [
@@ -30,9 +30,11 @@ batch-unit-test = "coding_tools.batch_unit_test_ask_llm:main"
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
+function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
+workspace-guard = "coding_tools.workspace_guard:main"
 
 [project.optional-dependencies]
-ai = [
+gemini = [
     "google-genai>=2.16.0",
 ]
 

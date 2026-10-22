@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Provider-agnostic protocol and shared models for LLM client wrappers."""
+"""Provider-agnostic protocol, shared models, and exceptions for LLM client wrappers."""
 
 from __future__ import annotations
 
@@ -12,6 +12,39 @@ from typing import Protocol, TypeVar
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
+
+
+class LLMError(Exception):
+    """Base exception for all LLM-related errors."""
+
+
+class LLMAPIError(LLMError):
+    """Agnostic API error mirroring precise provider API failure details."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+
+
+class LLMServerError(LLMError):
+    """Agnostic server error mirroring server failure and retryability details."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
 
 
 class TestGenerationResponse(BaseModel):

@@ -1,6 +1,5 @@
 # src/coding_tools/parsers.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
 
 """Local file parsers, test/lint commands, diffing, and code validation utilities."""
@@ -13,9 +12,17 @@ import logging
 import subprocess
 from pathlib import Path
 
+from coding_tools.file_handler import (
+    get_basedpyright_log_path,
+    get_coverage_annotation_path,
+    get_pytest_log_path,
+    get_ruff_log_path,
+)
+from coding_tools.workspace_guard import WorkspaceGuard
+from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
+
 logger = logging.getLogger(__name__)
 
-# Constants to replace magic numbers
 MIN_PARTS_FOR_COVERAGE = 3
 MIN_PARTS_WITH_MISSING = 4
 MAX_BACKWARD_LOOKUP = 5
@@ -28,9 +35,6 @@ def run_pytest_command(
     prefix: str,
 ) -> None:
     """Execute the pytest command and save command + output to a unique test log."""
-    test_stem = Path(test_file_path).stem
-
-    # Robust, OS-agnostic module path conversion (handles both / and \ slashes)
     source_path = Path(source_file_path)
     try:
         relative_source = source_path.relative_to("src")
@@ -44,8 +48,9 @@ def run_pytest_command(
         "pytest",
         "--import-mode=importlib",
         f"--cov={module_path}",
+        "--cov-branch",
         "--cov-report=term-missing",
-        "--cov-report=annotate",
+        "--cov-report=annotate:.coverage_annotations",
         test_file_path,
     ]
     cmd_str = " ".join(cmd_list)
@@ -58,14 +63,13 @@ def run_pytest_command(
         check=False,
     )
 
-    output_path = Path(f"unit-test-{test_stem}.txt")
+    output_path = get_pytest_log_path(test_file_path)
     full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
     output_path.write_text(full_content, encoding="utf-8")
 
 
 def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
     """Execute basedpyright and save command + output to a unique pyright log."""
-    test_stem = Path(test_file_path).stem
     cmd_list = [
         "uv",
         "run",
@@ -82,7 +86,7 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
         check=False,
     )
 
-    output_path = Path(f"based-pyright-{test_stem}.txt")
+    output_path = get_basedpyright_log_path(test_file_path)
     full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
     output_path.write_text(full_content, encoding="utf-8")
     return full_content
@@ -90,7 +94,6 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
 
 def run_ruff_command(test_file_path: str, prefix: str) -> str:
     """Execute ruff check with --fix and save command + output to a unique ruff log."""
-    test_stem = Path(test_file_path).stem
     cmd_list = [
         "uv",
         "run",
@@ -109,7 +112,6 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
         check=False,
     )
 
-    # Extract the actual summary line from ruff output for clear logging
     summary_line = "All checks passed!"
     for line in result.stdout.splitlines():
         if "Found " in line or "All checks passed!" in line:
@@ -120,7 +122,7 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
 
     logger.info("[%s] Ruff Execution Result: %s", prefix, summary_line)
 
-    output_path = Path(f"ruff-{test_stem}.txt")
+    output_path = get_ruff_log_path(test_file_path)
     full_content = (
         f"$ {cmd_str}\n\nRuff Summary: {summary_line}\n\n"
         f"{result.stdout}\n{result.stderr}"
@@ -169,13 +171,17 @@ def _extract_coverage_metrics(
     in_coverage_section = False
 
     for line in output_text.splitlines():
-        if "tests coverage" in line:
+        if "coverage" in line.lower() and ("---" in line or "===" in line):
             in_coverage_section = True
             continue
         if in_coverage_section and ".py" in line and "TOTAL" not in line:
             if target_source_normalized:
                 line_normalized = line.replace("\\", "/").lower()
-                if target_source_normalized not in line_normalized:
+                source_basename = Path(target_source_normalized).name.lower()
+                if (
+                    target_source_normalized not in line_normalized
+                    and source_basename not in line_normalized
+                ):
                     continue
 
             parts = line.split()
@@ -332,9 +338,11 @@ def extract_uncovered_blocks(coverage_text: str) -> list[str]:
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
     """Inspect uncovered/partial lines and build precise instructions."""
-    cover_path = Path(f"{source_file_path},cover")
+    cover_path = get_coverage_annotation_path(source_file_path)
     if not cover_path.exists():
-        return []
+        cover_path = Path(f"{source_file_path},cover")
+        if not cover_path.exists():
+            return []
 
     source_path = Path(source_file_path)
     if not source_path.exists():
@@ -385,11 +393,12 @@ def read_local_files(
         "[%s] Reading local dynamic test, coverage, and log files for payload...",
         prefix,
     )
-    test_stem = Path(test_file_path).stem
-
     test_content = Path(test_file_path).read_text(encoding="utf-8")
 
-    cover_path = Path(f"{source_file_path},cover")
+    cover_path = get_coverage_annotation_path(source_file_path)
+    if not cover_path.exists():
+        cover_path = Path(f"{source_file_path},cover")
+
     if cover_path.exists():
         coverage_content = cover_path.read_text(encoding="utf-8")
     else:
@@ -397,9 +406,109 @@ def read_local_files(
             "No coverage report generated due to pytest collection or execution error."
         )
 
-    pytest_output = Path(f"unit-test-{test_stem}.txt").read_text(encoding="utf-8")
+    pytest_output = get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
 
     return test_content, coverage_content, pytest_output
+
+
+def run_preflight_compliance_and_validation(
+    test_file_path: str,
+    prefix: str,
+) -> tuple[bool, list[str]]:
+    """Run preemptive workspace_stamper and prioritized static validation checks (1-4).
+
+    Priorities:
+    1. Code Length (> 5 lines)
+    2. Syntax Validity (ast.parse)
+    3. Static tmp_path Isolation (WorkspaceGuard)
+    4. SPDX Header Compliance
+    """
+    logger.info(
+        "[%s] Running pre-pytest run compliance and static validations...",
+        prefix,
+    )
+    prioritized_errors: list[str] = []
+    test_path = Path(test_file_path)
+
+    try:
+        project_dir = Path.cwd()
+        workspace = TargetWorkspace(
+            project_dir=project_dir,
+            target_path=test_path.resolve(),
+            run_path_stamp=True,
+            run_license_stamp=True,
+            extracted_license_id="Apache-2.0",
+        )
+        stamper = WorkspaceStamper(workspace=workspace)
+        stamper.run()
+        logger.info(
+            "[%s] Pre-pytest run workspace_stamper executed successfully.",
+            prefix,
+        )
+    except Exception:
+        logger.exception(
+            "[%s] Pre-pytest run workspace_stamper encountered an issue",
+            prefix,
+        )
+
+    if not test_path.exists():
+        return False, ["Test file does not exist."]
+
+    code_content = test_path.read_text(encoding="utf-8")
+
+    # Priority 1: Code Length Check (> 5 lines)
+    lines = [line for line in code_content.splitlines() if line.strip()]
+    len_ok = len(lines) > MIN_LINES_FOR_LLM_CODE
+    if not len_ok:
+        prioritized_errors.append(
+            f"(Priority 1) Code line count ({len(lines)}) is "
+            f"<= {MIN_LINES_FOR_LLM_CODE}.",
+        )
+
+    # Priority 2: Syntax Validity Check (ast.parse)
+    syntax_ok = is_syntactically_valid(code_content)
+    if not syntax_ok:
+        prioritized_errors.append(
+            "(Priority 2) Code failed Python syntax validation "
+            "(SyntaxError/ast.parse).",
+        )
+
+    # Priority 3: Static tmp_path Isolation Check (WorkspaceGuard)
+    guard = WorkspaceGuard(project_path=Path.cwd())
+    is_isolated, static_errors = guard.check_static_isolation(test_path, prefix)
+    if not is_isolated:
+        prioritized_errors.extend(
+            [
+                f"(Priority 3) Static Isolation Violation: {err}"
+                for err in static_errors
+            ],
+        )
+
+    # Priority 4: SPDX Header Check
+    has_spdx = any(
+        "SPDX-License-Identifier" in line for line in code_content.splitlines()
+    )
+    if not has_spdx:
+        prioritized_errors.append(
+            "(Priority 4) Code is missing required SPDX license header tags.",
+        )
+
+    all_passed = len(prioritized_errors) == 0
+    status_label = "PASSED" if all_passed else "FAILED"
+    synthesis_msg = (
+        f"Pre-Pytest Run Synthesis Status: [{status_label}] | "
+        f"1. Length: {'PASS' if len_ok else 'FAIL'} | "
+        f"2. Syntax: {'PASS' if syntax_ok else 'FAIL'} | "
+        f"3. Isolation: {'PASS' if is_isolated else 'FAIL'} | "
+        f"4. SPDX: {'PASS' if has_spdx else 'FAIL'}"
+    )
+
+    if all_passed:
+        logger.info("[%s] %s", prefix, synthesis_msg)
+    else:
+        logger.warning("[%s] %s", prefix, synthesis_msg)
+
+    return all_passed, prioritized_errors
 
 
 def validate_llm_code(code: str) -> tuple[bool, str]:
@@ -413,15 +522,29 @@ def validate_llm_code(code: str) -> tuple[bool, str]:
     if len(lines) <= MIN_LINES_FOR_LLM_CODE:
         return (
             False,
-            f"Code line count ({len(lines)}) is <= {MIN_LINES_FOR_LLM_CODE}",
+            (
+                f"(Priority 1) Code line count ({len(lines)}) is "
+                f"<= {MIN_LINES_FOR_LLM_CODE}"
+            ),
         )
     if not any(line.strip().startswith("#") for line in lines):
         return (
             False,
-            "Code is missing required comment tags (e.g., # SPDX header)",
+            "(Priority 4) Code is missing required comment tags (e.g., # SPDX header)",
         )
     if not is_syntactically_valid(code):
-        return False, "Code failed Python syntax validation (SyntaxError)"
+        return False, "(Priority 2) Code failed Python syntax validation (SyntaxError)"
+
+    guard = WorkspaceGuard(project_path=Path.cwd())
+    temp_path = Path("temp_llm_check.py")
+    temp_path.write_text(code, encoding="utf-8")
+    is_isolated, iso_errors = guard.check_static_isolation(temp_path, "Guard")
+    if temp_path.exists():
+        temp_path.unlink()
+
+    if not is_isolated:
+        return False, f"(Priority 3) Static Isolation Violation: {iso_errors[0]}"
+
     return True, "Valid"
 
 

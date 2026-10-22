@@ -2,6 +2,21 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 from .backup_untracked import UntrackedBackupManager
+from .file_handler import (
+    ALL_TOOL_OUTPUT_DIRS,
+    get_basedpyright_log_path,
+    get_coverage_annotation_path,
+    get_pytest_log_path,
+    get_ruff_log_path,
+)
 from .workspace_stamper import WorkspaceStamper
 
-__all__ = ["UntrackedBackupManager", "WorkspaceStamper"]
+__all__ = [
+    "ALL_TOOL_OUTPUT_DIRS",
+    "UntrackedBackupManager",
+    "WorkspaceStamper",
+    "get_basedpyright_log_path",
+    "get_coverage_annotation_path",
+    "get_pytest_log_path",
+    "get_ruff_log_path",
+]

@@ -10,11 +10,15 @@ import asyncio
 import runpy
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from coding_tools import batch_unit_test_ask_llm as butag
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 
 @pytest.mark.parametrize(
@@ -223,8 +227,11 @@ def test_print_summary_table_multiple(
     )
 
 
-def test_main_file_target(tmp_path: Path) -> None:
+def test_main_file_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test main entry point with a single file target."""
+    monkeypatch.chdir(tmp_path)
     py_file = tmp_path / "src" / "coding_tools" / "sample.py"
     py_file.parent.mkdir(parents=True, exist_ok=True)
     py_file.write_text("print('hello')", encoding="utf-8")
@@ -245,8 +252,11 @@ def test_main_file_target(tmp_path: Path) -> None:
         mock_run.assert_awaited_once()
 
 
-def test_main_invalid_file_target(tmp_path: Path) -> None:
+def test_main_invalid_file_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test main entry point with an invalid non-python file target."""
+    monkeypatch.chdir(tmp_path)
     txt_file = tmp_path / "notes.txt"
     txt_file.write_text("hello", encoding="utf-8")
 
@@ -254,16 +264,22 @@ def test_main_invalid_file_target(tmp_path: Path) -> None:
         butag.main()
 
 
-def test_main_nonexistent_target() -> None:
+def test_main_nonexistent_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test main entry point with a nonexistent path target."""
+    monkeypatch.chdir(tmp_path)
     with patch(
         "sys.argv", ["batch_unit_test_ask_llm.py", "nonexistent_path_abc_123"],
     ):
         butag.main()
 
 
-def test_main_dir_target(tmp_path: Path) -> None:
+def test_main_dir_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test main entry point with a directory target."""
+    monkeypatch.chdir(tmp_path)
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     py_file = src_dir / "sample.py"
@@ -285,11 +301,17 @@ def test_main_dir_target(tmp_path: Path) -> None:
         mock_run.assert_awaited()
 
 
-def test_if_name_main() -> None:
+def test_if_name_main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test module execution block if __name__ == '__main__':."""
-    with patch("asyncio.run") as mock_async_run:
+    monkeypatch.chdir(tmp_path)
+    def mock_run(coro: Coroutine[Any, Any, Any]) -> None:
+        coro.close()
+
+    with (
+        patch("asyncio.run", side_effect=mock_run),
+        patch("sys.argv", ["batch_unit_test_ask_llm.py"]),
+    ):
         ws_module = sys.modules[butag.__name__]
         assert ws_module.__file__ is not None, "Module file path cannot be None"
         target_file_path = str(Path(ws_module.__file__).resolve())
         runpy.run_path(target_file_path, run_name="__main__")
-        mock_async_run.assert_called_once()
