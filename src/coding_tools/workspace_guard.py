@@ -28,7 +28,7 @@ IGNORED_DIRS = {
     "build",
     "dist",
 }
-IGNORED_SUFFIXES = {".cover", ".txt", ".pyc"}
+CHECKED_EXTENSIONS = {".py"}
 
 
 class WorkspaceGuard(BaseModel):
@@ -39,18 +39,27 @@ class WorkspaceGuard(BaseModel):
     def check_static_isolation(
         self,
         test_file_path: str | Path,
+        prefix: str = "Guard",
     ) -> tuple[bool, list[str]]:
         """Inspect test file AST to ensure test functions use tmp_path for I/O."""
         path = Path(test_file_path)
         if not path.exists():
-            logger.warning("Static check skipped: Test file not found at %s", path)
+            logger.warning(
+                "[%s] Static check skipped: Test file not found at %s",
+                prefix,
+                path,
+            )
             return True, []
 
-        logger.info("Running static isolation check on test file: %s", path)
+        logger.info(
+            "[%s] Running static isolation check on test file: %s",
+            prefix,
+            path,
+        )
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError as e:
-            logger.exception("SyntaxError during static AST inspection")
+            logger.exception("[%s] SyntaxError during static AST inspection", prefix)
             return False, [f"SyntaxError during AST inspection: {e}"]
 
         violations: list[str] = []
@@ -84,27 +93,36 @@ class WorkspaceGuard(BaseModel):
 
         IsolationVisitor().visit(tree)
         if violations:
-            logger.warning("Static isolation violations detected in %s", path)
+            logger.warning(
+                "[%s] Static isolation violations detected in %s",
+                prefix,
+                path,
+            )
         else:
-            logger.info("Static isolation check passed for %s", path)
+            logger.info("[%s] Static isolation check passed for %s", prefix, path)
 
         return len(violations) == 0, violations
 
-    def snapshot_workspace(self) -> set[Path]:
+    def snapshot_workspace(self, prefix: str = "Guard") -> set[Path]:
         """Capture a set of all current relative file paths across the repo."""
-        logger.info("Snapshotting workspace repository at: %s", self.project_path)
+        logger.info(
+            "[%s] Snapshotting workspace repository at: %s",
+            prefix,
+            self.project_path,
+        )
         snapshot: set[Path] = set()
         for p in self.project_path.rglob("*"):
             if any(part in IGNORED_DIRS for part in p.parts):
                 continue
-            if p.is_file() and p.suffix not in IGNORED_SUFFIXES:
+            if p.is_file() and p.suffix in CHECKED_EXTENSIONS:
                 try:
                     rel = p.relative_to(self.project_path)
                     snapshot.add(rel)
                 except ValueError:
                     continue
         logger.info(
-            "Workspace snapshot captured (%d files tracked).",
+            "[%s] Workspace snapshot captured (%d Python files tracked).",
+            prefix,
             len(snapshot),
         )
         return snapshot
@@ -112,13 +130,15 @@ class WorkspaceGuard(BaseModel):
     def check_runtime_pollution(
         self,
         baseline: set[Path],
+        prefix: str = "Guard",
     ) -> tuple[bool, list[str]]:
         """Compare current workspace against baseline to detect new files."""
-        logger.info("Checking for runtime workspace pollution...")
-        current = self.snapshot_workspace()
+        logger.info("[%s] Checking for runtime workspace pollution...", prefix)
+        current = self.snapshot_workspace(prefix)
         new_files = current - baseline
 
         violations: list[str] = []
+        unauthorized_list: list[str] = []
         for f in new_files:
             if f.parent == Path() and (
                 f.name.startswith("unit-test-")
@@ -126,18 +146,23 @@ class WorkspaceGuard(BaseModel):
                 or f.name.startswith("ruff-")
             ):
                 continue
+            unauthorized_list.append(str(f))
             violations.append(
                 f"Unauthorized file pollution detected in workspace: {f}",
             )
 
         if violations:
             logger.warning(
-                "Runtime workspace pollution detected (%d unauthorized files).",
+                "[%s] Runtime workspace pollution detected "
+                "(%d unauthorized Python files: %s).",
+                prefix,
                 len(violations),
+                unauthorized_list,
             )
         else:
             logger.info(
-                "Runtime workspace pollution check passed cleanly.",
+                "[%s] Runtime workspace pollution check passed cleanly.",
+                prefix,
             )
 
         return len(violations) == 0, violations
@@ -145,18 +170,40 @@ class WorkspaceGuard(BaseModel):
     def execute_test_and_guard(
         self,
         test_file_path: str | Path,
+        prefix: str = "Guard",
+        *,
+        run_coverage: bool = False,
+        source_file_path: str | Path | None = None,
     ) -> tuple[bool, list[str]]:
         """Capture baseline, run pytest on the test file, and check pollution."""
-        baseline = self.snapshot_workspace()
+        baseline = self.snapshot_workspace(prefix)
         path = Path(test_file_path)
+        test_stem = path.stem
+
         cmd_list = [
             "uv",
             "run",
             "pytest",
             "--import-mode=importlib",
-            str(path),
         ]
-        logger.info("Executing test runner: %s", " ".join(cmd_list))
+        if run_coverage and source_file_path:
+            source_path = Path(source_file_path)
+            try:
+                relative_source = source_path.relative_to("src")
+            except ValueError:
+                relative_source = source_path
+            module_path = ".".join(relative_source.with_suffix("").parts)
+            cmd_list.extend(
+                [
+                    f"--cov={module_path}",
+                    "--cov-report=term-missing",
+                    "--cov-report=annotate",
+                ],
+            )
+        cmd_list.append(str(path))
+        cmd_str = " ".join(cmd_list)
+
+        logger.info("[%s] Executing test runner: %s", prefix, cmd_str)
 
         result = subprocess.run(  # noqa: S603
             cmd_list,
@@ -165,14 +212,19 @@ class WorkspaceGuard(BaseModel):
             check=False,
         )
 
+        output_path = Path(f"unit-test-{test_stem}.txt")
+        full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
+        output_path.write_text(full_content, encoding="utf-8")
+
         logger.info(
-            "Test runner finished with return code %d",
+            "[%s] Test runner finished with return code %d",
+            prefix,
             result.returncode,
         )
 
-        is_clean, pollution_errors = self.check_runtime_pollution(baseline)
+        is_clean, pollution_errors = self.check_runtime_pollution(baseline, prefix)
         test_passed = result.returncode == 0
-        overall_success = test_passed and is_clean
+        overall_success = is_clean
 
         errors = []
         if not test_passed:
@@ -208,7 +260,7 @@ def _run_static_checks(
         len(test_files),
     )
     for tf in test_files:
-        is_isolated, errors = guard.check_static_isolation(tf)
+        is_isolated, errors = guard.check_static_isolation(tf, tf.name)
         status = "PASSED" if is_isolated else "WARNING"
         if not is_isolated:
             all_passed = False
@@ -235,10 +287,16 @@ def _run_runtime_checks(
         len(test_files),
     )
     for tf in test_files:
-        passed, errors = guard.execute_test_and_guard(tf)
-        status = "PASSED" if passed else "WARNING"
-        if not passed:
+        _, errors = guard.execute_test_and_guard(tf, tf.name)
+        has_pollution = any("pollution" in err.lower() for err in errors)
+        if has_pollution:
+            status = "FAILED"
             all_passed = False
+        elif errors:
+            status = "WARNING"
+        else:
+            status = "PASSED"
+
         results.append(
             {
                 "file": str(tf),
