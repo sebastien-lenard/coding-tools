@@ -1,6 +1,5 @@
 # src/coding_tools/llm_remediation.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
 
 """Core workflow engine and stage runner using an object-oriented LLM remediator."""
@@ -21,13 +20,13 @@ from coding_tools.llm_protocol import (
 )
 from coding_tools.llm_router import get_llm_client
 from coding_tools.parsers import (
-    extract_pytest_warnings,
     parse_pytest_results,
     process_and_save_code,
     read_local_files,
-    run_pytest_command,
+    run_preflight_compliance_and_validation,
     validate_llm_code,
 )
+from coding_tools.workspace_guard import WorkspaceGuard
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -100,7 +99,7 @@ class LLMRemediator:
         output: str,
         identical_attempts: int,
     ) -> list[Any]:
-        """Build the appropriate contents list for the LLM remediation request."""
+        """Build contents list for LLM remediation request with dynamic filtering."""
         if stage.build_custom_contents:
             contents_list = stage.build_custom_contents(
                 ctx.test_file_path,
@@ -115,11 +114,6 @@ class LLMRemediator:
                     f"({Path(ctx.test_file_path).name}) ---\n{test_content}"
                 ),
                 f"--- {stage.name} output ---\n{output}",
-                (
-                    f"MANDATORY INSTRUCTION: You MUST modify the code to "
-                    f"resolve all {stage.name} errors. "
-                    f"Do NOT return the exact same code."
-                ),
             ]
 
         if identical_attempts > 0:
@@ -213,8 +207,7 @@ class LLMRemediator:
                     return WorkflowStatus.FAILED, "No solution"
 
                 logger.warning(
-                    "[%s] LLM returned identical code to the current file. "
-                    "Resending request...",
+                    "[%s] LLM returned identical code to the file. Resending request.",
                     ctx.prefix,
                 )
                 identical_attempts += 1
@@ -275,26 +268,70 @@ class LLMRemediator:
         """Set up optional file caching using the bound client adapter."""
         return self.client.setup_cache(source_file_path, prefix)
 
-    def run_pytest_stage(
+    def _handle_preflight_failure(
         self,
         cache_name: str | None,
         uploaded_files: list[Any],
         ctx: WorkflowContext,
+        preflight_errors: list[str],
     ) -> tuple[WorkflowStatus, str, str]:
-        """Execute the pytest and coverage stage."""
+        """Handle pre-pytest run validation failures and route to LLM."""
+        logger.warning(
+            "[%s] Pre-pytest run static checks failed. "
+            "Bypassing pytest and routing to LLM...",
+            ctx.prefix,
+        )
+        test_stem = Path(ctx.test_file_path).stem
+        Path(f"unit-test-{test_stem}.txt").write_text(
+            "\n".join(preflight_errors),
+            encoding="utf-8",
+        )
 
-        def run_pytest() -> str:
-            run_pytest_command(
+        if not ctx.allow_llm:
+            return WorkflowStatus.FAILED, "Pytest/Coverage", "FAILED"
+
+        error_output = "\n".join(preflight_errors)
+        status_enum, status_msg = self._process_llm_remediation(
+            ctx,
+            StageConfig(
+                name="Pytest/Coverage",
+                run_command=lambda: error_output,
+                is_success=lambda _: False,
+                skill_filename="unit_test_generation.md",
+            ),
+            cache_name,
+            uploaded_files,
+            error_output,
+        )
+        return status_enum, "Pytest/Coverage", status_msg
+
+    def _build_pytest_run_command(self, ctx: WorkflowContext) -> Callable[[], str]:
+        """Build the pytest command runner wrapped with guard with coverage enabled."""
+        guard = WorkspaceGuard(project_path=Path.cwd())
+
+        def run_pytest_with_guard() -> str:
+            passed, guard_errors = guard.execute_test_and_guard(
                 ctx.test_file_path,
-                ctx.source_file_path,
                 ctx.prefix,
+                run_coverage=True,
+                source_file_path=ctx.source_file_path,
             )
             _, _, py_out = read_local_files(
                 ctx.test_file_path,
                 ctx.source_file_path,
                 ctx.prefix,
             )
+            if not passed and guard_errors:
+                py_out += (
+                    "\n\n--- Runtime Workspace Guard Violations (Priority 6) ---\n"
+                    + "\n".join(guard_errors)
+                )
             return py_out
+
+        return run_pytest_with_guard
+
+    def _evaluate_pytest_success(self, ctx: WorkflowContext) -> Callable[[str], bool]:
+        """Evaluate pytest output against coverage, errors, and pollution rules."""
 
         def check_pytest(output: str) -> bool:
             (
@@ -308,17 +345,32 @@ class LLMRemediator:
                 output,
                 ctx.source_file_path,
             )
-            logger.info(
-                "[%s] Pytest check evaluation | Summary: '%s' | "
-                "100%% Coverage: %s | Missing: %s | Tests Passed: %s | "
-                "Syntax Error: %s",
-                ctx.prefix,
-                summary,
-                is_100_percent,
-                missing_lines,
-                tests_passed,
-                is_syntax_error,
+            summary_lower = summary.lower()
+            has_error = "error" in summary_lower or "error" in output.lower()
+            has_failure = "failed" in summary_lower
+            has_pollution = "Runtime Workspace Guard Violations" in output
+
+            status_label = (
+                "PASSED"
+                if (
+                    tests_passed
+                    and is_100_percent
+                    and not has_pollution
+                    and not has_error
+                )
+                else "FAILED"
             )
+            logger.info(
+                "[%s] Post-Pytest Run Synthesis Status: [%s] | Errors: %s | "
+                "Pollution: %s | Failures: %s | Coverage: %s",
+                ctx.prefix,
+                status_label,
+                "FAIL" if (has_error or is_syntax_error) else "PASS",
+                "FAIL" if has_pollution else "PASS",
+                "FAIL" if has_failure else "PASS",
+                "PASS" if is_100_percent else f"FAIL ({missing_lines})",
+            )
+
             if is_syntax_error:
                 logger.error(
                     "[%s] Syntax/Collection error details:\n%s",
@@ -326,39 +378,62 @@ class LLMRemediator:
                     syntax_details,
                 )
                 return False
-            summary_lower = summary.lower()
-            has_error = "error" in summary_lower or "error" in output.lower()
-            has_failure = "failed" in summary_lower
-            has_warning = extract_pytest_warnings(output) != "None"
-            return not (has_error or has_failure or not is_100_percent or has_warning)
 
-        def build_pytest_contents(
-            t_path: str,
-            s_path: str,
-            t_content: str,
-            py_out: str,
-        ) -> list[Any]:
-            _, _, _, _, is_syntax_error, syntax_error_details = parse_pytest_results(
-                py_out,
-                s_path,
+            return not (has_error or has_failure or not is_100_percent or has_pollution)
+
+        return check_pytest
+
+    def _build_pytest_custom_contents(
+        self,
+        t_path: str,
+        s_path: str,
+        t_content: str,
+        py_out: str,
+    ) -> list[Any]:
+        """Build custom contents payload dynamically filtering out passing checks."""
+        _, _, _, _, is_syntax_error, syntax_error_details = parse_pytest_results(
+            py_out,
+            s_path,
+        )
+        if is_syntax_error:
+            return [
+                (
+                    f"--- Current unit test script "
+                    f"({Path(t_path).name}) ---\n{t_content}"
+                ),
+                (
+                    "--- Pytest Syntax/Collection "
+                    f"Error Traceback ---\n{syntax_error_details}"
+                ),
+                (
+                    "The unit test script contains a fatal Python "
+                    "SyntaxError or collection issue preventing pytest. "
+                    "Please fix and return complete script."
+                ),
+            ]
+        return build_contents_list(t_path, s_path, t_content, "", py_out)
+
+    def run_pytest_stage(
+        self,
+        cache_name: str | None,
+        uploaded_files: list[Any],
+        ctx: WorkflowContext,
+    ) -> tuple[WorkflowStatus, str, str]:
+        """Execute pre-pytest run compliance, pytest, coverage, and runtime guard."""
+        preflight_ok, preflight_errors = run_preflight_compliance_and_validation(
+            ctx.test_file_path,
+            ctx.prefix,
+        )
+        if not preflight_ok:
+            return self._handle_preflight_failure(
+                cache_name,
+                uploaded_files,
+                ctx,
+                preflight_errors,
             )
-            if is_syntax_error:
-                return [
-                    (
-                        f"--- Current unit test script "
-                        f"({Path(t_path).name}) ---\n{t_content}"
-                    ),
-                    (
-                        "--- Pytest Syntax/Collection "
-                        f"Error Traceback ---\n{syntax_error_details}"
-                    ),
-                    (
-                        "The unit test script contains a fatal Python "
-                        "SyntaxError or collection issue preventing pytest. "
-                        "Please fix and return complete script."
-                    ),
-                ]
-            return build_contents_list(t_path, s_path, t_content, "", py_out)
+
+        run_cmd = self._build_pytest_run_command(ctx)
+        check_func = self._evaluate_pytest_success(ctx)
 
         return self.run_workflow_stage(
             cache_name,
@@ -366,9 +441,9 @@ class LLMRemediator:
             ctx,
             StageConfig(
                 name="Pytest/Coverage",
-                run_command=run_pytest,
-                is_success=check_pytest,
+                run_command=run_cmd,
+                is_success=check_func,
                 skill_filename="unit_test_generation.md",
-                build_custom_contents=build_pytest_contents,
+                build_custom_contents=self._build_pytest_custom_contents,
             ),
         )

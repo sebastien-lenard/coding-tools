@@ -16,8 +16,9 @@ Rules:
    - Avoid duplicate test function boilerplate.
 
 3. File System Isolation (`tmp_path`):
-   - Never write to or create actual files in the local workspace.
+   - Never write to or create actual files to relative paths or hardcoded directories in the local workspace (e.g., no Path("test_output.txt")).
    - Always use the built-in `tmp_path` fixture (`pathlib.Path`) for any file or directory creation, reading, writing, or path manipulation.
+   - Use monkeypatch.chdir(tmp_path) if the code under test relies on relative paths from the project root.
 
 4. Clean Pytest Idioms:
    - Use plain Python `assert` statements (e.g., `assert result == expected`).

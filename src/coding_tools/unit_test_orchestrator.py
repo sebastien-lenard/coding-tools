@@ -1,6 +1,5 @@
 # src/coding_tools/unit_test_orchestrator.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
 
 """Orchestrate automated test generation, coverage, basedpyright, and ruff checks."""

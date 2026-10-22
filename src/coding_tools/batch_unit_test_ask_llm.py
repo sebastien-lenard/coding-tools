@@ -1,5 +1,5 @@
+# src/coding_tools/batch_unit_test_ask_llm.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
 
 """Run automated test generation, type checking, and linting concurrently.
@@ -64,7 +64,7 @@ def ensure_test_file_exists(test_file: str) -> None:
             f"from __init__ import *\n\n"
         )
         test_path.write_text(header, encoding="utf-8")
-        logger.info("Initialized missing or empty test file: %s", test_file)
+        logger.info("[%s] Initialized missing or empty test file.", test_file)
 
 
 async def run_workflow_with_iterations(
@@ -74,6 +74,7 @@ async def run_workflow_with_iterations(
     semaphore: asyncio.Semaphore | None = None,
 ) -> dict[str, Any]:
     """Run a single test file's workflow in a loop up to max_iterations."""
+    prefix = Path(test_file).name
 
     async def task() -> dict[str, Any]:
         final_stage = "Pytest/Coverage"
@@ -87,7 +88,7 @@ async def run_workflow_with_iterations(
 
                 logger.info(
                     "[%s] Starting iteration %d/%d (Gemini allowed: %s)",
-                    test_file,
+                    prefix,
                     iteration,
                     max_iterations,
                     allow_gemini,
@@ -107,7 +108,7 @@ async def run_workflow_with_iterations(
                 if success:
                     logger.info(
                         "[%s] All checks passed successfully on iteration %d!",
-                        test_file,
+                        prefix,
                         iteration,
                     )
                     final_stage = "All Stages"
@@ -118,7 +119,7 @@ async def run_workflow_with_iterations(
                     logger.error(
                         "[%s] Encountered fatal stagnation ('No solution'). "
                         "Stopping iterations early.",
-                        test_file,
+                        prefix,
                     )
                     break
 
@@ -126,14 +127,14 @@ async def run_workflow_with_iterations(
                     logger.info(
                         "[%s] Iteration %d applied a fix. Proceeding to next "
                         "iteration to verify...",
-                        test_file,
+                        prefix,
                         iteration,
                     )
                     continue
 
                 logger.warning(
                     "[%s] Iteration %d finished - Stage: %s | Status: %s",
-                    test_file,
+                    prefix,
                     iteration,
                     final_stage,
                     final_status,
@@ -143,8 +144,8 @@ async def run_workflow_with_iterations(
 
         except Exception:
             logger.exception(
-                "Workflow encountered an unhandled exception for: %s",
-                test_file,
+                "[%s] Workflow encountered an unhandled exception.",
+                prefix,
             )
             final_status = "ERROR"
 
