@@ -1,9 +1,12 @@
 # src/coding_tools/gemini_client.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
+#
 
-"""Google GenAI client wrapper satisfying LLMClientProtocol."""
+"""Google GenAI client meeting LLMClientProtocol.
+
+Needs API key. Uses google-genai v2.
+"""
 
 from __future__ import annotations
 
@@ -49,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetryRequestParameters:
-    """Encapsulates parameters for Gemini API execution attempts."""
+    """Hold parameters for Gemini API execution attempts."""
 
     client: Client
     model_name: str
@@ -61,7 +64,10 @@ class RetryRequestParameters:
 
 @contextmanager
 def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None]:
-    """Context manager to print inline dots in console while waiting for calls."""
+    """Print inline dots in console while waiting for API calls.
+
+    Writes to sys.stdout.
+    """
     logger.info("[%s] %s (waiting)", prefix, message)
     stop_event = threading.Event()
 
@@ -83,7 +89,10 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
 
 
 def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
-    """Upload a static reference file to Gemini."""
+    """Upload static reference file to Gemini API.
+
+    Needs API key and valid file path. Raise LLMAPIError on failure.
+    """
     logger.info("[%s] Uploading static reference file: %s", prefix, file_path)
     try:
         return client.files.upload(
@@ -104,7 +113,10 @@ def validate_file_uris(
     file_conftest: File,
     file_source: File,
 ) -> tuple[str, str, str]:
-    """Validate that uploaded file URIs are not None."""
+    """Check uploaded file URIs are not None.
+
+    Raise ValueError if any URI is None.
+    """
     if file_config.uri is None or file_conftest.uri is None or file_source.uri is None:
         msg = "One or more uploaded file URIs resolved to None."
         raise ValueError(msg)
@@ -116,7 +128,10 @@ def build_config(
     system_instruction: str | None = None,
     cache_name: str | None = None,
 ) -> dict[str, object]:
-    """Centralized configuration factory for structured GenAI execution."""
+    """Build config dict for structured GenAI execution with thinking and schema.
+
+    Sets response mime type to application/json and disables automatic function calling.
+    """
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
             thinking_level=types.ThinkingLevel.MEDIUM,
@@ -140,7 +155,10 @@ def build_config(
 def call_gemini_with_retry(
     params: RetryRequestParameters,
 ) -> types.GenerateContentResponse:
-    """Execute Gemini generate_content call with robust ServerError retry logic."""
+    """Run Gemini generate_content call with ServerError retry logic.
+
+    503 retry up to 3 times with exponential backoff. Raise LLMServerError if persist.
+    """
     max_retries = 3
     response: types.GenerateContentResponse | None = None
     for attempt in range(max_retries):
@@ -196,9 +214,13 @@ def call_gemini_with_retry(
 
 
 class GeminiClientAdapter:
-    """Concrete Gemini adapter satisfying LLMClientProtocol."""
+    """Google GenAI client meeting LLMClientProtocol.
+
+    Needs API key. Handles structured generation and context caching.
+    """
 
     def __init__(self, model_name: str | None = None) -> None:
+        """Init client with model name or default provider config."""
         self.client = Client()
         if model_name is not None:
             self.model_name = model_name
@@ -211,7 +233,7 @@ class GeminiClientAdapter:
 
     @property
     def supports_caching(self) -> bool:
-        """Return whether caching is enabled and supported for gemini."""
+        """Get cache support status from config."""
         return is_caching_allowed("gemini")
 
     def generate_structured_response(
@@ -219,7 +241,10 @@ class GeminiClientAdapter:
         contents_list: list[object],
         options: StructuredGenerationOptions,
     ) -> BaseModel:
-        """High-level wrapper returning a validated Pydantic model response."""
+        """Get validated Pydantic model response from GenAI API.
+
+        Raise ValueError if response does not conform to schema.
+        """
         config_kwargs = build_config(
             response_schema=options.response_schema,
             system_instruction=options.system_instruction,
@@ -255,7 +280,10 @@ class GeminiClientAdapter:
         source_file_path: str,
         prefix: str,
     ) -> tuple[str | None, list[object]]:
-        """Set up optional Gemini file caching."""
+        """Upload reference files and create context cache if enabled.
+
+        Needs API key. Return cache name and uploaded files list.
+        """
         uploaded_files: list[File | None] = []
         if not self.supports_caching:
             return None, uploaded_files  # type: ignore[return-value]
@@ -311,7 +339,10 @@ class GeminiClientAdapter:
         return cached_content.name, uploaded_files  # type: ignore[return-value]
 
     def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Clean up remote uploaded static files safely."""
+        """Delete remote uploaded static files from Gemini API.
+
+        Log warning on API error.
+        """
         logger.info("[%s] Cleaning up remote uploaded static files...", prefix)
         for f in files:
             if f is not None and hasattr(f, "name"):
@@ -327,7 +358,10 @@ class GeminiClientAdapter:
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Inspect uncovered/partial lines and build precise instructions."""
+    """Scan uncovered lines in coverage file and yield hints.
+
+    Read <source_file_path>,cover file.
+    """
     cover_path = Path(f"{source_file_path},cover")
     if not cover_path.exists():
         return []
@@ -378,7 +412,10 @@ def build_contents_list(
     coverage_content: str,
     pytest_output: str,
 ) -> list[str]:
-    """Build the dynamic contents list as agnostic plain strings."""
+    """Build dynamic contents list with source files, coverage, and pytest errors.
+
+    Include pyproject.toml and conftest.py if caching disabled.
+    """
     contents_list: list[str] = []
 
     if not is_caching_allowed("gemini"):

@@ -1,7 +1,7 @@
 # src/coding_tools/bundle_sources.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Bundle project source files into a single text file, stripping redundant headers."""
+"""Bundle project source files into text file and strip redundant headers."""
 
 import argparse
 import logging
@@ -20,9 +20,9 @@ logger = logging.getLogger("coding_tools.bundle_sources")
 
 
 class SourceBundler(BaseModel):
-    """Automates bundling of project source files into a single text document.
+    """Bundle project source files into text document via Pydantic validation.
 
-    Uses Pydantic validation to protect file-system execution targets.
+    Uses files-to-prompt via uvx. Skips missing optional files. Needs internet/uvx.
     """
 
     project_path: DirectoryPath
@@ -35,20 +35,20 @@ class SourceBundler(BaseModel):
 
     @property
     def target_output_path(self) -> Path:
-        """Returns the calculated output file path."""
+        """Get output file path."""
         if self.output_file:
             return self.output_file
         return self.project_path / self._default_output_name
 
     @property
     def src_path(self) -> Path:
-        """Returns the expected 'src' subfolder path."""
+        """Get expected src subfolder path."""
         return self.project_path / "src"
 
     def execute(self) -> bool:
-        """Orchestrates reading source files and writing the bundled output.
+        """Read source files and write bundled output.
 
-        Returns True if successful, False otherwise.
+        False if src folder missing, subprocess fail, or write error.
         """
         if self.verbose:
             logger.setLevel(logging.INFO)
@@ -91,7 +91,7 @@ class SourceBundler(BaseModel):
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
-        """Verify output destination directory is accessible or buildable."""
+        """Check output destination directory accessibility."""
         if not output_base_dir.exists():
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -103,7 +103,7 @@ class SourceBundler(BaseModel):
         return True
 
     def _run_files_to_prompt(self) -> str:
-        """Execute files-to-prompt commands against explicitly filtered source files."""
+        """Run files-to-prompt on filtered source files and optional project files."""
         accumulated_output = ""
 
         # Gather files matching allowed extensions, ignoring junk directories
@@ -166,7 +166,7 @@ class SourceBundler(BaseModel):
 
 
 def main() -> None:
-    """CLI Gateway transforming raw arguments into verified Pydantic contexts."""
+    """Run CLI to parse arguments and run SourceBundler."""
     parser = argparse.ArgumentParser(
         description=(
             "Bundle project source files into a single text file, "

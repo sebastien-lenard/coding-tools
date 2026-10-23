@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Automate docstring enhancement via LLM API.
+"""Automate Python docstring enhancement via LLM API.
 
-Stamps workspace and validates AST mutations.
+AST validation, workspace stamping, max 5 lines per docstring, two passes.
 """
 
 from __future__ import annotations
@@ -34,7 +34,10 @@ MAX_DOCSTRING_LINES = 5
 
 
 def _strip_docstrings(tree: ast.AST) -> None:
-    """Remove docstrings from AST tree nodes in place."""
+    """Remove docstrings from AST tree nodes in place.
+
+    Mutates tree.
+    """
     for node in ast.walk(tree):
         if isinstance(
             node,
@@ -121,7 +124,7 @@ async def _run_enhancement_pass(
 ) -> tuple[bool, str]:
     """Call LLM API to enhance docstrings with retry logic.
 
-    Yield candidate code if validation passes. Two attempts max.
+    Two attempts max. Return candidate code if validation passes.
     """
     for attempt in range(2):
         try:
@@ -154,7 +157,7 @@ async def _run_enhancement_pass(
                 (f"Previous attempt validation failed: {reason}. Fix and try again."),
             )
         except Exception:
-            logger.exception(
+                logger.exception(
                 "[%s] Pass execution encountered exception",
                 prefix,
             )
@@ -167,7 +170,7 @@ async def process_file_workflow(
 ) -> dict[str, Any]:
     """Run two-pass docstring workflow on file.
 
-    Save enhanced code, stamp workspace, return status.
+    Save enhanced code, stamp workspace via WorkspaceStamper, return status dict.
     """
     async with semaphore:
         prefix = file_path.stem
@@ -293,9 +296,9 @@ def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> No
 
 
 async def async_main() -> None:
-    """Parse args, collect target files, run concurrent workflows.
+    """Parse args, collect target files, run concurrent workflows via semaphore limit 4.
 
-    Use semaphore limit 4.
+    Exit if target missing or empty.
     """
     logger.info("[INFO] Initializing docstring_enhancer workflow...")
     parser = argparse.ArgumentParser(
@@ -340,5 +343,5 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    """Run async main workflow loop."""
+    """Run async main workflow loop via asyncio.run."""
     asyncio.run(async_main())

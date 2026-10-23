@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Local file parsers, test/lint commands, diffing, and code validation utilities."""
+"""Parse local files, run test/lint commands, diff, and validate code."""
 
 from __future__ import annotations
 
@@ -34,7 +34,10 @@ def run_pytest_command(
     source_file_path: str,
     prefix: str,
 ) -> None:
-    """Execute the pytest command and save command + output to a unique test log."""
+    """Run pytest with branch coverage and save output to pytest log.
+
+    Uses uv, pytest, cov-branch, term-missing, and annotate.
+    """
     source_path = Path(source_file_path)
     try:
         relative_source = source_path.relative_to("src")
@@ -69,7 +72,10 @@ def run_pytest_command(
 
 
 def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
-    """Execute basedpyright and save command + output to a unique pyright log."""
+    """Run basedpyright on test file and save output to log.
+
+    Uses uv and basedpyright.
+    """
     cmd_list = [
         "uv",
         "run",
@@ -93,7 +99,10 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
 
 
 def run_ruff_command(test_file_path: str, prefix: str) -> str:
-    """Execute ruff check with --fix and save command + output to a unique ruff log."""
+    """Run ruff check with fix option and save output to log.
+
+    Uses uv and ruff check.
+    """
     cmd_list = [
         "uv",
         "run",
@@ -132,7 +141,10 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
 
 
 def _check_pytest_syntax_error(output_text: str) -> tuple[bool, str]:
-    """Check for collection / syntax errors in pytest output."""
+    """Check pytest output for collection or syntax errors.
+
+    True if ERRORS, SyntaxError, or collection interruption found.
+    """
     if (
         "ERRORS" in output_text
         or "SyntaxError" in output_text
@@ -148,7 +160,7 @@ def _check_pytest_syntax_error(output_text: str) -> tuple[bool, str]:
 
 
 def _extract_pytest_summary(output_text: str) -> str:
-    """Extract summary line from pytest output."""
+    """Extract summary line from pytest output text by scanning reversed lines."""
     summary = "No summary found"
     for line in reversed(output_text.splitlines()):
         stripped = line.strip()
@@ -165,7 +177,10 @@ def _extract_coverage_metrics(
     output_text: str,
     target_source_normalized: str | None,
 ) -> tuple[str, bool]:
-    """Extract missing lines and 100% coverage flag from pytest output."""
+    """Extract missing lines and 100 percent coverage flag from pytest output.
+
+    Scans coverage section for target source path or basename.
+    """
     missing_lines = "None"
     is_100_percent = False
     in_coverage_section = False
@@ -206,7 +221,10 @@ def parse_pytest_results(
     output_text: str,
     source_file_path: str | None = None,
 ) -> tuple[str, str, bool, bool, bool, str]:
-    """Extract test/coverage, syntax error flag, and traceback for source file."""
+    """Parse pytest output for test results, coverage, and errors.
+
+    Calls syntax check, summary extraction, and coverage metrics.
+    """
     is_syntax_error, syntax_error_details = _check_pytest_syntax_error(
         output_text,
     )
@@ -238,7 +256,10 @@ def parse_pytest_results(
 
 
 def extract_pytest_warnings(pytest_output: str) -> str:
-    """Extract pytest warnings from the warnings summary section."""
+    """Extract warnings summary from pytest output text.
+
+    Stops at docs or coverage lines.
+    """
     lines = pytest_output.splitlines()
     warning_lines: list[str] = []
     capturing = False
@@ -255,7 +276,7 @@ def extract_pytest_warnings(pytest_output: str) -> str:
 
 
 def extract_pytest_errors(pytest_output: str) -> str:
-    """Extract lines starting with 'E ' from pytest output."""
+    """Extract lines starting with E from pytest output and log warnings."""
     lines = pytest_output.splitlines()
     error_lines = [line for line in lines if line.startswith("E ")]
     cleaned = "\n".join(error_lines).strip()
@@ -268,7 +289,10 @@ def extract_pytest_errors(pytest_output: str) -> str:
 
 
 def is_syntactically_valid(code_content: str) -> bool:
-    """Check if the code string is valid Python syntax."""
+    """Check if code string has valid Python syntax via ast parse.
+
+    False if SyntaxError raised.
+    """
     try:
         ast.parse(code_content)
     except SyntaxError:
@@ -277,7 +301,10 @@ def is_syntactically_valid(code_content: str) -> bool:
 
 
 def parse_basedpyright_summary(output_text: str) -> str:
-    """Extract the final summary line from basedpyright output."""
+    """Extract final summary line from basedpyright output.
+
+    Scans reversed lines for error, warning, or note.
+    """
     for line in reversed(output_text.splitlines()):
         stripped = line.strip()
         if "error" in stripped or "warning" in stripped or "note" in stripped:
@@ -286,7 +313,10 @@ def parse_basedpyright_summary(output_text: str) -> str:
 
 
 def parse_ruff_summary(output_text: str) -> str:
-    """Extract summary line from ruff output."""
+    """Extract summary line from ruff output.
+
+    Scans for status, checks passed, or found messages.
+    """
     for line in output_text.splitlines():
         stripped = line.strip()
         if (
@@ -304,7 +334,7 @@ def parse_ruff_summary(output_text: str) -> str:
 
 
 def filter_ruff_output(output_text: str) -> str:
-    """Remove config incompatibility warning lines from ruff output."""
+    """Remove config conflict warning lines starting with warning: from ruff output."""
     filtered_lines = [
         line
         for line in output_text.splitlines()
@@ -314,7 +344,7 @@ def filter_ruff_output(output_text: str) -> str:
 
 
 def extract_uncovered_blocks(coverage_text: str) -> list[str]:
-    """Extract the first line of each contiguous block of uncovered lines (!)."""
+    """Extract 1st line of each contiguous block of uncovered lines starting with !."""
     lines = coverage_text.splitlines()
     uncovered_snippets: list[str] = []
     in_block = False
@@ -337,7 +367,10 @@ def extract_uncovered_blocks(coverage_text: str) -> list[str]:
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Inspect uncovered/partial lines and build precise instructions."""
+    """Inspect uncovered lines and build precise hints.
+
+    Reads coverage annotation and source files.
+    """
     cover_path = get_coverage_annotation_path(source_file_path)
     if not cover_path.exists():
         cover_path = Path(f"{source_file_path},cover")
@@ -388,7 +421,10 @@ def read_local_files(
     source_file_path: str,
     prefix: str,
 ) -> tuple[str, str, str]:
-    """Read local dynamic test, coverage, and log files safely using Path."""
+    """Read test content, coverage report, and pytest log.
+
+    Handles missing coverage annotation file.
+    """
     logger.info(
         "[%s] Reading local dynamic test, coverage, and log files for payload...",
         prefix,
@@ -415,13 +451,9 @@ def run_preflight_compliance_and_validation(
     test_file_path: str,
     prefix: str,
 ) -> tuple[bool, list[str]]:
-    """Run preemptive workspace_stamper and prioritized static validation checks (1-4).
+    """Run stamper and prioritized static validation checks.
 
-    Priorities:
-    1. Code Length (> 5 lines)
-    2. Syntax Validity (ast.parse)
-    3. Static tmp_path Isolation (WorkspaceGuard)
-    4. SPDX Header Compliance
+    Checks file existence, length, syntax, static isolation, and SPDX header.
     """
     logger.info(
         "[%s] Running pre-pytest run compliance and static validations...",
@@ -512,11 +544,9 @@ def run_preflight_compliance_and_validation(
 
 
 def validate_llm_code(code: str) -> tuple[bool, str]:
-    """Validate the LLM returned actual code (>5 lines and comment tag).
+    """Validate LLM code length, comment tags, syntax, and isolation.
 
-    Returns:
-        tuple[bool, str]: (is_valid, failure_reason)
-
+    Writes temporary file and deletes after check.
     """
     lines = [line for line in code.splitlines() if line.strip()]
     if len(lines) <= MIN_LINES_FOR_LLM_CODE:
@@ -549,7 +579,10 @@ def validate_llm_code(code: str) -> tuple[bool, str]:
 
 
 def process_and_save_code(new_code: str, test_file_path: str, prefix: str) -> None:
-    """Calculate diff statistics, log diff as debug, and save new test code."""
+    """Calculate diff statistics, log diff, and write new test code.
+
+    Uses unified diff and overwrites test file.
+    """
     test_path = Path(test_file_path)
     old_code = test_path.read_text(encoding="utf-8")
 

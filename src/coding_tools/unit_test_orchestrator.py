@@ -2,7 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Orchestrate automated test generation, coverage, basedpyright, and ruff checks."""
+"""Orchestrate test, coverage, basedpyright, and ruff check pipeline.
+
+Runs pytest, basedpyright, ruff sequentially. Calls LLM API for fixes. Cleans
+cache files on completion.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +42,10 @@ def _evaluate_stage_status(
     stage_name: str,
     status: str,
 ) -> tuple[bool, str, str] | None:
-    """Evaluate stage status enum and map to orchestrator response if non-success."""
+    """Map workflow status enum to response tuple if non-success.
+
+    Yields fixed or failed status tuple, or none if success.
+    """
     if status_enum == WorkflowStatus.FIXED:
         return False, stage_name, "FIXED"
     if status_enum == WorkflowStatus.FAILED:
@@ -52,7 +59,10 @@ def _run_stage_chain(
     uploaded_files: list[Any],
     ctx: WorkflowContext,
 ) -> tuple[bool, str, str]:
-    """Execute the sequence of workflow stages sequentially."""
+    """Run pytest, basedpyright, and ruff workflow stages sequentially.
+
+    Use LLMRemediator for automated fixes per stage. Return success tuple.
+    """
     # --- STAGE 1: Pytest / Coverage ---
     res = _evaluate_stage_status(
         *remediator.run_pytest_stage(cache_name, uploaded_files, ctx),
@@ -114,11 +124,10 @@ def execute_workflow(
     *,
     allow_llm: bool = True,
 ) -> tuple[bool, str, str]:
-    """Execute automated test generation, type checking, and linting workflow.
+    """Run complete test, type check, and lint workflow.
 
-    Returns:
-        tuple[bool, str, str]: (success, stage_name, status)
-
+    Setup LLM cache, run stage chain, clean uploaded files if client supports caching.
+    Catch LLMError, OSError, ValueError, and SubprocessError.
     """
     prefix = Path(test_file_path).name
     ctx = WorkflowContext(test_file_path, source_file_path, prefix, allow_llm)

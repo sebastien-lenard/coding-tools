@@ -1,7 +1,10 @@
 # src/coding_tools/backup_untracked.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Automates backups of untracked project resources."""
+"""Back up untracked project files using config file.
+
+Reads .git_untracked_to_save in project root. Writes to output base dir.
+"""
 
 import argparse
 import logging
@@ -17,9 +20,9 @@ logger = logging.getLogger("coding_tools.backup_untracked")
 
 
 class UntrackedBackupManager(BaseModel):
-    """Automate backups of local untracked files based on project configurations.
+    """Back up untracked project files based on config.
 
-    Uses Pydantic validation to protect file-system execution targets.
+    Pydantic validation. Reads .git_untracked_to_save for target list.
     """
 
     project_path: DirectoryPath
@@ -29,13 +32,13 @@ class UntrackedBackupManager(BaseModel):
 
     @property
     def config_file_path(self) -> Path:
-        """Returns the calculated configuration path."""
+        """Get config path from project root and config name."""
         return self.project_path / self._config_name
 
     def execute(self) -> bool:
-        """Orchestrates reading the configurations and backing up files.
+        """Run backup pipeline from config read to file copies.
 
-        Returns True if successful, False otherwise.
+        Return True if success, False on missing config or IO error.
         """
         if self.verbose:
             logger.setLevel(logging.INFO)
@@ -73,7 +76,10 @@ class UntrackedBackupManager(BaseModel):
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
-        """Verify output destination directory is accessible or buildable."""
+        """Check output dir and create if missing.
+
+        Return False on IO error.
+        """
         if not output_base_dir.exists():
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -85,12 +91,15 @@ class UntrackedBackupManager(BaseModel):
         return True
 
     def _get_backup_target_dir(self, output_base_dir: Path) -> Path:
-        """Generate a unique timestamped destination target folder."""
+        """Get unique timestamped destination folder inside output base dir."""
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         return output_base_dir / f"backup_{self.project_path.name}_{timestamp}"
 
     def _copy_item(self, item_str: str, backup_target_dir: Path) -> bool:
-        """Normalize and copy a single source item string to the destination."""
+        """Copy single file or dir to backup target dir.
+
+        Skip if missing. Return False on IO error.
+        """
         clean_item_str = item_str.rstrip("/\\")
         source_item = self.project_path / clean_item_str
 
@@ -122,7 +131,10 @@ class UntrackedBackupManager(BaseModel):
             return True
 
     def _parse_config(self) -> tuple[Path, list[str]] | None:
-        """Parse lines within the backup schema configuration file."""
+        """Parse config file lines, extract base dir and items to backup.
+
+        Return None on read failure or empty file.
+        """
         try:
             content = self.config_file_path.read_text(encoding="utf-8")
             lines = [
@@ -141,14 +153,13 @@ class UntrackedBackupManager(BaseModel):
             )
             return None
 
-        # Resolve paths dynamically to handle real environment contexts smoothly
         output_base_dir = Path(lines[0])
         items_to_backup = lines[1:]
         return output_base_dir, items_to_backup
 
 
 def main() -> None:
-    """CLI Gateway transforming raw arguments into verified Pydantic contexts."""
+    """Parse CLI args, run backup manager, and exit with status code."""
     parser = argparse.ArgumentParser(
         description="Safely back up untracked local files.",
     )

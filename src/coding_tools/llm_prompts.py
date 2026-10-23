@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Prompt, skill loader, and agnostic content builder utilities."""
+"""Build prompts, load skills, and construct contents list."""
 
 from __future__ import annotations
 
@@ -17,13 +17,19 @@ from coding_tools.parsers import (
 
 
 def load_skill(skill_filename: str) -> str:
-    """Load a specific skill from the config/skills Markdown files."""
+    """Read skill markdown from config/skills.
+
+    Raise FileNotFoundError if missing.
+    """
     skill_path = Path("config/skills") / skill_filename
     return skill_path.read_text(encoding="utf-8")
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Inspect uncovered/partial lines and build precise instructions."""
+    """Yield hints for uncovered lines from source and .cover files.
+
+    Return empty list if files missing.
+    """
     cover_path = Path(f"{source_file_path},cover")
     if not cover_path.exists():
         return []
@@ -74,7 +80,10 @@ def build_contents_list(
     coverage_content: str,
     pytest_output: str,
 ) -> list[str]:
-    """Build the dynamic contents list as agnostic plain strings."""
+    """Build contents list with source, tests, coverage, and pytest logs.
+
+    Include pyproject.toml and conftest.py if caching disallowed.
+    """
     contents_list: list[str] = []
 
     if not is_caching_allowed("gemini"):

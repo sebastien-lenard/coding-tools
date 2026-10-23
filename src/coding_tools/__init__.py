@@ -1,6 +1,10 @@
 # src/coding_tools/__init__.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Export core tools for workspace backup, file handling, and stamping.
+
+Exposes UntrackedBackupManager, WorkspaceStamper, and tool log path helpers.
+"""
 from .backup_untracked import UntrackedBackupManager
 from .file_handler import (
     ALL_TOOL_OUTPUT_DIRS,
