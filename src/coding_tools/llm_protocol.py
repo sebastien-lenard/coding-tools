@@ -63,9 +63,14 @@ class StructuredGenerationOptions:
     spinner_msg: str
     system_instruction: str | None = None
     cache_name: str | None = None
+    tool_name: str = "generic-tool"
+    process_step: str = "generation"
+    target_file: str = "unknown.py"
+    start_date: str = "26-01-01"
+    llm_name: str = "generic-model"
 
 
-class LLMClientProtocol(Protocol):  # pragma: no cover
+class LLMClientProtocol(Protocol):
     """High-level operations for any LLM client."""
 
     @property

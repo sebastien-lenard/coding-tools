@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Automate Python docstring enhancement via LLM API.
+"""Automate docstring enhancement and verification via LLM API.
 
-AST validation, workspace stamping, max 5 lines per docstring, two passes.
+AST validation of mutations. Concurrency with semaphore. Writes files, stamps workspace.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import argparse
 import ast
 import asyncio
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -34,9 +35,9 @@ MAX_DOCSTRING_LINES = 5
 
 
 def _strip_docstrings(tree: ast.AST) -> None:
-    """Remove docstrings from AST tree nodes in place.
+    """Remove docstrings from AST nodes in place.
 
-    Mutates tree.
+    Walk tree and pop first body expr if constant string.
     """
     for node in ast.walk(tree):
         if isinstance(
@@ -56,9 +57,9 @@ def validate_docstring_mutations(
     new_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Check AST validity and ensure non-docstring code unchanged.
+    """Scan AST mutations to ensure only docstrings changed.
 
-    Fail if docstring exceeds max lines or code mutates.
+    False if syntax error, line count exceed max, or non-docstring code changed.
     """
     logger.info("[%s] Validating AST transformations...", prefix)
     try:
@@ -122,9 +123,9 @@ async def _run_enhancement_pass(
     original_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Call LLM API to enhance docstrings with retry logic.
+    """Call LLM API and check response against Pydantic schema.
 
-    Two attempts max. Return candidate code if validation passes.
+    Retry up to two times on failure. Return original code on failure.
     """
     for attempt in range(2):
         try:
@@ -157,7 +158,7 @@ async def _run_enhancement_pass(
                 (f"Previous attempt validation failed: {reason}. Fix and try again."),
             )
         except Exception:
-                logger.exception(
+            logger.exception(
                 "[%s] Pass execution encountered exception",
                 prefix,
             )
@@ -167,10 +168,11 @@ async def _run_enhancement_pass(
 async def process_file_workflow(
     file_path: Path,
     semaphore: asyncio.Semaphore,
+    start_date: str,
 ) -> dict[str, Any]:
-    """Run two-pass docstring workflow on file.
+    """Run two-pass docstring enhancement workflow on file via LLM API.
 
-    Save enhanced code, stamp workspace via WorkspaceStamper, return status dict.
+    Writes enhanced code, stamps workspace, and returns execution dict status.
     """
     async with semaphore:
         prefix = file_path.stem
@@ -188,13 +190,17 @@ async def process_file_workflow(
 
         enhancement_contents: list[object] = [
             f"--- Target File: {file_path} ---\n{current_code}",
-            "Please enhance and correct docstrings according to guidelines.",
+            "Follow instructions on docstrings.",
         ]
         options_pass1 = StructuredGenerationOptions(
             response_schema=LLMResponse,
             prefix=prefix,
             spinner_msg="Enhancing docstrings...",
             system_instruction=skill_content,
+            tool_name="docstring-enhancer",
+            process_step="pass-1",
+            target_file=str(file_path),
+            start_date=start_date,
         )
 
         success, candidate = await _run_enhancement_pass(
@@ -215,16 +221,17 @@ async def process_file_workflow(
 
         verification_contents: list[object] = [
             f"--- Target File: {file_path} ---\n{current_code}",
-            (
-                "Review enhanced docstrings. Ensure edge cases and "
-                "subtleties are captured, max 5 lines respected."
-            ),
+            "Follow instructions on docstrings.",
         ]
         options_pass2 = StructuredGenerationOptions(
             response_schema=LLMResponse,
             prefix=prefix,
             spinner_msg="Verifying docstrings...",
             system_instruction=skill_content,
+            tool_name="docstring-enhancer",
+            process_step="pass-2",
+            target_file=str(file_path),
+            start_date=start_date,
         )
 
         success_pass2, candidate_v2 = await _run_enhancement_pass(
@@ -274,7 +281,10 @@ async def process_file_workflow(
 
 
 def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> None:
-    """Log summary table of processed files and statuses."""
+    """Log summary table of processed files and statuses.
+
+    Compute relative paths from project root.
+    """
     logger.info("==================================================")
     logger.info("DOCSTRING ENHANCER EXECUTION SUMMARY TABLE")
     logger.info("==================================================")
@@ -296,11 +306,16 @@ def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> No
 
 
 async def async_main() -> None:
-    """Parse args, collect target files, run concurrent workflows via semaphore limit 4.
+    """Run async main execution flow for docstring enhancer.
 
+    Parse arguments, get target files, run concurrent workflows via semaphore limit 4.
     Exit if target missing or empty.
     """
-    logger.info("[INFO] Initializing docstring_enhancer workflow...")
+    start_date = datetime.now(UTC).strftime("%y-%m-%d")
+    logger.info(
+        "[INFO] Initializing docstring_enhancer workflow [start_date: %s]...",
+        start_date,
+    )
     parser = argparse.ArgumentParser(
         description="Automated Python docstring enhancer and corrector via Gemini LLM.",
     )
@@ -335,7 +350,7 @@ async def async_main() -> None:
         len(targets),
     )
     semaphore = asyncio.Semaphore(4)
-    tasks = [process_file_workflow(f, semaphore) for f in targets]
+    tasks = [process_file_workflow(f, semaphore, start_date) for f in targets]
     results = await asyncio.gather(*tasks)
 
     print_summary_table(list(results), project_root)

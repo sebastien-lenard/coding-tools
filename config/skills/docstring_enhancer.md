@@ -2,19 +2,13 @@
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-1. Don't edit anything in the script other than the incorrect or incomplete docstrings stated below. I'll do a strict check of this rule on your output and reject it if not ok.
-2. Study full script and grasp how tools work.
-3. Spot *docstrings* of *code blocks* (I call those just blocks here): modules, classes, functions, methods.
-4. Write missing docstrings.
-5. Spot incorrect docstrings for their underlying block. If any, edit and fix those incorrect docstrings only.
-6. For each block, spot (a) key info for debugging the block and (b) key info for projects that use the block and can only see the docstring (not the code itself).
-7. Such info might include (a) edge cases (e.g. when block skips part of its process), (b) state requirements, (c) files/db writing access, (d) internet/api access, (e) API keys, (f) commands and if any, their options (e.g. pytest with coverage annotations).
-8. Find any other type of key info when reading blocks.
-9. Edit docstrings for the blocks having key info that's not or only partly included in those docstrings.
-10. Use telegraphic writing style. Adverbs or adjectives only if they change meaning of sentence (e.g. don't write "direct/directly", "safe/safely", "modified", ). Function/method docstrings start with imperative verb. When a word has synonyms, favor the shorter synonym (e.g. "use" over "utilize", "check" over "verify" or "validate", "run" over "execute", "get" over "collect", "edit" over "modify" or "mutate", "yield" over "generate" or "compute", "lead" over "orchestrate", "to fix" over "to correct", "audit" or "scan" over "inspection").
-11. Spot unclear first line of docstrings and, for those docstrings only, either rewrite or add a few words in the rest of the docstring.
-12. Check you haven't forgot any docstring to process.
-13. Check that your output has full script.
+1. If the .py file doesn't have a module header docstring, write the module docstring.
+2. If code blocks (classes, functions, methods) don't have docstrings, write docstrings.
+1. If blocks have mismatched or outdated docstrings, fix docstrings.
+2. If blocks have incomplete docstrings, fix docstrings. An incomplete docstring can lack (a) key info for debugging the bloc, (b) key info for projects that use the block, including (c) edge cases (e.g. when block skips part of its process), (d) state requirements, (e) files/db writing access, (f) internet/api access, (g) API keys, (h) commands with their options if any (e.g. pytest with coverage annotations), and (i) any other type of key info you find when scanning the blocks.
+3. If docstrings don't use telegraphic writing style, rewrite them in telegraphic style, but making sure all key info is in docstring (use more than 3-4 lines for complex blocks). Adverbs or adjectives only if they change meaning of sentence (e.g. don't write "direct/directly", "safe/safely", "modified", ). Function/method docstrings start with imperative verb. When a word has synonyms, favor the shorter synonym (e.g. "use" over "utilize", "check" over "verify" or "validate", "run" over "execute", "get" over "collect", "edit" over "modify" or "mutate", "yield" over "generate" or "compute", "lead" over "orchestrate", "to fix" over "to correct", "audit" or "scan" over "inspection").
+6. Don't change code or erase comments outside of docstrings.
+7. Output the full script.
 
 ## Examples (Functions & Methods):
 

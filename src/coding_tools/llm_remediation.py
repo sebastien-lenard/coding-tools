@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -55,6 +56,7 @@ class WorkflowContext:
     source_file_path: str
     prefix: str
     allow_llm: bool
+    start_date: str = datetime.now(UTC).strftime("%y-%m-%d")
 
 
 @dataclass
@@ -173,6 +175,10 @@ class LLMRemediator:
                     spinner_msg=(f"Sending {stage.name} fix request to LLM..."),
                     system_instruction=system_instruction_text,
                     cache_name=cache_name,
+                    tool_name="unit-test-orchestrator",
+                    process_step=stage.name.lower().replace("/", "-"),
+                    target_file=ctx.test_file_path,
+                    start_date=ctx.start_date,
                 )
                 raw_resp = self.client.generate_structured_response(
                     contents_list=contents_list,

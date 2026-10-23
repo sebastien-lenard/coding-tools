@@ -1,0 +1,116 @@
+# src/coding_tools/llm_persistence.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Agnostic persistence utility for LLM execution outputs."""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+from coding_tools.file_handler import LLMOutputPathParameters, get_llm_output_path
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from coding_tools.llm_protocol import StructuredGenerationOptions
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PersistOutputParameters:
+    """Hold parameters for persisting LLM output dumps."""
+
+    options: StructuredGenerationOptions
+    status_label: str
+    raw_text: str | None
+    parsed_json: Any | None
+    parsed_model: BaseModel | None
+    error_details: str | None
+    contents_list: list[object]
+    model_name: str
+    supports_caching: bool
+
+
+def persist_llm_output(params: PersistOutputParameters) -> None:
+    """Persist structured LLM output dump to disk in an agnostic manner."""
+    now_local = datetime.now(UTC).astimezone()
+    timestamp = int(now_local.timestamp())
+    hhmiss = now_local.strftime("%H%M%S")
+
+    max_reached_step = "raw_response"
+    response_payload: Any = params.raw_text
+
+    if params.parsed_model is not None:
+        max_reached_step = "pydantic_validation"
+        response_payload = params.parsed_model.model_dump()
+    elif params.parsed_json is not None:
+        max_reached_step = "json_parsing"
+        response_payload = params.parsed_json
+
+    file_contents: list[str] = []
+    instructions: list[str] = []
+
+    for item in params.contents_list:
+        item_str = str(item)
+        if (
+            "--- Target File:" in item_str
+            or "--- pyproject.toml" in item_str
+            or "--- tests/conftest.py" in item_str
+        ):
+            file_contents.append(item_str)
+        else:
+            instructions.append(item_str)
+
+    transferred_files = [str(params.options.target_file)]
+    if not params.supports_caching:
+        transferred_files.extend(["pyproject.toml", "tests/conftest.py"])
+
+    dump_data: dict[str, Any] = {
+        "metadata": {
+            "timestamp": timestamp,
+            "hhmiss": hhmiss,
+            "tool_name": params.options.tool_name,
+            "process_step": params.options.process_step,
+            "target_file": str(params.options.target_file),
+            "transferred_files": transferred_files,
+            "llm_name": params.model_name,
+            "status": params.status_label,
+        },
+        "request": {
+            "system_instruction": params.options.system_instruction,
+            "file_contents": file_contents,
+            "instructions_and_logs": instructions,
+        },
+        "response": {
+            "max_reached_step": max_reached_step,
+            "response_data": response_payload,
+            "error_details": params.error_details,
+        },
+    }
+
+    try:
+        path_params = LLMOutputPathParameters(
+            llm_name=params.model_name,
+            start_date=params.options.start_date,
+            tool_name=params.options.tool_name,
+            process_step=params.options.process_step,
+            target_file=params.options.target_file,
+            status_label=params.status_label,
+            timestamp=timestamp,
+            hhmiss=hhmiss,
+        )
+        out_path = get_llm_output_path(path_params)
+        out_path.write_text(json.dumps(dump_data, indent=2), encoding="utf-8")
+        logger.info(
+            "[%s] Saved structured LLM output dump to %s",
+            params.options.prefix,
+            out_path,
+        )
+    except Exception:
+        logger.exception("[%s] Failed to write LLM output dump", params.options.prefix)

@@ -10,6 +10,7 @@ Needs API key. Uses google-genai v2.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import threading
@@ -24,6 +25,7 @@ from google.genai.errors import ServerError
 from pydantic import BaseModel
 
 from coding_tools.config import get_provider_mapping, is_caching_allowed
+from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 from coding_tools.parsers import (
@@ -134,7 +136,7 @@ def build_config(
     """
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
-            thinking_level=types.ThinkingLevel.MEDIUM,
+            thinking_level=types.ThinkingLevel.LOW,
         ),
         "response_mime_type": "application/json",
         "response_schema": response_schema,
@@ -213,6 +215,12 @@ def call_gemini_with_retry(
     return response
 
 
+def _raise_schema_error(schema_name: str) -> None:
+    """Raise ValueError for schema conformance failure."""
+    msg = f"GenAI response did not conform to {schema_name} schema."
+    raise ValueError(msg)
+
+
 class GeminiClientAdapter:
     """Google GenAI client meeting LLMClientProtocol.
 
@@ -251,7 +259,6 @@ class GeminiClientAdapter:
             cache_name=options.cache_name,
         )
 
-        # Translate agnostic text contents into Gemini Part objects
         gemini_contents: list[types.ContentUnion] = [
             types.Part.from_text(text=str(item)) for item in contents_list
         ]
@@ -265,15 +272,71 @@ class GeminiClientAdapter:
             spinner_msg=options.spinner_msg,
         )
 
-        response = call_gemini_with_retry(params)
+        status_label = "ok"
+        error_details: str | None = None
+        raw_text: str | None = None
+        parsed_json: Any | None = None
+        parsed_model: BaseModel | None = None
+        exception_to_raise: Exception | None = None
+        validated_obj: BaseModel = options.response_schema(message="", code="")
 
-        parsed = response.parsed
-        if parsed is None:
-            schema_name = options.response_schema.__name__
-            msg = f"GenAI response did not conform to {schema_name} schema."
-            raise ValueError(msg)
+        try:
+            response = call_gemini_with_retry(params)
+            raw_text = response.text
+            if raw_text:
+                try:
+                    parsed_json = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    parsed_json = None
 
-        return options.response_schema.model_validate(parsed)
+            parsed = response.parsed
+            if parsed is None:
+                status_label = "ko"
+                schema_name = options.response_schema.__name__
+                error_details = (
+                    f"GenAI response did not conform to {schema_name} schema."
+                )
+                _raise_schema_error(schema_name)
+
+            parsed_model = cast("BaseModel", parsed)
+            validated_obj = options.response_schema.model_validate(parsed)
+        except (LLMServerError, LLMAPIError) as e:
+            status_label = (
+                "503"
+                if getattr(e, "status_code", None) == HTTP_SERVICE_UNAVAILABLE
+                else "ko"
+            )
+            error_details = str(e)
+            exception_to_raise = e
+        except ValueError as e:
+            status_label = "ko"
+            error_details = str(e)
+            exception_to_raise = e
+        except (TypeError, AttributeError, RuntimeError) as e:
+            status_label = "ko"
+            error_details = str(e)
+            exception_to_raise = e
+        else:
+            exception_to_raise = None
+
+        persist_llm_output(
+            PersistOutputParameters(
+                options=options,
+                status_label=status_label,
+                raw_text=raw_text,
+                parsed_json=parsed_json,
+                parsed_model=parsed_model,
+                error_details=error_details,
+                contents_list=contents_list,
+                model_name=self.model_name,
+                supports_caching=self.supports_caching,
+            ),
+        )
+
+        if exception_to_raise is not None:
+            raise exception_to_raise
+
+        return validated_obj
 
     def setup_cache(
         self,
