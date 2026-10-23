@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Automated Python docstring enhancement and verification via Gemini LLM."""
+"""Automate docstring enhancement via LLM API.
+
+Stamps workspace and validates AST mutations.
+"""
 
 from __future__ import annotations
 
@@ -31,10 +34,7 @@ MAX_DOCSTRING_LINES = 5
 
 
 def _strip_docstrings(tree: ast.AST) -> None:
-    """Strip all docstring expression nodes from an AST tree in-place.
-
-    Modifies the tree structure directly by popping initial constant string nodes.
-    """
+    """Remove docstrings from AST tree nodes in place."""
     for node in ast.walk(tree):
         if isinstance(
             node,
@@ -53,9 +53,9 @@ def validate_docstring_mutations(
     new_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Ensure only docstring nodes were altered and line limits hold.
+    """Check AST validity and ensure non-docstring code unchanged.
 
-    Fails if line counts exceed max limits or non-docstring code structures change.
+    Fail if docstring exceeds max lines or code mutates.
     """
     logger.info("[%s] Validating AST transformations...", prefix)
     try:
@@ -119,9 +119,9 @@ async def _run_enhancement_pass(
     original_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Run generation pass and validate AST mutations with auto-retries.
+    """Call LLM API to enhance docstrings with retry logic.
 
-    Appends validation feedback to context on failure and retries up to twice.
+    Yield candidate code if validation passes. Two attempts max.
     """
     for attempt in range(2):
         try:
@@ -165,9 +165,9 @@ async def process_file_workflow(
     file_path: Path,
     semaphore: asyncio.Semaphore,
 ) -> dict[str, Any]:
-    """Execute two-pass enhancement workflow and stamp project files.
+    """Run two-pass docstring workflow on file.
 
-    Saves enhanced code to disk and runs WorkspaceStamper for license updates.
+    Save enhanced code, stamp workspace, return status.
     """
     async with semaphore:
         prefix = file_path.stem
@@ -271,10 +271,7 @@ async def process_file_workflow(
 
 
 def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> None:
-    """Print synthetic summary table of processed files with relative paths.
-
-    Calculates paths against project root for concise logging output.
-    """
+    """Log summary table of processed files and statuses."""
     logger.info("==================================================")
     logger.info("DOCSTRING ENHANCER EXECUTION SUMMARY TABLE")
     logger.info("==================================================")
@@ -296,9 +293,9 @@ def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> No
 
 
 async def async_main() -> None:
-    """Run asynchronous docstring enhancement workflow.
+    """Parse args, collect target files, run concurrent workflows.
 
-    Gathers target python files and executes concurrent tasks under semaphores.
+    Use semaphore limit 4.
     """
     logger.info("[INFO] Initializing docstring_enhancer workflow...")
     parser = argparse.ArgumentParser(
@@ -343,8 +340,5 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    """Run synchronous CLI entrypoint.
-
-    Wraps async execution loop for command line invocations.
-    """
+    """Run async main workflow loop."""
     asyncio.run(async_main())
