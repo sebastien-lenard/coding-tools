@@ -2,7 +2,7 @@
 status: active  
 date: 2026-10-19
 ---
-<!-- docs/designs/unit_test_pipeline.md -->
+<!-- docs/designs/002-unit_test_pipeline.md -->
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
