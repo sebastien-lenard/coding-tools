@@ -14,10 +14,6 @@ from pydantic import ValidationError
 from coding_tools import backup_untracked
 from coding_tools.backup_untracked import UntrackedBackupManager, main
 
-# =====================================================================
-# SYSTEM FIXTURES
-# =====================================================================
-
 
 @pytest.fixture(autouse=True)
 def cleanup_coverage_annotations() -> Iterator[None]:
@@ -77,21 +73,11 @@ def setup_mock_project(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-# =====================================================================
-# STRUCTURAL INITIALIZATION VALIDATION
-# =====================================================================
-
-
 def test_pydantic_enforces_directory_existence_on_init() -> None:
     """Verifies that non-existent directory targets fail Pydantic validation."""
     invalid_path = Path("this/path/does/not/exist/anywhere/at/all")
     with pytest.raises(ValidationError):
         UntrackedBackupManager(project_path=invalid_path)
-
-
-# =====================================================================
-# WORKFLOW EXECUTION FUNCTIONAL TESTS
-# =====================================================================
 
 
 def test_backup_copies_files_and_folders_correctly(
@@ -151,7 +137,7 @@ def test_missing_config_file_logs_error_and_returns_false(
         execution_status = manager.execute()
         assert execution_status is False
 
-    assert "Configuration file missing:" in caplog.text
+    assert "No conf:" in caplog.text
 
 
 def test_empty_config_file_returns_false(
@@ -167,7 +153,7 @@ def test_empty_config_file_returns_false(
     manager = UntrackedBackupManager(project_path=project_dir)
     with caplog.at_level("ERROR"):
         assert manager.execute() is False
-    assert "Configuration file is empty:" in caplog.text
+    assert "Empty conf:" in caplog.text
 
 
 def test_config_file_read_permission_error_returns_none(
@@ -181,7 +167,7 @@ def test_config_file_read_permission_error_returns_none(
     with patch.object(Path, "read_text", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Failed to read configuration file" in caplog.text
+        assert "Failed reading conf" in caplog.text
 
 
 def test_config_file_missing_on_read_throws_exception(
@@ -195,7 +181,7 @@ def test_config_file_missing_on_read_throws_exception(
     with patch.object(Path, "read_text", side_effect=FileNotFoundError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Failed to read configuration file" in caplog.text
+        assert "Failed reading conf" in caplog.text
 
 
 def test_uncreatable_output_base_directory_returns_false(
@@ -211,7 +197,7 @@ def test_uncreatable_output_base_directory_returns_false(
     with patch.object(Path, "mkdir", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Destination path invalid or uncreatable" in caplog.text
+        assert "Bad output path" in caplog.text
 
 
 def test_copy_item_shutil_exception_logs_error(
@@ -225,7 +211,7 @@ def test_copy_item_shutil_exception_logs_error(
     with patch("shutil.copy2", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is True
-        assert "IO failure copying target" in caplog.text
+        assert "Failed copy" in caplog.text
 
 
 def test_copy_item_unsupported_file_type(

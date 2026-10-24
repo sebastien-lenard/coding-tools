@@ -27,6 +27,15 @@ def test_sanitize() -> None:
     assert "This" in cleaned
 
 
+def test_sanitize_with_banned_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test text sanitization when BANNED_WORDS contains items."""
+    monkeypatch.setitem(BANNED_WORDS, "workflow", None)
+    text = "This workflow execution engine ran successfully!"
+    cleaned = _sanitize(text)
+    assert "workflow" not in cleaned.lower()
+    assert "This" in cleaned
+
+
 @pytest.mark.parametrize(
     ("target", "full_path", "expected"),
     [

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Plain-text logging module enforcing strict formatting and anti-fluff standards."""
+"""Plain-text logging module applying formatting and anti-fluff."""
 
 from __future__ import annotations
 
@@ -12,25 +12,27 @@ from pathlib import Path
 from typing import Any
 
 # Global prohibited fluff words to enforce lean phrasing
-BANNED_WORDS = {"workflow", "execution", "engine", "successfully"}
+BANNED_WORDS = {}
 
 
 def _sanitize(text: str) -> str:
-    """Strip out unauthorized fluff words from log messages."""
+    """Strip out fluff words from logs."""
+    if not BANNED_WORDS:
+        return text
     words = text.split()
     cleaned_words = [w for w in words if w.lower().strip(".,:;!?") not in BANNED_WORDS]
     return " ".join(cleaned_words)
 
 
 class ProjectLogger:
-    """Enforces uniform logging patterns, target contexts, and structure."""
+    """Applies uniform logging patterns, target contexts, and form."""
 
     def __init__(self, name: str) -> None:
         self.logger = logging.getLogger(name)
 
     @staticmethod
     def _format_target(target: str | Path | None, *, full_path: bool = False) -> str:
-        """Extract filename or full path for target-specific log lines."""
+        """Get filename or full path for target-specific log lines."""
         if not target:
             return ""
         path = Path(target)
@@ -47,7 +49,7 @@ class ProjectLogger:
         target: str | Path | None = None,
         **details: Any,  # noqa: ANN401
     ) -> None:
-        """Log process start with optional target context and nested parameters."""
+        """Log process start with optional target context and nested params."""
         target_prefix = self._format_target(target)
         clean_process = _sanitize(process_name)
         self.logger.info("%sStart %s", target_prefix, clean_process)
@@ -56,7 +58,7 @@ class ProjectLogger:
             self.logger.info("%s", detail_line)
 
     def end(self, process_name: str, target: str | Path | None = None) -> None:
-        """Log process completion."""
+        """Log process end."""
         target_prefix = self._format_target(target)
         clean_process = _sanitize(process_name)
         self.logger.info("%sEnd %s.", target_prefix, clean_process)
@@ -69,7 +71,7 @@ class ProjectLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log routine progress and status updates."""
+        """Log progress and status updates."""
         target_prefix = self._format_target(target, full_path=full_path)
         clean_status = _sanitize(status)
         clean_info = _sanitize(complementary_info)
@@ -116,7 +118,7 @@ class ProjectLogger:
         """Log fatal error with exception traceback."""
         target_prefix = self._format_target(target, full_path=full_path)
         clean_msg = _sanitize(message)
-        self.logger.exception("%s%s", target_prefix, clean_msg)
+        self.logger.exception("%s%s", target_prefix, clean_msg)  # noqa: LOG004
 
     def summary_table(
         self,
@@ -124,7 +126,7 @@ class ProjectLogger:
         headers: list[str],
         rows: list[list[str]],
     ) -> None:
-        """Render multi-line summary table."""
+        """Print multi-line summary table."""
         lines = [
             title,
             "---",
@@ -140,7 +142,7 @@ class ProjectLogger:
         headers: list[str],
         values: list[str],
     ) -> None:
-        """Render compact single-line table summary."""
+        """Print single-line table summary."""
         lines = [
             title,
             "---",
@@ -152,7 +154,7 @@ class ProjectLogger:
 
 
 def setup_logging() -> None:
-    """Configure root logger to target sys.stderr with HH:MM:SS LEVEL layout."""
+    """Set up root logger to target sys.stderr with HH:MM:SS LEVEL layout."""
     handler = logging.StreamHandler(sys.stderr)
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)s: %(message)s",
@@ -167,5 +169,5 @@ def setup_logging() -> None:
 
 
 def get_project_logger(name: str) -> ProjectLogger:
-    """Instantiate and return a ProjectLogger instance for a given module."""
+    """Create and return a ProjectLogger object for a module."""
     return ProjectLogger(name)

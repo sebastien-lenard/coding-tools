@@ -1,7 +1,7 @@
 # src/coding_tools/backup_untracked.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Back up untracked project files using config file.
+"""Back up untracked files using config file.
 
 Reads .git_untracked_to_save in project root. Writes to output base dir.
 """
@@ -25,7 +25,7 @@ logger = get_project_logger(__name__)
 class UntrackedBackupManager(BaseModel):
     """Back up untracked project files based on config.
 
-    Pydantic validation. Reads .git_untracked_to_save for target list.
+    Pydantic check. Reads .git_untracked_to_save for target list.
     """
 
     project_path: DirectoryPath
@@ -39,7 +39,7 @@ class UntrackedBackupManager(BaseModel):
         return self.project_path / self._config_name
 
     def execute(self) -> bool:
-        """Run backup pipeline from config read to file copies.
+        """Run backup from config read to file copies.
 
         Return True if success, False on missing config or IO error.
         """
@@ -52,7 +52,7 @@ class UntrackedBackupManager(BaseModel):
         if not self.config_file_path.exists():
             logger.error(
                 self.project_path,
-                f"Configuration file missing: {self.config_file_path}",
+                f"No conf: {self.config_file_path}",
             )
             return False
 
@@ -66,7 +66,7 @@ class UntrackedBackupManager(BaseModel):
             return False
 
         backup_target_dir = self._get_backup_target_dir(output_base_dir)
-        logger.progress(self.project_path, "Initialize backup", str(backup_target_dir))
+        logger.progress(self.project_path, "Start backup", str(backup_target_dir))
         success_count = 0
 
         for item_str in items_to_backup:
@@ -75,7 +75,7 @@ class UntrackedBackupManager(BaseModel):
 
         logger.progress(
             self.project_path,
-            "Backup finished",
+            "End backup",
             f"Saved {success_count} items",
         )
         logger.end("backup", target=self.project_path)
@@ -92,18 +92,18 @@ class UntrackedBackupManager(BaseModel):
             except Exception:
                 logger.exception(
                     self.project_path,
-                    "Destination path invalid or uncreatable",
+                    "Bad output path",
                 )
                 return False
         return True
 
     def _get_backup_target_dir(self, output_base_dir: Path) -> Path:
-        """Get unique timestamped destination folder inside output base dir."""
+        """Get timestamped folder in output base dir."""
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         return output_base_dir / f"backup_{self.project_path.name}_{timestamp}"
 
     def _copy_item(self, item_str: str, backup_target_dir: Path) -> bool:
-        """Copy single file or dir to backup target dir.
+        """Copy file or dir to backup target dir.
 
         Skip if missing. Return False on IO error.
         """
@@ -120,27 +120,27 @@ class UntrackedBackupManager(BaseModel):
             if source_item.is_file():
                 destination_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_item, destination_path)
-                logger.progress(clean_item_str, "Copied file")
+                logger.progress(clean_item_str, "Copied")
             elif source_item.is_dir():
                 shutil.copytree(
                     source_item,
                     destination_path,
                     dirs_exist_ok=True,
                 )
-                logger.progress(clean_item_str, "Copied folder")
+                logger.progress(clean_item_str, "Copied")
         except (PermissionError, shutil.Error):
             logger.exception(
                 clean_item_str,
-                "IO failure copying target",
+                "Failed copy",
             )
             return False
         else:
             return True
 
     def _parse_config(self) -> tuple[Path, list[str]] | None:
-        """Parse config file lines, extract base dir and items to backup.
+        """Parse config file, get base dir and items to backup.
 
-        Return None on read failure or empty file.
+        Return None on read fail or empty file.
         """
         try:
             content = self.config_file_path.read_text(encoding="utf-8")
@@ -150,13 +150,13 @@ class UntrackedBackupManager(BaseModel):
                 if (cleaned := line.strip()) and not cleaned.startswith("#")
             ]
         except (PermissionError, FileNotFoundError):
-            logger.exception(self.project_path, "Failed to read configuration file")
+            logger.exception(self.project_path, "Failed reading conf")
             return None
 
         if not lines:
             logger.error(
                 self.project_path,
-                f"Configuration file is empty: {self.config_file_path}",
+                f"Empty conf: {self.config_file_path}",
             )
             return None
 
@@ -166,25 +166,24 @@ class UntrackedBackupManager(BaseModel):
 
 
 def main() -> None:
-    """Parse CLI args, run backup manager, and exit with status code."""
+    """Parse CLI args, run backup, and exit with status code."""
     parser = argparse.ArgumentParser(
-        description="Safely back up untracked local files.",
+        description="Back up untracked project files",
     )
     parser.add_argument(
         "project_path",
         type=str,
         nargs="?",
         default=".",
-        help="Path to the target project directory (default: current directory)",
+        help="Target dir path (default: current dir)",
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="Increase output verbosity.",
+        help="Verbose",
     )
     args = parser.parse_args()
-
     setup_logging()
 
     try:
@@ -194,7 +193,7 @@ def main() -> None:
         )
         success = manager.execute()
     except Exception:
-        logger.exception(None, "Terminated due to validation breakdown")
+        logger.exception(None, "End due to check breakdown")
         success = False
 
     sys.exit(0 if success else 1)
