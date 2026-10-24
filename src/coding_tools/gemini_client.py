@@ -5,7 +5,8 @@
 
 """Google GenAI wrapper meeting LLMClientProtocol.
 
-Ties into google-genai v2. Needs API key. Handles structured generation and context caching.
+Ties into google-genai v2. Needs API key.
+Handles structured generation and context caching.
 """
 
 from __future__ import annotations

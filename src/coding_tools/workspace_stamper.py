@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Inject SPDX license and path stamps into Python files. Reads root LICENSE and NOTICE files."""
+"""Inject SPDX license and path stamps into files.
+
+Reads root LICENSE and NOTICE files.
+"""
 
 import argparse
 import logging
@@ -67,7 +70,7 @@ class TargetWorkspace(BaseModel):
 
 
 class WorkspaceStamper(BaseModel):
-    """Inject path stamp and SPDX license metadata into workspace files. Validates content changes."""
+    """Inject path stamp and SPDX license metadata into files. Check content changes."""
 
     workspace: TargetWorkspace
 
