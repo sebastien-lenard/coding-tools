@@ -14,6 +14,7 @@ from .file_handler import (
     get_pytest_log_path,
     get_ruff_log_path,
 )
+from .logger import setup_logging
 from .workspace_stamper import WorkspaceStamper
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "get_coverage_annotation_path",
     "get_pytest_log_path",
     "get_ruff_log_path",
+    "setup_logging",
 ]
