@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bundle project source files into text file and strip redundant headers."""
 
+from __future__ import annotations
+
 import argparse
-import logging
 import os
 import subprocess
 import sys
@@ -13,10 +14,12 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
+from coding_tools.logger import get_project_logger, setup_logging
+
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-logger = logging.getLogger("coding_tools.bundle_sources")
+logger = get_project_logger(__name__)
 
 
 class SourceBundler(BaseModel):
@@ -50,15 +53,16 @@ class SourceBundler(BaseModel):
 
         False if src folder missing, subprocess fail, or write error.
         """
-        if self.verbose:
-            logger.setLevel(logging.INFO)
-
-        logger.info("Target Project Folder: %s", self.project_path)
+        logger.start(
+            "bundle-sources",
+            target=self.project_path,
+            folder=self.project_path,
+        )
 
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
-                "Required 'src' subfolder missing at target: %s",
                 self.src_path,
+                f"Required src subfolder missing: {self.src_path}",
             )
             return False
 
@@ -69,25 +73,23 @@ class SourceBundler(BaseModel):
         try:
             combined_content = self._run_files_to_prompt()
         except subprocess.CalledProcessError:
-            logger.exception("Failed executing files-to-prompt subprocess")
+            logger.exception(None, "Failed executing files-to-prompt subprocess")
             return False
         except FileNotFoundError:
             logger.exception(
-                "Command 'uvx' or 'files-to-prompt' is not "
-                "installed or available in PATH.",
+                None,
+                "Command 'uvx' or 'files-to-prompt' not installed / available in PATH.",
             )
             return False
 
         try:
             output_path.write_text(combined_content, encoding="utf-8")
         except OSError:
-            logger.exception(
-                "Failed to write bundled output to: %s",
-                output_path,
-            )
+            logger.exception(output_path, "Failed to write bundled output")
             return False
 
-        logger.info("Codebase successfully bundled into: %s", output_path)
+        logger.progress(output_path, "Bundled code", f"to {output_path.name}")
+        logger.end("bundle-sources", target=self.project_path)
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
@@ -97,7 +99,8 @@ class SourceBundler(BaseModel):
                 output_base_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
                 logger.exception(
-                    "Output base destination path is invalid or uncreatable",
+                    output_base_dir,
+                    "Destination path invalid or uncreatable",
                 )
                 return False
         return True
@@ -125,7 +128,7 @@ class SourceBundler(BaseModel):
                 "files-to-prompt",
                 *[str(p) for p in source_files],
             ]
-            logger.info("Running command for source files count: %d", len(source_files))
+            logger.progress(None, "Scan source files", f"count={len(source_files)}")
             result_src = subprocess.run(  # noqa: S603
                 cmd_src,
                 capture_output=True,
@@ -145,7 +148,7 @@ class SourceBundler(BaseModel):
         for file_rel_path in optional_files:
             target_file = self.project_path / file_rel_path
             if target_file.exists() and target_file.is_file():
-                logger.info("📄 Included optional file: %s", file_rel_path)
+                logger.progress(file_rel_path, "Include optional file")
                 cmd_file = [
                     "uvx",
                     "files-to-prompt",
@@ -160,7 +163,7 @@ class SourceBundler(BaseModel):
                 )
                 accumulated_output += result_file.stdout
             else:
-                logger.info("ℹ️ Optional file not found (skipped): %s", file_rel_path)
+                logger.progress(file_rel_path, "Optional file skipped (not found)")
 
         return accumulated_output
 
@@ -198,11 +201,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    setup_logging()
 
     try:
         bundler = SourceBundler(
@@ -212,7 +211,7 @@ def main() -> None:
         )
         success = bundler.execute()
     except Exception:
-        logger.exception("Execution terminated due to validation breakdown")
+        logger.exception(None, "Terminated due to validation breakdown")
         success = False
 
     sys.exit(0 if success else 1)

@@ -90,10 +90,8 @@ def test_bundler_executes_successfully_default_output(
 
     expected_output = proj["project_dir"] / "src_files.txt"
     assert expected_output.exists()
-    assert "Target Project Folder" in caplog.text
-    assert "Included optional file: pyproject.toml" in caplog.text
-    assert "Included optional file: .env.example" in caplog.text
-    assert "Included optional file: tests/conftest.py" in caplog.text
+    assert "Start bundle-sources" in caplog.text
+    assert "Include optional file" in caplog.text
 
 
 def test_bundler_executes_successfully_custom_output(
@@ -149,9 +147,7 @@ def test_bundler_skips_missing_optional_files(
     ):
         assert bundler.execute() is True
 
-    assert "Optional file not found (skipped): pyproject.toml" in caplog.text
-    assert "Optional file not found (skipped): .env.example" in caplog.text
-    assert "Optional file not found (skipped): tests/conftest.py" in caplog.text
+    assert "Optional file skipped (not found)" in caplog.text
 
 
 def test_missing_src_folder_logs_error_and_returns_false(
@@ -167,7 +163,7 @@ def test_missing_src_folder_logs_error_and_returns_false(
     with caplog.at_level("ERROR"):
         assert bundler.execute() is False
 
-    assert "Required 'src' subfolder missing at target" in caplog.text
+    assert "Required src subfolder missing" in caplog.text
 
 
 def test_subprocess_called_process_error_returns_false(
@@ -202,7 +198,7 @@ def test_file_not_found_error_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Command 'uvx' or 'files-to-prompt' is not" in caplog.text
+    assert "not installed / available in PATH" in caplog.text
 
 
 def test_uncreatable_output_directory_returns_false(
@@ -222,7 +218,7 @@ def test_uncreatable_output_directory_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Output base destination path is invalid or uncreatable" in caplog.text
+    assert "Destination path invalid or uncreatable" in caplog.text
 
 
 def test_output_write_os_error_returns_false(
@@ -245,7 +241,7 @@ def test_output_write_os_error_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Failed to write bundled output to" in caplog.text
+    assert "Failed to write bundled output" in caplog.text
 
 
 def test_main_gateway_execution_success(

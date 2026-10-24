@@ -42,6 +42,11 @@ def test_format_target(target: str | Path | None, expected: str) -> None:
     assert ProjectLogger._format_target(target) == expected
 
 
+def test_format_target_directory(tmp_path: Path) -> None:
+    """Test target formatting returns empty string for directories."""
+    assert ProjectLogger._format_target(tmp_path) == ""
+
+
 def test_project_logger_methods(caplog: pytest.LogCaptureFixture) -> None:
     """Test all ProjectLogger logging methods and output generation."""
     logger = get_project_logger("test_logger")
@@ -57,6 +62,7 @@ def test_project_logger_methods(caplog: pytest.LogCaptureFixture) -> None:
         logger.end("Test process", target="my_script.py")
         logger.warning(target="my_script.py", message="Watch out workflow")
         logger.error(target="my_script.py", message="Fatal error")
+        logger.error(target="my_script.py", message="Exception trace")
 
         logger.summary_table(
             title="Summary",
@@ -83,3 +89,24 @@ def test_setup_logging() -> None:
     assert root_logger.level == logging.INFO
     assert len(root_logger.handlers) == 1
     assert isinstance(root_logger.handlers[0], logging.StreamHandler)
+
+
+def test_project_logger_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that ProjectLogger.exception captures messages and tracebacks."""
+    logger = get_project_logger("test_logger")
+
+    def trigger_error() -> None:
+        err_msg = "Something went wrong"
+        raise ValueError(err_msg)
+
+    with caplog.at_level(logging.ERROR):
+        try:
+            trigger_error()
+        except ValueError:
+            logger.exception(None, message="Failed to process")
+
+    # Verify message was logged correctly and includes traceback info
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert "Failed to process" in record.message
+    assert record.exc_info is not None

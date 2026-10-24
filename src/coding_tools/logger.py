@@ -34,8 +34,10 @@ class ProjectLogger:
         if not target:
             return ""
         path = Path(target)
+        if path.is_dir():
+            return ""
         stem = path.stem if path.suffix == ".py" else path.name
-        return f"{stem}: "
+        return f"{stem}: " if stem else ""
 
     def start(
         self,
@@ -48,7 +50,7 @@ class ProjectLogger:
         clean_process = _sanitize(process_name)
         self.logger.info("%sStart %s", target_prefix, clean_process)
         for key, value in details.items():
-            detail_line = _sanitize(f"  - {key}: {value}")
+            detail_line = _sanitize(f"  {key}: {value}")
             self.logger.info("%s", detail_line)
 
     def end(self, process_name: str, target: str | Path | None = None) -> None:
