@@ -29,13 +29,15 @@ class ProjectLogger:
         self.logger = logging.getLogger(name)
 
     @staticmethod
-    def _format_target(target: str | Path | None) -> str:
-        """Extract filename without extension for target-specific log lines."""
+    def _format_target(target: str | Path | None, *, full_path: bool = False) -> str:
+        """Extract filename or full path for target-specific log lines."""
         if not target:
             return ""
         path = Path(target)
         if path.is_dir():
             return ""
+        if full_path:
+            return f"{path}: "
         stem = path.stem if path.suffix == ".py" else path.name
         return f"{stem}: " if stem else ""
 
@@ -64,9 +66,11 @@ class ProjectLogger:
         target: str | Path | None,
         status: str,
         complementary_info: str = "",
+        *,
+        full_path: bool = False,
     ) -> None:
         """Log routine progress and status updates."""
-        target_prefix = self._format_target(target)
+        target_prefix = self._format_target(target, full_path=full_path)
         clean_status = _sanitize(status)
         clean_info = _sanitize(complementary_info)
         separator = " " if clean_info else ""
@@ -78,15 +82,27 @@ class ProjectLogger:
             clean_info,
         )
 
-    def warning(self, target: str | Path | None, message: str) -> None:
+    def warning(
+        self,
+        target: str | Path | None,
+        message: str,
+        *,
+        full_path: bool = False,
+    ) -> None:
         """Log non-fatal unexpected warnings."""
-        target_prefix = self._format_target(target)
+        target_prefix = self._format_target(target, full_path=full_path)
         clean_msg = _sanitize(message)
         self.logger.warning("%s%s", target_prefix, clean_msg)
 
-    def error(self, target: str | Path | None, message: str) -> None:
+    def error(
+        self,
+        target: str | Path | None,
+        message: str,
+        *,
+        full_path: bool = False,
+    ) -> None:
         """Log fatal errors that halt processes."""
-        target_prefix = self._format_target(target)
+        target_prefix = self._format_target(target, full_path=full_path)
         clean_msg = _sanitize(message)
         self.logger.error("%s%s", target_prefix, clean_msg)
 
@@ -94,11 +110,13 @@ class ProjectLogger:
         self,
         target: str | Path | None,
         message: str,
+        *,
+        full_path: bool = False,
     ) -> None:
         """Log fatal error with exception traceback."""
-        target_prefix = self._format_target(target)
+        target_prefix = self._format_target(target, full_path=full_path)
         clean_msg = _sanitize(message)
-        self.logger.exception("%s%s", target_prefix, clean_msg)  # noqa: LOG004
+        self.logger.exception("%s%s", target_prefix, clean_msg)
 
     def summary_table(
         self,

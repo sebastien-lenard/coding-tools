@@ -28,23 +28,33 @@ def test_sanitize() -> None:
 
 
 @pytest.mark.parametrize(
-    ("target", "expected"),
+    ("target", "full_path", "expected"),
     [
-        (None, ""),
-        ("", ""),
-        (Path("script.py"), "script: "),
-        ("folder/script.py", "script: "),
-        (Path("other.txt"), "other.txt: "),
+        (None, False, ""),
+        (None, True, ""),
+        ("", False, ""),
+        ("", True, ""),
+        (Path("script.py"), False, "script: "),
+        (Path("script.py"), True, "script.py: "),
+        (Path("folder") / "script.py", False, "script: "),
+        (Path("folder") / "script.py", True, f"{Path('folder') / 'script.py'}: "),
+        (Path("other.txt"), False, "other.txt: "),
+        (Path("other.txt"), True, "other.txt: "),
     ],
 )
-def test_format_target(target: str | Path | None, expected: str) -> None:
+def test_format_target(
+    target: str | Path | None,
+    full_path: bool,
+    expected: str,
+) -> None:
     """Test target formatting handles paths and extensions correctly."""
-    assert ProjectLogger._format_target(target) == expected
+    assert ProjectLogger._format_target(target, full_path=full_path) == expected
 
 
 def test_format_target_directory(tmp_path: Path) -> None:
     """Test target formatting returns empty string for directories."""
     assert ProjectLogger._format_target(tmp_path) == ""
+    assert ProjectLogger._format_target(tmp_path, full_path=True) == ""
 
 
 def test_project_logger_methods(caplog: pytest.LogCaptureFixture) -> None:
@@ -57,11 +67,15 @@ def test_project_logger_methods(caplog: pytest.LogCaptureFixture) -> None:
             target="my_script.py",
             detail_key="detail_value",
         )
-        logger.progress("my_script.py", "running", "fine")
+        logger.progress("my_script.py", "running", "fine", full_path=True)
         logger.progress(None, "running")
         logger.end("Test process", target="my_script.py")
-        logger.warning(target="my_script.py", message="Watch out workflow")
-        logger.error(target="my_script.py", message="Fatal error")
+        logger.warning(
+            target="my_script.py",
+            message="Watch out workflow",
+            full_path=True,
+        )
+        logger.error(target="my_script.py", message="Fatal error", full_path=True)
         logger.error(target="my_script.py", message="Exception trace")
 
         logger.summary_table(
@@ -103,9 +117,12 @@ def test_project_logger_exception(caplog: pytest.LogCaptureFixture) -> None:
         try:
             trigger_error()
         except ValueError:
-            logger.exception(None, message="Failed to process")
+            logger.exception(
+                "my_script.py",
+                message="Failed to process",
+                full_path=True,
+            )
 
-    # Verify message was logged correctly and includes traceback info
     assert len(caplog.records) == 1
     record = caplog.records[0]
     assert "Failed to process" in record.message

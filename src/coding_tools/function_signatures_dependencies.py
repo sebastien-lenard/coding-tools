@@ -6,9 +6,10 @@
 Reads src folder via AST. Exposes signatures, exceptions, and mermaid graph.
 """
 
+from __future__ import annotations
+
 import argparse
 import ast
-import logging
 import os
 import sys
 from pathlib import Path
@@ -16,10 +17,12 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
+from coding_tools.logger import get_project_logger, setup_logging
+
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-logger = logging.getLogger("coding_tools.function_signatures_dependencies")
+logger = get_project_logger(__name__)
 
 
 class FunctionInfo(BaseModel):
@@ -85,30 +88,26 @@ class CodeStructureAnalyzer(BaseModel):
 
         Returns 0 on success, 1 on error.
         """
-        logger.info(
-            "Starting CodeStructureAnalyzer workflow execution for project path: [%s]",
-            self.project_path,
+        logger.start(
+            "code-structure-analyzer",
+            target=self.project_path,
+            folder=self.project_path,
         )
 
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
-                "[src path missing] Required 'src' subfolder missing at target: [%s]",
                 self.src_path,
+                f"Required 'src' subfolder missing at target: {self.src_path}",
             )
             return 1
 
         modules = self._analyze_modules()
         if not modules:
-            logger.warning(
-                "[no modules found] No python modules found in [%s]",
-                self.src_path,
-            )
+            logger.warning(self.src_path, "No python modules found")
             return 1
 
         self._resolve_call_graphs(modules)
-        logger.info(
-            "Successfully resolved call graphs across analyzed modules.",
-        )
+        logger.progress(None, "Resolved call graphs across analyzed modules")
 
         markdown_content = self._generate_markdown(modules)
 
@@ -117,21 +116,19 @@ class CodeStructureAnalyzer(BaseModel):
             output_path.write_text(markdown_content, encoding="utf-8")
         except OSError:
             logger.exception(
-                "[file write error] Failed to write structure markdown to: [%s]",
                 output_path,
+                "Failed to write structure markdown",
+                full_path=True,
             )
             return 1
 
-        logger.info(
-            "Successfully generated markdown output at: [%s]",
-            output_path,
+        logger.progress(output_path, "Generated markdown output", full_path=True)
+        logger.summary_line(
+            "Analyzer Summary:",
+            ["Modules Analyzed", "Target Output"],
+            [str(len(modules)), str(output_path)],
         )
-        logger.info(
-            "Workflow execution summary: Status=SUCCESS, ModulesAnalyzed=%d,"
-            " TargetOutput=%s",
-            len(modules),
-            output_path.name,
-        )
+        logger.end("code-structure-analyzer", target=self.project_path)
         return 0
 
     def _analyze_modules(self) -> list[ModuleInfo]:
@@ -154,19 +151,13 @@ class CodeStructureAnalyzer(BaseModel):
             try:
                 tree = ast.parse(file_path.read_text(encoding="utf-8"))
             except Exception:
-                logger.exception(
-                    "[ast parse error] Failed to parse AST for file: [%s]",
-                    file_path,
-                )
+                logger.exception(file_path, "Failed to parse AST for file")
                 continue
 
             module_info = self._parse_ast_tree(tree, file_path, rel_path)
             modules.append(module_info)
 
-        logger.info(
-            "Successfully parsed [%03d] python modules from src folder.",
-            len(modules),
-        )
+        logger.progress(self.src_path, f"Parsed {len(modules):03d} python modules")
         return modules
 
     def _parse_ast_tree(
@@ -598,11 +589,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    setup_logging()
 
     try:
         analyzer = CodeStructureAnalyzer(
@@ -611,9 +598,7 @@ def main() -> None:
         )
         status_code = analyzer.execute()
     except Exception:
-        logger.exception(
-            "[fatal error] Execution terminated due to validation breakdown",
-        )
+        logger.exception(None, "Terminated due to validation breakdown")
         status_code = 1
 
     sys.exit(status_code)
