@@ -53,7 +53,7 @@ def test_get_pytest_log_path(
     (tmp_path / "tests").mkdir()
     test_path = tmp_path / "tests" / "test_sample.py"
     res = file_handler.get_pytest_log_path(test_path)
-    expected = tmp_path / ".pytest_output" / "test_sample.py"
+    expected = tmp_path / ".pytest_output" / "unit-test-test_sample.txt"
     assert res.resolve() == expected.resolve()
     assert expected.parent.is_dir()
 
@@ -61,7 +61,7 @@ def test_get_pytest_log_path(
         tmp_path / "tests" / "test_other.py",
     )
     expected_path_correct = (
-        tmp_path / ".pytest_output" / "test_other.py"
+        tmp_path / ".pytest_output" / "unit-test-test_other.txt"
     )
     assert res_path.resolve() == expected_path_correct.resolve()
 
@@ -74,7 +74,7 @@ def test_get_basedpyright_log_path(
     (tmp_path / "tests").mkdir()
     test_path = tmp_path / "tests" / "test_sample.py"
     res = file_handler.get_basedpyright_log_path(test_path)
-    expected = tmp_path / ".pyright_output" / "test_sample.py"
+    expected = tmp_path / ".pyright_output" / "based-pyright-test_sample.txt"
     assert res.resolve() == expected.resolve()
     assert expected.parent.is_dir()
 
@@ -87,7 +87,7 @@ def test_get_ruff_log_path(
     (tmp_path / "tests").mkdir()
     test_path = tmp_path / "tests" / "test_sample.py"
     res = file_handler.get_ruff_log_path(test_path)
-    expected = tmp_path / ".ruff_output" / "test_sample.py"
+    expected = tmp_path / ".ruff_output" / "ruff-test_sample.txt"
     assert res.resolve() == expected.resolve()
     assert expected.parent.is_dir()
 

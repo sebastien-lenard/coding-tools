@@ -60,8 +60,11 @@ def test_validate_docstring_mutations_too_long() -> None:
     """Test validation catches too long docstrings."""
     orig = "def foo(): pass"
     new = (
-        'def foo():\n    """Line1\n    Line2\n    Line3\n    '
-        'Line4\n    Line5\n    Line6"""\n    pass'
+        'def foo():\n    '
+        '"""Line1\n    Line2\n    Line3\n    '
+        'Line4\n    Line5\n    Line6\n    '
+        'Line7\n    Line8\n    Line9\n    '
+        'Line10\n    Line11"""\n    pass'
     )
     valid, reason = validate_docstring_mutations(orig, new, "test")
     assert not valid
