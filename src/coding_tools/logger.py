@@ -40,7 +40,7 @@ class ProjectLogger:
     def start(
         self,
         process_name: str,
-        target: str | None = None,
+        target: str | Path | None = None,
         **details: Any,  # noqa: ANN401
     ) -> None:
         """Log process start with optional target context and nested parameters."""
@@ -51,7 +51,7 @@ class ProjectLogger:
             detail_line = _sanitize(f"  - {key}: {value}")
             self.logger.info("%s", detail_line)
 
-    def end(self, process_name: str, target: str | None = None) -> None:
+    def end(self, process_name: str, target: str | Path | None = None) -> None:
         """Log process completion."""
         target_prefix = self._format_target(target)
         clean_process = _sanitize(process_name)
@@ -59,7 +59,7 @@ class ProjectLogger:
 
     def progress(
         self,
-        target: str | None,
+        target: str | Path | None,
         status: str,
         complementary_info: str = "",
     ) -> None:
@@ -76,17 +76,27 @@ class ProjectLogger:
             clean_info,
         )
 
-    def warning(self, target: str | None, message: str) -> None:
+    def warning(self, target: str | Path | None, message: str) -> None:
         """Log non-fatal unexpected warnings."""
         target_prefix = self._format_target(target)
         clean_msg = _sanitize(message)
         self.logger.warning("%s%s", target_prefix, clean_msg)
 
-    def error(self, target: str | None, message: str) -> None:
+    def error(self, target: str | Path | None, message: str) -> None:
         """Log fatal errors that halt processes."""
         target_prefix = self._format_target(target)
         clean_msg = _sanitize(message)
         self.logger.error("%s%s", target_prefix, clean_msg)
+
+    def exception(
+        self,
+        target: str | Path | None,
+        message: str,
+    ) -> None:
+        """Log fatal error with exception traceback."""
+        target_prefix = self._format_target(target)
+        clean_msg = _sanitize(message)
+        self.logger.exception("%s%s", target_prefix, clean_msg)  # noqa: LOG004
 
     def summary_table(
         self,

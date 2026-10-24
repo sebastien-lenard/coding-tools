@@ -118,7 +118,7 @@ def test_backup_copies_files_and_folders_correctly(
     assert copied_env.read_text(encoding="utf-8") == "API_KEY=12345"
     assert copied_json.exists()
     assert copied_json.read_text(encoding="utf-8") == '{"token": "abc"}'
-    assert "Skipped (Not Found): missing_file.txt" in caplog.text
+    assert "Skipped (Not Found)" in caplog.text
 
 
 def test_no_deletions_occur_during_backup(setup_mock_project: dict[str, Path]) -> None:
@@ -151,7 +151,7 @@ def test_missing_config_file_logs_error_and_returns_false(
         execution_status = manager.execute()
         assert execution_status is False
 
-    assert "Configuration file missing at target" in caplog.text
+    assert "Configuration file missing:" in caplog.text
 
 
 def test_empty_config_file_returns_false(
@@ -167,7 +167,7 @@ def test_empty_config_file_returns_false(
     manager = UntrackedBackupManager(project_path=project_dir)
     with caplog.at_level("ERROR"):
         assert manager.execute() is False
-    assert "is completely empty." in caplog.text
+    assert "Configuration file is empty:" in caplog.text
 
 
 def test_config_file_read_permission_error_returns_none(
@@ -181,7 +181,7 @@ def test_config_file_read_permission_error_returns_none(
     with patch.object(Path, "read_text", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Failed to securely read configuration file" in caplog.text
+        assert "Failed to read configuration file" in caplog.text
 
 
 def test_config_file_missing_on_read_throws_exception(
@@ -195,7 +195,7 @@ def test_config_file_missing_on_read_throws_exception(
     with patch.object(Path, "read_text", side_effect=FileNotFoundError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Failed to securely read configuration file" in caplog.text
+        assert "Failed to read configuration file" in caplog.text
 
 
 def test_uncreatable_output_base_directory_returns_false(
@@ -211,7 +211,7 @@ def test_uncreatable_output_base_directory_returns_false(
     with patch.object(Path, "mkdir", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is False
-        assert "Backup base destination path is invalid or uncreatable" in caplog.text
+        assert "Destination path invalid or uncreatable" in caplog.text
 
 
 def test_copy_item_shutil_exception_logs_error(
@@ -225,7 +225,7 @@ def test_copy_item_shutil_exception_logs_error(
     with patch("shutil.copy2", side_effect=PermissionError):
         with caplog.at_level("ERROR"):
             assert manager.execute() is True
-        assert "IO Failure tracking copy targets for" in caplog.text
+        assert "IO failure copying target" in caplog.text
 
 
 def test_copy_item_unsupported_file_type(

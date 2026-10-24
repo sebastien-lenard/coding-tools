@@ -6,8 +6,9 @@
 Reads .git_untracked_to_save in project root. Writes to output base dir.
 """
 
+from __future__ import annotations
+
 import argparse
-import logging
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -16,7 +17,9 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
-logger = logging.getLogger("coding_tools.backup_untracked")
+from coding_tools.logger import get_project_logger, setup_logging
+
+logger = get_project_logger(__name__)
 
 
 class UntrackedBackupManager(BaseModel):
@@ -41,14 +44,15 @@ class UntrackedBackupManager(BaseModel):
         Return True if success, False on missing config or IO error.
         """
         if self.verbose:
-            logger.setLevel(logging.INFO)
+            # Verbose setting handled via central config or level if needed
+            pass
 
-        logger.info("Target Project Folder: %s", self.project_path)
+        logger.start("backup", target=self.project_path, folder=self.project_path)
 
         if not self.config_file_path.exists():
             logger.error(
-                "Configuration file missing at target: %s",
-                self.config_file_path,
+                self.project_path,
+                f"Configuration file missing: {self.config_file_path}",
             )
             return False
 
@@ -62,17 +66,19 @@ class UntrackedBackupManager(BaseModel):
             return False
 
         backup_target_dir = self._get_backup_target_dir(output_base_dir)
-        logger.info("Initializing dynamic backup into: %s", backup_target_dir)
+        logger.progress(self.project_path, "Initialize backup", str(backup_target_dir))
         success_count = 0
 
         for item_str in items_to_backup:
             if self._copy_item(item_str, backup_target_dir):
                 success_count += 1
 
-        logger.info(
-            "Backup finished. Successfully saved %s items.",
-            success_count,
+        logger.progress(
+            self.project_path,
+            "Backup finished",
+            f"Saved {success_count} items",
         )
+        logger.end("backup", target=self.project_path)
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
@@ -85,7 +91,8 @@ class UntrackedBackupManager(BaseModel):
                 output_base_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
                 logger.exception(
-                    "Backup base destination path is invalid or uncreatable",
+                    self.project_path,
+                    "Destination path invalid or uncreatable",
                 )
                 return False
         return True
@@ -104,7 +111,7 @@ class UntrackedBackupManager(BaseModel):
         source_item = self.project_path / clean_item_str
 
         if not source_item.exists():
-            logger.warning("Skipped (Not Found): %s", clean_item_str)
+            logger.warning(clean_item_str, "Skipped (Not Found)")
             return False
 
         destination_path = backup_target_dir / clean_item_str
@@ -113,18 +120,18 @@ class UntrackedBackupManager(BaseModel):
             if source_item.is_file():
                 destination_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_item, destination_path)
-                logger.info("📄 Copied File: %s", clean_item_str)
+                logger.progress(clean_item_str, "Copied file")
             elif source_item.is_dir():
                 shutil.copytree(
                     source_item,
                     destination_path,
                     dirs_exist_ok=True,
                 )
-                logger.info("📁 Copied Folder: %s/", clean_item_str)
+                logger.progress(clean_item_str, "Copied folder")
         except (PermissionError, shutil.Error):
             logger.exception(
-                "IO Failure tracking copy targets for %s",
                 clean_item_str,
+                "IO failure copying target",
             )
             return False
         else:
@@ -143,13 +150,13 @@ class UntrackedBackupManager(BaseModel):
                 if (cleaned := line.strip()) and not cleaned.startswith("#")
             ]
         except (PermissionError, FileNotFoundError):
-            logger.exception("Failed to securely read configuration file")
+            logger.exception(self.project_path, "Failed to read configuration file")
             return None
 
         if not lines:
             logger.error(
-                "Configuration file at %s is completely empty.",
-                self.config_file_path,
+                self.project_path,
+                f"Configuration file is empty: {self.config_file_path}",
             )
             return None
 
@@ -178,11 +185,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    setup_logging()
 
     try:
         manager = UntrackedBackupManager(
@@ -191,7 +194,7 @@ def main() -> None:
         )
         success = manager.execute()
     except Exception:
-        logger.exception("Execution terminated due to validation breakdown")
+        logger.exception(None, "Terminated due to validation breakdown")
         success = False
 
     sys.exit(0 if success else 1)
