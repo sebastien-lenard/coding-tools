@@ -1,14 +1,14 @@
 # src/coding_tools/workspace_stamper.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Inject SPDX license and path stamps into files.
 
 Reads root LICENSE and NOTICE files.
 """
 
+from __future__ import annotations
+
 import argparse
-import logging
 import sys
 from difflib import unified_diff
 from enum import Enum, auto
@@ -17,8 +17,9 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, DirectoryPath, Field
 
-logger = logging.getLogger("coding_tools.workspace_stamper")
-logger.setLevel(logging.INFO)
+from coding_tools.logger import get_project_logger, setup_logging
+
+logger = get_project_logger(__name__)
 
 # Global Engineering Constants
 FILE_LICENSE = "LICENSE"
@@ -32,7 +33,7 @@ class FileComplianceStatus(Enum):
 
     COMPLIANT = auto()  # File is already properly formatted; no-op.
     MUTATED = auto()  # File was out of compliance but safely updated.
-    BLOCKED_MUTATION = auto()  # Safety engine blocked unauthorized code changes.
+    BLOCKED_MUTATION = auto()  # Safety module blocked unauthorized code changes.
     IO_ERROR = auto()  # System-level permissions or write failure.
 
 
@@ -79,25 +80,23 @@ class WorkspaceStamper(BaseModel):
 
         Fails if blocked mutations or I/O errors occur.
         """
-        prefix = self.workspace.target_path.name
-        logger.info(
-            "[%s] Initializing compliance engine for target: %s",
-            prefix,
-            self.workspace.target_path,
-        )
+        logger.start("workspace-stamper", target=self.workspace.target_path)
 
         if self.workspace.run_license_stamp:
-            self._evaluate_legal_infrastructure(prefix)
+            self._evaluate_legal_infrastructure()
 
         py_files = self.workspace.resolve_files()
         if not py_files:
-            logger.info("[%s] No actionable Python targets identified.", prefix)
+            logger.progress(
+                self.workspace.target_path,
+                "No actionable Python targets identified",
+            )
             return True
 
         reports: list[FileProcessReport] = []
 
         for file_path in py_files:
-            report = self._process_file(file_path, prefix)
+            report = self._process_file(file_path)
             reports.append(report)
 
         # Executive Metrics Aggregation
@@ -115,50 +114,45 @@ class WorkspaceStamper(BaseModel):
             1 for r in reports if r.status == FileComplianceStatus.IO_ERROR
         )
 
-        logger.info(
-            "[%s] Processed %d files. Compliant: %d, Mutated: %d, Blocked: %d, "
-            "Errors: %d.",
-            prefix,
-            total_processed,
-            compliant_count,
-            mutated_count,
-            blocked_count,
-            io_errors_count,
+        logger.summary_line(
+            "Compliance Summary:",
+            ["Processed", "Compliant", "Mutated", "Blocked", "Errors"],
+            [
+                str(total_processed),
+                str(compliant_count),
+                str(mutated_count),
+                str(blocked_count),
+                str(io_errors_count),
+            ],
         )
 
-        # Strict execution boundary: Blocked syntax or system IO errors fail the run.
+        logger.end("workspace-stamper", target=self.workspace.target_path)
         return not (blocked_count > 0 or io_errors_count > 0)
 
-    def _evaluate_legal_infrastructure(self, prefix: str) -> None:
+    def _evaluate_legal_infrastructure(self) -> None:
         """Read root LICENSE and NOTICE files to extract copyright and license ID."""
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
         if not license_file.exists():
             logger.warning(
-                "[%s] Compliance notice: '%s' is missing from project root (%s).",
-                prefix,
-                FILE_LICENSE,
-                self.workspace.project_dir,
+                None,
+                f"Compliance notice: '{FILE_LICENSE}' is missing from project root "
+                f"({self.workspace.project_dir}).",
             )
         else:
             try:
                 lines = license_file.read_text(encoding="utf-8").splitlines()
                 first_two = [line.strip() for line in lines[:2] if line.strip()]
-                logger.info(
-                    "[%s] LICENSE headers detected: %s",
-                    prefix,
-                    " | ".join(first_two),
-                )
+                logger.progress(FILE_LICENSE, "Headers detected", " | ".join(first_two))
             except OSError as e:
-                logger.warning("[%s] Could not read LICENSE file: %s", prefix, e)
+                logger.warning(FILE_LICENSE, f"Could not read file: {e}")
 
         if not notice_file.exists():
             logger.warning(
-                "[%s] Compliance notice: '%s' is missing from project root (%s).",
-                prefix,
-                FILE_NOTICE,
-                self.workspace.project_dir,
+                None,
+                f"Compliance notice: '{FILE_NOTICE}' is missing from project root "
+                f"({self.workspace.project_dir}).",
             )
         else:
             try:
@@ -178,13 +172,11 @@ class WorkspaceStamper(BaseModel):
                     self.workspace.extracted_copyright = "\n".join(copyright_lines)
                 else:
                     logger.warning(
-                        "[%s] Could not locate a valid 'Copyright' string "
-                        "sequence in %s.",
-                        prefix,
                         FILE_NOTICE,
+                        "Could not locate a valid 'Copyright' string sequence.",
                     )
             except OSError as e:
-                logger.warning("[%s] Could not read NOTICE file: %s", prefix, e)
+                logger.warning(FILE_NOTICE, f"Could not read file: {e}")
 
     def _find_insertion_point(self, lines: list[str]) -> int:
         """Find file insertion point past shebang and encoding lines."""
@@ -319,7 +311,7 @@ class WorkspaceStamper(BaseModel):
 
         return "".join(lines), is_modified
 
-    def _process_file(self, file_path: Path, prefix: str) -> FileProcessReport:
+    def _process_file(self, file_path: Path) -> FileProcessReport:
         """Process file and return report. Write file if mutated.
 
         Catch OS and permission errors.
@@ -338,7 +330,6 @@ class WorkspaceStamper(BaseModel):
                 file_path,
                 content,
                 new_content,
-                prefix,
             ):
                 return FileProcessReport(
                     file_path,
@@ -350,9 +341,8 @@ class WorkspaceStamper(BaseModel):
 
         except (OSError, UnicodeDecodeError, PermissionError):
             logger.exception(
-                "[%s] Failed execution lifecycle on target %s",
-                prefix,
-                file_path.name,
+                file_path,
+                "Failed execution lifecycle on target",
             )
             return FileProcessReport(file_path, FileComplianceStatus.IO_ERROR)
 
@@ -361,7 +351,6 @@ class WorkspaceStamper(BaseModel):
         file_path: Path,
         original_content: str,
         new_content: str,
-        prefix: str,
     ) -> bool:
         """Check if file edits involve only path or license comments."""
         orig_normalized = original_content.replace("\r\n", "\n").splitlines()
@@ -387,17 +376,17 @@ class WorkspaceStamper(BaseModel):
                 continue
 
             errors.append(
-                f"[{file_path.name}] Unauthorized syntax variance intercepted: "
-                "{change}",
+                f"[{file_path.name}] Unauthorized syntax variance intercepted:"
+                f" {change}",
             )
 
         if errors:
-            logger.critical(
-                "[%s] SAFETY ENGINE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!",
-                prefix,
+            logger.error(
+                file_path,
+                "SAFETY MODULE ALERT: EXTRANEOUS FILE MUTATIONS LOGGED!",
             )
             for err in errors:
-                logger.error("[%s] %s", prefix, err)
+                logger.error(file_path, err)
             return False
 
         return True
@@ -444,28 +433,29 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    setup_logging()
 
     if args.no_path and args.no_license:
-        logger.info(
-            "Both --no-path and --no-license flags are active. "
-            "No stamping will be carried out.",
+        logger.warning(
+            None,
+            "Both --no-path and --no-license flags are active. No stamping "
+            "will be carried out.",
         )
         sys.exit(0)
 
     if not args.no_license:
         if not args.license_id:
-            logger.error("Argument --license-id / -l is required unless --no-license.")
+            logger.error(
+                None,
+                "Argument --license-id / -l is required unless --no-license.",
+            )
             sys.exit(1)
         if not validate_license_id(args.license_id):
             logger.error(
-                "Invalid characters in license ID '%s'. Only alphanumeric, "
-                "dashes (-), dots (.), and plus signs (+) are allowed.",
-                args.license_id,
+                None,
+                f"Invalid characters in license ID '{args.license_id}'. "
+                f"Only alphanumeric, dashes (-), dots (.), and plus signs (+) are "
+                f"allowed.",
             )
             sys.exit(1)
 
@@ -478,8 +468,9 @@ def main() -> None:
     elif not args.project_dir:
         if not args.no_license:
             logger.error(
-                "Argument --project-dir is required when target is a file "
-                "and licensing is enabled.",
+                None,
+                "Argument --project-dir is required when target is a file and "
+                "licensing is enabled.",
             )
             sys.exit(1)
         else:
@@ -488,7 +479,7 @@ def main() -> None:
         project_dir = Path(args.project_dir).resolve()
 
     if not project_dir.is_dir():
-        logger.error("Resolved project directory is invalid: %s", project_dir)
+        logger.error(None, f"Resolved project directory is invalid: {project_dir}")
         sys.exit(1)
 
     try:
@@ -502,7 +493,7 @@ def main() -> None:
         stamper = WorkspaceStamper(workspace=workspace)
         success = stamper.run()
     except (OSError, ValueError):
-        logger.exception("Runtime execution roadblock encountered.")
+        logger.exception(None, "Runtime execution roadblock encountered.")
         success = False
 
     sys.exit(0 if success else 1)
