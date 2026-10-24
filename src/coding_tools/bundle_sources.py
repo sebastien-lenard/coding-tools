@@ -23,7 +23,7 @@ logger = get_project_logger(__name__)
 
 
 class SourceBundler(BaseModel):
-    """Bundle project source files into text document via Pydantic validation.
+    """Bundle project source files into text file via Pydantic check.
 
     Uses files-to-prompt via uvx. Skips missing optional files. Needs internet/uvx.
     """
@@ -62,7 +62,7 @@ class SourceBundler(BaseModel):
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
                 self.src_path,
-                f"Required src subfolder missing: {self.src_path}",
+                f"Missing src subfolder: {self.src_path}",
             )
             return False
 
@@ -73,19 +73,19 @@ class SourceBundler(BaseModel):
         try:
             combined_content = self._run_files_to_prompt()
         except subprocess.CalledProcessError:
-            logger.exception(None, "Failed executing files-to-prompt subprocess")
+            logger.exception(None, "Failed files-to-prompt run")
             return False
         except FileNotFoundError:
             logger.exception(
                 None,
-                "Command 'uvx' or 'files-to-prompt' not installed / available in PATH.",
+                "Missing 'uvx' or 'files-to-prompt' commands / available in PATH.",
             )
             return False
 
         try:
             output_path.write_text(combined_content, encoding="utf-8")
         except OSError:
-            logger.exception(output_path, "Failed to write bundled output")
+            logger.exception(output_path, "Failed output writing")
             return False
 
         logger.progress(output_path, "Bundled code", f"to {output_path.name}")
@@ -93,14 +93,14 @@ class SourceBundler(BaseModel):
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
-        """Check output destination directory accessibility."""
+        """Check output target dir access."""
         if not output_base_dir.exists():
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
                 logger.exception(
                     output_base_dir,
-                    "Destination path invalid or uncreatable",
+                    "Bad target path",
                 )
                 return False
         return True
@@ -163,7 +163,7 @@ class SourceBundler(BaseModel):
                 )
                 accumulated_output += result_file.stdout
             else:
-                logger.progress(file_rel_path, "Optional file skipped (not found)")
+                logger.progress(file_rel_path, "Skipped optional file (not found)")
 
         return accumulated_output
 
@@ -172,8 +172,7 @@ def main() -> None:
     """Run CLI to parse arguments and run SourceBundler."""
     parser = argparse.ArgumentParser(
         description=(
-            "Bundle project source files into a single text file, "
-            "stripping redundant headers."
+            "Bundle project source files into a text file, stripping redundant headers"
         ),
     )
     parser.add_argument(
@@ -181,7 +180,7 @@ def main() -> None:
         type=str,
         nargs="?",
         default=".",
-        help=("Path to the target project directory (default: current directory)"),
+        help=("Path to the target project dir (default: current dir)"),
     )
     parser.add_argument(
         "-o",
@@ -189,15 +188,14 @@ def main() -> None:
         type=str,
         default=None,
         help=(
-            "Destination text file path "
-            "(default: 'src_files.txt' at the root of the project)"
+            "Target text file path (default: 'src_files.txt' at the root of project)"
         ),
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="Increase output verbosity.",
+        help="Verbose",
     )
     args = parser.parse_args()
 
@@ -211,7 +209,7 @@ def main() -> None:
         )
         success = bundler.execute()
     except Exception:
-        logger.exception(None, "Terminated due to validation breakdown")
+        logger.exception(None, "End due to check breakdown")
         success = False
 
     sys.exit(0 if success else 1)

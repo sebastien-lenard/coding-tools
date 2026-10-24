@@ -14,14 +14,10 @@ from pydantic import ValidationError
 from coding_tools import bundle_sources
 from coding_tools.bundle_sources import SourceBundler, main
 
-# =====================================================================
-# SYSTEM FIXTURES
-# =====================================================================
-
 
 @pytest.fixture
 def setup_mock_project(tmp_path: Path) -> dict[str, Path]:
-    """Set up a testing environment mimicking structural project paths."""
+    """Set up a mock project structure for testing."""
     project_dir = tmp_path / "my_project"
     project_dir.mkdir()
 
@@ -52,27 +48,17 @@ def setup_mock_project(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-# =====================================================================
-# STRUCTURAL INITIALIZATION VALIDATION
-# =====================================================================
-
-
 def test_pydantic_enforces_directory_existence_on_init() -> None:
-    """Verifies that non-existent directory targets fail Pydantic validation."""
+    """Test that Pydantic enforces directory existence during initialization."""
     with pytest.raises(ValidationError):
         SourceBundler(project_path=Path("this/path/does/not/exist/anywhere"))
-
-
-# =====================================================================
-# WORKFLOW EXECUTION FUNCTIONAL TESTS
-# =====================================================================
 
 
 def test_bundler_executes_successfully_default_output(
     setup_mock_project: dict[str, Path],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verifies standard bundling execution with default output path resolution."""
+    """Test bundler execution success with default output path."""
     proj = setup_mock_project
     bundler = SourceBundler(project_path=proj["project_dir"], verbose=True)
 
@@ -97,7 +83,7 @@ def test_bundler_executes_successfully_default_output(
 def test_bundler_executes_successfully_custom_output(
     setup_mock_project: dict[str, Path],
 ) -> None:
-    """Verifies bundling execution with a custom specified output file."""
+    """Test bundler execution success with a custom output path."""
     proj = setup_mock_project
     custom_output = proj["project_dir"] / "custom_dir" / "bundle.txt"
     bundler = SourceBundler(
@@ -122,7 +108,7 @@ def test_bundler_skips_missing_optional_files(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Verifies optional files are logged as missing and skipped if absent."""
+    """Test that the bundler skips missing optional files gracefully."""
     project_dir = tmp_path / "minimal_project"
     project_dir.mkdir()
     src_dir = project_dir / "src"
@@ -147,14 +133,14 @@ def test_bundler_skips_missing_optional_files(
     ):
         assert bundler.execute() is True
 
-    assert "Optional file skipped (not found)" in caplog.text
+    assert "Skipped optional file (not found)" in caplog.text
 
 
 def test_missing_src_folder_logs_error_and_returns_false(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Validates that missing 'src' subfolder aborts execution cleanly."""
+    """Test that a missing src folder logs an error and returns false."""
     empty_dir = tmp_path / "empty_project"
     empty_dir.mkdir()
 
@@ -163,14 +149,14 @@ def test_missing_src_folder_logs_error_and_returns_false(
     with caplog.at_level("ERROR"):
         assert bundler.execute() is False
 
-    assert "Required src subfolder missing" in caplog.text
+    assert "Missing src subfolder" in caplog.text
 
 
 def test_subprocess_called_process_error_returns_false(
     setup_mock_project: dict[str, Path],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ensures subprocess execution failures are caught and logged."""
+    """Test that CalledProcessError from subprocess execution is handled."""
     proj = setup_mock_project
     bundler = SourceBundler(project_path=proj["project_dir"])
 
@@ -182,14 +168,14 @@ def test_subprocess_called_process_error_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Failed executing files-to-prompt subprocess" in caplog.text
+    assert "Failed files-to-prompt run" in caplog.text
 
 
 def test_file_not_found_error_returns_false(
     setup_mock_project: dict[str, Path],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Validates resilience against missing CLI execution tools (e.g. uvx)."""
+    """Test that FileNotFoundError during subprocess execution is handled."""
     proj = setup_mock_project
     bundler = SourceBundler(project_path=proj["project_dir"])
 
@@ -198,14 +184,14 @@ def test_file_not_found_error_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "not installed / available in PATH" in caplog.text
+    assert "Missing 'uvx' or 'files-to-prompt' commands" in caplog.text
 
 
 def test_uncreatable_output_directory_returns_false(
     setup_mock_project: dict[str, Path],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Ensures uncreatable destination folder targets abort safely."""
+    """Test handling of uncreatable output directories."""
     proj = setup_mock_project
     custom_output = Path("/uncreatable_root_dir_xyz/bundle.txt")
     bundler = SourceBundler(
@@ -218,14 +204,14 @@ def test_uncreatable_output_directory_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Destination path invalid or uncreatable" in caplog.text
+    assert "Bad target path" in caplog.text
 
 
 def test_output_write_os_error_returns_false(
     setup_mock_project: dict[str, Path],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Guarantees graceful failure handling when writing the bundle file fails."""
+    """Test handling of OSError during output file writing."""
     proj = setup_mock_project
     bundler = SourceBundler(project_path=proj["project_dir"])
 
@@ -241,13 +227,13 @@ def test_output_write_os_error_returns_false(
         caplog.at_level("ERROR"),
     ):
         assert bundler.execute() is False
-    assert "Failed to write bundled output" in caplog.text
+    assert "Failed output writing" in caplog.text
 
 
 def test_main_gateway_execution_success(
     setup_mock_project: dict[str, Path],
 ) -> None:
-    """Verifies that the CLI gateway entry point terminates correctly on success."""
+    """Test successful execution via the main CLI gateway."""
     proj = setup_mock_project
     test_args = ["bundle_sources.py", str(proj["project_dir"]), "-v"]
 
@@ -267,7 +253,7 @@ def test_main_gateway_execution_success(
 
 
 def test_main_gateway_execution_failure() -> None:
-    """Verifies that the CLI gateway flags systemic errors with status exit code 1."""
+    """Test failure execution via the main CLI gateway."""
     test_args = ["bundle_sources.py", "non_existent_directory_target"]
     with patch("sys.argv", test_args), pytest.raises(SystemExit) as exc_info:
         main()
@@ -277,7 +263,7 @@ def test_main_gateway_execution_failure() -> None:
 def test_script_execution_entrypoint(
     setup_mock_project: dict[str, Path],
 ) -> None:
-    """Asserts execution coverage over the primary standard file entrypoint block."""
+    """Test script execution via direct file runpath execution."""
     proj = setup_mock_project
     target_file_path = str(Path(bundle_sources.__file__).resolve())
     test_args = ["bundle_sources.py", str(proj["project_dir"])]
