@@ -2,18 +2,24 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Centralized logging configuration for coding_tools."""
+"""Centralized plain-text logging configuration."""
 
 from __future__ import annotations
 
 import logging
+import sys
 
 
 def setup_logging() -> None:
-    """Configure root logging with standard plain-text format and INFO level."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+    """Configure root logger with HH:MI:SS LEVEL format targeting sys.stderr."""
+    handler = logging.StreamHandler(sys.stderr)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
-        force=True,
     )
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
