@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Provider-agnostic protocol, shared models, and exceptions for LLM client wrappers."""
+"""Define protocol, shared models, and exceptions for LLM wrappers."""
 
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LLMError(Exception):
-    """Base exception for all LLM-related errors."""
+    """Base exception for LLM errors."""
 
 
 class LLMAPIError(LLMError):
-    """Agnostic API error mirroring precise provider API failure details."""
+    """Agnostic API error mirroring provider failure details."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class LLMAPIError(LLMError):
 
 
 class LLMServerError(LLMError):
-    """Agnostic server error mirroring server failure and retryability details."""
+    """Agnostic server error mirroring server failure and retryability."""
 
     def __init__(
         self,
@@ -47,8 +47,8 @@ class LLMServerError(LLMError):
         self.retryable = retryable
 
 
-class TestGenerationResponse(BaseModel):
-    """Define the expected JSON structure returned by code-generation LLMs."""
+class LLMResponse(BaseModel):
+    """Expected JSON structure for code generation LLMs."""
 
     message: str
     code: str
@@ -56,21 +56,26 @@ class TestGenerationResponse(BaseModel):
 
 @dataclass
 class StructuredGenerationOptions:
-    """Encapsulates parameters for structured text generation."""
+    """Parameters for structured text generation."""
 
     response_schema: type[BaseModel]
     prefix: str
     spinner_msg: str
     system_instruction: str | None = None
     cache_name: str | None = None
+    tool_name: str = "generic-tool"
+    process_step: str = "generation"
+    target_file: str = "unknown.py"
+    start_date: str = "26-01-01"
+    llm_name: str = "generic-model"
 
 
-class LLMClientProtocol(Protocol):  # pragma: no cover
-    """Defines high-level operations required from any LLM client."""
+class LLMClientProtocol(Protocol):
+    """High-level operations for any LLM client."""
 
     @property
     def supports_caching(self) -> bool:
-        """Return whether this client adapter supports remote caching."""
+        """Check whether client supports remote caching."""
         ...
 
     def generate_structured_response(
@@ -78,7 +83,7 @@ class LLMClientProtocol(Protocol):  # pragma: no cover
         contents_list: list[object],
         options: StructuredGenerationOptions,
     ) -> BaseModel:
-        """Generate a validated Pydantic model response from contents."""
+        """Get validated Pydantic model response from contents."""
         ...
 
     def setup_cache(
@@ -90,5 +95,5 @@ class LLMClientProtocol(Protocol):  # pragma: no cover
         ...
 
     def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Clean up remote uploaded static files safely."""
+        """Remove remote uploaded files."""
         ...

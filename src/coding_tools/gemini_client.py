@@ -1,12 +1,17 @@
 # src/coding_tools/gemini_client.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-#
 # SPDX-License-Identifier: Apache-2.0
+#
 
-"""Google GenAI client wrapper satisfying LLMClientProtocol."""
+"""Google GenAI wrapper meeting LLMClientProtocol.
+
+Ties into google-genai v2. Needs API key.
+Handles structured generation and context caching.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import threading
@@ -21,6 +26,11 @@ from google.genai.errors import ServerError
 from pydantic import BaseModel
 
 from coding_tools.config import get_provider_mapping, is_caching_allowed
+from coding_tools.file_handler import (
+    get_conftest_path,
+    get_pyproject_path,
+)
+from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 from coding_tools.parsers import (
@@ -49,7 +59,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetryRequestParameters:
-    """Encapsulates parameters for Gemini API execution attempts."""
+    """Store parameters for Gemini API execution attempts.
+
+    Holds client, model name, contents list, config kwargs, prefix, and spinner message.
+    """
 
     client: Client
     model_name: str
@@ -61,11 +74,15 @@ class RetryRequestParameters:
 
 @contextmanager
 def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None]:
-    """Context manager to print inline dots in console while waiting for calls."""
+    """Print inline dots in console during API wait.
+
+    Writes to sys.stdout.
+    """
     logger.info("[%s] %s (waiting)", prefix, message)
     stop_event = threading.Event()
 
     def spin() -> None:
+        """Loop and write dot to stdout until stop event set."""
         while not stop_event.is_set():
             sys.stdout.write(".")
             sys.stdout.flush()
@@ -82,16 +99,23 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
         sys.stdout.flush()
 
 
-def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
-    """Upload a static reference file to Gemini."""
+def upload_static_file(client: Client, file_path: str | Path, prefix: str) -> File:
+    """Upload static reference file to Gemini API.
+
+    Needs API key and valid file path. Raise LLMAPIError on failure.
+    """
     logger.info("[%s] Uploading static reference file: %s", prefix, file_path)
     try:
         return client.files.upload(
-            file=file_path,
+            file=str(file_path),
             config=types.UploadFileConfig(mime_type="text/plain"),
         )
-    except errors.APIError as e:
-        msg = e.message or "Unknown Gemini API error during file upload"
+    except (errors.APIError, Exception) as e:
+        msg = (
+            getattr(e, "message", None)
+            or str(e)
+            or "Unknown Gemini API error during file upload"
+        )
         raise LLMAPIError(
             message=msg,
             status_code=getattr(e, "code", None),
@@ -104,7 +128,10 @@ def validate_file_uris(
     file_conftest: File,
     file_source: File,
 ) -> tuple[str, str, str]:
-    """Validate that uploaded file URIs are not None."""
+    """Check uploaded file URIs are not None.
+
+    Raise ValueError if any URI is None.
+    """
     if file_config.uri is None or file_conftest.uri is None or file_source.uri is None:
         msg = "One or more uploaded file URIs resolved to None."
         raise ValueError(msg)
@@ -116,10 +143,13 @@ def build_config(
     system_instruction: str | None = None,
     cache_name: str | None = None,
 ) -> dict[str, object]:
-    """Centralized configuration factory for structured GenAI execution."""
+    """Build config dict for structured GenAI execution.
+
+    Sets response mime type to application/json and disables automatic function calling.
+    """
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
-            thinking_level=types.ThinkingLevel.MEDIUM,
+            thinking_level=types.ThinkingLevel.LOW,
         ),
         "response_mime_type": "application/json",
         "response_schema": response_schema,
@@ -140,7 +170,10 @@ def build_config(
 def call_gemini_with_retry(
     params: RetryRequestParameters,
 ) -> types.GenerateContentResponse:
-    """Execute Gemini generate_content call with robust ServerError retry logic."""
+    """Run Gemini generate_content call with ServerError retry logic.
+
+    503 retry up to 3 times with exponential backoff. Raise LLMServerError if persist.
+    """
     max_retries = 3
     response: types.GenerateContentResponse | None = None
     for attempt in range(max_retries):
@@ -169,14 +202,22 @@ def call_gemini_with_retry(
                 "[%s] Gemini Server Error persist after retries",
                 params.prefix,
             )
-            msg = e.message or "Gemini Server Error persist after retries"
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Gemini Server Error persist after retries"
+            )
             raise LLMServerError(
                 message=msg,
                 status_code=getattr(e, "code", None),
                 retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
             ) from e
-        except errors.APIError as e:
-            msg = e.message or "Unknown Gemini API error during generation"
+        except (errors.APIError, Exception) as e:
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Unknown Gemini API error during generation"
+            )
             raise LLMAPIError(
                 message=msg,
                 status_code=getattr(e, "code", None),
@@ -195,10 +236,20 @@ def call_gemini_with_retry(
     return response
 
 
+def _raise_schema_error(schema_name: str) -> None:
+    """Raise ValueError for schema conformance failure."""
+    msg = f"GenAI response did not conform to {schema_name} schema."
+    raise ValueError(msg)
+
+
 class GeminiClientAdapter:
-    """Concrete Gemini adapter satisfying LLMClientProtocol."""
+    """Google GenAI wrapper meeting LLMClientProtocol.
+
+    Needs API key. Handles structured generation and context caching.
+    """
 
     def __init__(self, model_name: str | None = None) -> None:
+        """Init client with model name or default provider config."""
         self.client = Client()
         if model_name is not None:
             self.model_name = model_name
@@ -211,7 +262,7 @@ class GeminiClientAdapter:
 
     @property
     def supports_caching(self) -> bool:
-        """Return whether caching is enabled and supported for gemini."""
+        """Get cache support status from config."""
         return is_caching_allowed("gemini")
 
     def generate_structured_response(
@@ -219,14 +270,16 @@ class GeminiClientAdapter:
         contents_list: list[object],
         options: StructuredGenerationOptions,
     ) -> BaseModel:
-        """High-level wrapper returning a validated Pydantic model response."""
+        """Get validated Pydantic model response from GenAI API.
+
+        Raise ValueError if response does not conform to schema.
+        """
         config_kwargs = build_config(
             response_schema=options.response_schema,
             system_instruction=options.system_instruction,
             cache_name=options.cache_name,
         )
 
-        # Translate agnostic text contents into Gemini Part objects
         gemini_contents: list[types.ContentUnion] = [
             types.Part.from_text(text=str(item)) for item in contents_list
         ]
@@ -240,29 +293,91 @@ class GeminiClientAdapter:
             spinner_msg=options.spinner_msg,
         )
 
-        response = call_gemini_with_retry(params)
+        status_label = "ok"
+        error_details: str | None = None
+        raw_text: str | None = None
+        parsed_json: Any | None = None
+        parsed_model: BaseModel | None = None
+        exception_to_raise: Exception | None = None
+        validated_obj: BaseModel = options.response_schema(message="", code="")
 
-        parsed = response.parsed
-        if parsed is None:
-            schema_name = options.response_schema.__name__
-            msg = f"GenAI response did not conform to {schema_name} schema."
-            raise ValueError(msg)
+        try:
+            response = call_gemini_with_retry(params)
+            raw_text = response.text
+            if raw_text:
+                try:
+                    parsed_json = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    parsed_json = None
 
-        return options.response_schema.model_validate(parsed)
+            parsed = response.parsed
+            if parsed is None:
+                status_label = "ko"
+                schema_name = options.response_schema.__name__
+                error_details = (
+                    f"GenAI response did not conform to {schema_name} schema."
+                )
+                _raise_schema_error(schema_name)
+
+            parsed_model = cast("BaseModel", parsed)
+            validated_obj = options.response_schema.model_validate(parsed)
+        except (LLMServerError, LLMAPIError) as e:
+            status_label = (
+                "503"
+                if getattr(e, "status_code", None) == HTTP_SERVICE_UNAVAILABLE
+                else "ko"
+            )
+            error_details = str(e)
+            exception_to_raise = e
+        except ValueError as e:
+            status_label = "ko"
+            error_details = str(e)
+            exception_to_raise = e
+        except (TypeError, AttributeError, RuntimeError) as e:
+            status_label = "ko"
+            error_details = str(e)
+            exception_to_raise = e
+        else:
+            exception_to_raise = None
+
+        persist_llm_output(
+            PersistOutputParameters(
+                options=options,
+                status_label=status_label,
+                raw_text=raw_text,
+                parsed_json=parsed_json,
+                parsed_model=parsed_model,
+                error_details=error_details,
+                contents_list=contents_list,
+                model_name=self.model_name,
+                supports_caching=self.supports_caching,
+            ),
+        )
+
+        if exception_to_raise is not None:
+            raise exception_to_raise
+
+        return validated_obj
 
     def setup_cache(
         self,
         source_file_path: str,
         prefix: str,
     ) -> tuple[str | None, list[object]]:
-        """Set up optional Gemini file caching."""
+        """Upload reference files and create context cache if enabled.
+
+        Needs API key. Return cache name and uploaded files list.
+        """
         uploaded_files: list[File | None] = []
         if not self.supports_caching:
             return None, uploaded_files  # type: ignore[return-value]
 
+        pyproject_path = get_pyproject_path(source_file_path)
+        conftest_path = get_conftest_path(source_file_path)
+
         logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
-        file_config = upload_static_file(self.client, "project.toml", prefix)
-        file_conftest = upload_static_file(self.client, "tests/conftest.py", prefix)
+        file_config = upload_static_file(self.client, pyproject_path, prefix)
+        file_conftest = upload_static_file(self.client, conftest_path, prefix)
         file_source = upload_static_file(self.client, source_file_path, prefix)
         uploaded_files.extend([file_config, file_conftest, file_source])
 
@@ -301,8 +416,12 @@ class GeminiClientAdapter:
                     system_instruction=load_skill("unit_test_generation.md"),
                 ),
             )
-        except errors.APIError as e:
-            msg = e.message or "Unknown Gemini API error during cache creation"
+        except (errors.APIError, Exception) as e:
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Unknown Gemini API error during cache creation"
+            )
             raise LLMAPIError(
                 message=msg,
                 status_code=getattr(e, "code", None),
@@ -311,23 +430,29 @@ class GeminiClientAdapter:
         return cached_content.name, uploaded_files  # type: ignore[return-value]
 
     def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Clean up remote uploaded static files safely."""
+        """Delete remote uploaded static files from Gemini API.
+
+        Log warning on API error.
+        """
         logger.info("[%s] Cleaning up remote uploaded static files...", prefix)
         for f in files:
             if f is not None and hasattr(f, "name"):
                 try:
                     file_name = cast("Any", f).name
                     self.client.files.delete(name=file_name)
-                except errors.APIError as e:
+                except (errors.APIError, Exception) as e:  # noqa: BLE001
                     logger.warning(
                         "[%s] Failed to delete remote file: %s",
                         prefix,
-                        e.message,
+                        getattr(e, "message", None) or str(e) or "Unknown error",
                     )
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Inspect uncovered/partial lines and build precise instructions."""
+    """Scan uncovered lines in coverage file and yield hints.
+
+    Read <source_file_path>,cover file.
+    """
     cover_path = Path(f"{source_file_path},cover")
     if not cover_path.exists():
         return []
@@ -378,12 +503,17 @@ def build_contents_list(
     coverage_content: str,
     pytest_output: str,
 ) -> list[str]:
-    """Build the dynamic contents list as agnostic plain strings."""
+    """Build dynamic contents list with source files, coverage, and pytest errors.
+
+    Include pyproject.toml and conftest.py if caching disabled.
+    """
     contents_list: list[str] = []
+    pyproject_path = get_pyproject_path(test_file_path)
+    conftest_path = get_conftest_path(test_file_path)
 
     if not is_caching_allowed("gemini"):
-        toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
-        conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
+        toml_content = pyproject_path.read_text(encoding="utf-8")
+        conftest_content = conftest_path.read_text(encoding="utf-8")
         source_content = Path(source_file_path).read_text(encoding="utf-8")
 
         contents_list.extend(

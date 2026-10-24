@@ -58,6 +58,7 @@ def test_run_pytest_command(
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     test_file = "tests/unit/test_dummy.py"
+    get_pytest_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
     parsers.run_pytest_command(
         test_file,
         "src/coding_tools/parsers.py",
@@ -100,6 +101,7 @@ def test_run_basedpyright_command(
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     test_file = "tests/unit/test_dummy.py"
+    get_basedpyright_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
     res = parsers.run_basedpyright_command(
         test_file,
         "PREFIX",
@@ -131,6 +133,7 @@ def test_run_ruff_command(
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     test_file = "tests/unit/test_dummy.py"
+    get_ruff_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
     res = parsers.run_ruff_command(
         test_file,
         "PREFIX",
@@ -162,6 +165,7 @@ def test_run_ruff_command_non_zero_exit_without_found(
     monkeypatch.setattr(subprocess, "run", mock_run)
 
     test_file = "tests/unit/test_dummy.py"
+    get_ruff_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
     res = parsers.run_ruff_command(
         test_file,
         "PREFIX",
@@ -320,6 +324,7 @@ def test_parse_ruff_summary() -> None:
         "other line"
     )
     assert parsers.parse_ruff_summary("") == "No summary found"
+    assert parsers.parse_ruff_summary("\n\n") == "No summary found"
 
 
 def test_filter_ruff_output() -> None:

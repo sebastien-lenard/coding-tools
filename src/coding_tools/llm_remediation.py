@@ -2,21 +2,25 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Core workflow engine and stage runner using an object-oriented LLM remediator."""
+"""Run LLM remediation workflow stages, check syntax, and execute tests.
+
+Handles preflight checks, test execution with coverage, and LLM code updates.
+"""
 
 from __future__ import annotations
 
 import ast
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from coding_tools.llm_prompts import build_contents_list, load_skill
 from coding_tools.llm_protocol import (
+    LLMResponse,
     StructuredGenerationOptions,
-    TestGenerationResponse,
 )
 from coding_tools.llm_router import get_llm_client
 from coding_tools.parsers import (
@@ -37,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowStatus(Enum):
-    """Explicit tri-state outcomes for workflow stages."""
+    """Tri-state outcomes for workflow stages."""
 
     SUCCESS = auto()
     FAILED = auto()
@@ -46,17 +50,18 @@ class WorkflowStatus(Enum):
 
 @dataclass
 class WorkflowContext:
-    """Encapsulate context and paths for workflow execution."""
+    """Store context and paths for workflow execution."""
 
     test_file_path: str
     source_file_path: str
     prefix: str
     allow_llm: bool
+    start_date: str = datetime.now(UTC).strftime("%y-%m-%d")
 
 
 @dataclass
 class StageConfig:
-    """Configuration for a generic workflow stage execution."""
+    """Store config for workflow stage execution."""
 
     name: str
     run_command: Callable[[], str]
@@ -72,7 +77,10 @@ class StageConfig:
 
 
 class LLMRemediator:
-    """Engine managing workflow execution and protocol client binding."""
+    """Manage workflow execution and protocol client binding.
+
+    Handles LLM client calls, syntax checks, caching, and test stage loops.
+    """
 
     def __init__(
         self,
@@ -84,7 +92,10 @@ class LLMRemediator:
         )
 
     def is_syntactically_valid(self, code_content: str) -> bool:
-        """Check if the code string is valid Python syntax."""
+        """Check if code string is valid Python syntax via AST parse.
+
+        False on SyntaxError.
+        """
         try:
             ast.parse(code_content)
         except SyntaxError:
@@ -99,7 +110,10 @@ class LLMRemediator:
         output: str,
         identical_attempts: int,
     ) -> list[Any]:
-        """Build contents list for LLM remediation request with dynamic filtering."""
+        """Build contents list for LLM remediation request.
+
+        Appends error note if attempts are identical.
+        """
         if stage.build_custom_contents:
             contents_list = stage.build_custom_contents(
                 ctx.test_file_path,
@@ -135,7 +149,10 @@ class LLMRemediator:
         uploaded_files: list[Any],
         output: str,
     ) -> tuple[WorkflowStatus, str]:
-        """Iterate with the LLM to fix test failures."""
+        """Iterate with LLM to fix test failures and validate code.
+
+        Retries on identical output up to limit, cleans up cache on exit.
+        """
         identical_attempts = 0
         max_identical_allowed = 1
 
@@ -153,17 +170,21 @@ class LLMRemediator:
 
             try:
                 options = StructuredGenerationOptions(
-                    response_schema=TestGenerationResponse,
+                    response_schema=LLMResponse,
                     prefix=ctx.prefix,
                     spinner_msg=(f"Sending {stage.name} fix request to LLM..."),
                     system_instruction=system_instruction_text,
                     cache_name=cache_name,
+                    tool_name="unit-test-orchestrator",
+                    process_step=stage.name.lower().replace("/", "-"),
+                    target_file=ctx.test_file_path,
+                    start_date=ctx.start_date,
                 )
                 raw_resp = self.client.generate_structured_response(
                     contents_list=contents_list,
                     options=options,
                 )
-                parsed_resp = cast("TestGenerationResponse", raw_resp)
+                parsed_resp = cast("LLMResponse", raw_resp)
             except Exception:
                 logger.exception(
                     "[%s] Failed during structured LLM execution for %s",
@@ -229,7 +250,10 @@ class LLMRemediator:
         ctx: WorkflowContext,
         stage: StageConfig,
     ) -> tuple[WorkflowStatus, str, str]:
-        """Execute, evaluate, and remediate a single workflow stage."""
+        """Run, evaluate, and remediate workflow stage.
+
+        Skips LLM call if not allowed.
+        """
         logger.info("[%s] Running %s stage...", ctx.prefix, stage.name)
         output = stage.run_command()
 
@@ -265,7 +289,7 @@ class LLMRemediator:
         source_file_path: str,
         prefix: str,
     ) -> tuple[str | None, list[Any]]:
-        """Set up optional file caching using the bound client adapter."""
+        """Set up optional file caching using bound client adapter."""
         return self.client.setup_cache(source_file_path, prefix)
 
     def _handle_preflight_failure(
@@ -306,7 +330,7 @@ class LLMRemediator:
         return status_enum, "Pytest/Coverage", status_msg
 
     def _build_pytest_run_command(self, ctx: WorkflowContext) -> Callable[[], str]:
-        """Build the pytest command runner wrapped with guard with coverage enabled."""
+        """Build pytest command runner wrapped with guard with coverage enabled."""
         guard = WorkspaceGuard(project_path=Path.cwd())
 
         def run_pytest_with_guard() -> str:
@@ -419,7 +443,7 @@ class LLMRemediator:
         uploaded_files: list[Any],
         ctx: WorkflowContext,
     ) -> tuple[WorkflowStatus, str, str]:
-        """Execute pre-pytest run compliance, pytest, coverage, and runtime guard."""
+        """Run pre-pytest run compliance, pytest, coverage, and runtime guard."""
         preflight_ok, preflight_errors = run_preflight_compliance_and_validation(
             ctx.test_file_path,
             ctx.prefix,

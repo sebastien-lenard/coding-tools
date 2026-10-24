@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Guard module checking for static test isolation and runtime workspace pollution."""
+"""Check static test isolation and runtime workspace pollution.
+
+AST checks and pytest snapshot diffs. Writes pytest logs to disk.
+"""
 
 from __future__ import annotations
 
@@ -35,7 +38,10 @@ CHECKED_EXTENSIONS = {".py"}
 
 
 class WorkspaceGuard(BaseModel):
-    """Enforces test file isolation and prevents workspace file pollution."""
+    """Enforce test file isolation and block workspace pollution.
+
+    AST inspection and file snapshot diffs during pytest runs.
+    """
 
     project_path: DirectoryPath
 
@@ -44,7 +50,10 @@ class WorkspaceGuard(BaseModel):
         test_file_path: str | Path,
         prefix: str = "Guard",
     ) -> tuple[bool, list[str]]:
-        """Inspect test file AST to ensure test functions use tmp_path for I/O."""
+        """Scan test file AST to spot I/O without tmp_path fixture.
+
+        False if test writes files or dirs without tmp_path or setup_mock_project.
+        """
         path = Path(test_file_path)
         if not path.exists():
             logger.warning(
@@ -107,7 +116,10 @@ class WorkspaceGuard(BaseModel):
         return len(violations) == 0, violations
 
     def snapshot_workspace(self, prefix: str = "Guard") -> set[Path]:
-        """Capture a set of all current relative file paths across the repo."""
+        """Get set of relative file paths across repository.
+
+        Skips ignored dirs and non-python files.
+        """
         logger.info(
             "[%s] Snapshotting workspace repository at: %s",
             prefix,
@@ -135,7 +147,10 @@ class WorkspaceGuard(BaseModel):
         baseline: set[Path],
         prefix: str = "Guard",
     ) -> tuple[bool, list[str]]:
-        """Compare current workspace against baseline to detect new files."""
+        """Compare current workspace snapshot against baseline.
+
+        False if new files appear.
+        """
         logger.info("[%s] Checking for runtime workspace pollution...", prefix)
         current = self.snapshot_workspace(prefix)
         new_files = current - baseline
@@ -172,7 +187,10 @@ class WorkspaceGuard(BaseModel):
         run_coverage: bool = False,
         source_file_path: str | Path | None = None,
     ) -> tuple[bool, list[str]]:
-        """Capture baseline, run pytest on the test file, and check pollution."""
+        """Run pytest on test file and check workspace pollution.
+
+        Saves output to log file. Uses uv run pytest with optional coverage.
+        """
         baseline = self.snapshot_workspace(prefix)
         path = Path(test_file_path)
 
@@ -232,7 +250,10 @@ class WorkspaceGuard(BaseModel):
 
 
 def _collect_test_files(target_path: Path) -> list[Path]:
-    """Collect valid test files matching test_*.py recursively using list.extend."""
+    """Get test files matching test_*.py recursively.
+
+    Skips ignored dirs.
+    """
     test_files: list[Path] = []
     if target_path.is_file():
         test_files.append(target_path)
@@ -249,7 +270,10 @@ def _run_static_checks(
     guard: WorkspaceGuard,
     test_files: list[Path],
 ) -> tuple[bool, list[dict[str, Any]]]:
-    """Run static isolation checks across all collected test files."""
+    """Run static isolation checks on test files.
+
+    Return success bool and result dicts.
+    """
     all_passed = True
     results: list[dict[str, Any]] = []
     logger.info(
@@ -276,7 +300,10 @@ def _run_runtime_checks(
     guard: WorkspaceGuard,
     test_files: list[Path],
 ) -> tuple[bool, list[dict[str, Any]]]:
-    """Run runtime test execution and pollution checks across test files."""
+    """Run runtime test execution and pollution checks on test files.
+
+    Return success bool and result dicts.
+    """
     all_passed = True
     results: list[dict[str, Any]] = []
     logger.info(
@@ -306,7 +333,7 @@ def _run_runtime_checks(
 
 
 def _print_summary_table(results: list[dict[str, Any]]) -> None:
-    """Print a clean synthetic summary table of all processed test files."""
+    """Log summary table of processed test files."""
     logger.info(
         "\n===================================================================================",
     )
@@ -333,7 +360,10 @@ def _print_summary_table(results: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    """CLI Gateway for workspace guard validation."""
+    """Run CLI gateway for workspace guard validation.
+
+    Parse args for static, runtime, or all checks. Exit status based on success.
+    """
     parser = argparse.ArgumentParser(
         description="Check test static isolation and runtime workspace pollution.",
     )

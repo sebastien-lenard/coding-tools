@@ -1,9 +1,9 @@
 # src/coding_tools/function_signatures_dependencies.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Extracts functions, classes, signatures, exceptions, and dependencies.
+"""Extract project structure into LLM-ready markdown.
 
-from a project's src folder into a structured LLM-ready markdown document.
+Reads src folder via AST. Exposes signatures, exceptions, and mermaid graph.
 """
 
 import argparse
@@ -23,10 +23,11 @@ logger = logging.getLogger("coding_tools.function_signatures_dependencies")
 
 
 class FunctionInfo(BaseModel):
-    """Metadata for a function or method."""
+    """Metadata for function or method."""
 
     name: str
     signature: str
+    docstring: str | None
     decorators: list[str]
     uncaught_exceptions: list[str]
     calls: list[str]
@@ -34,16 +35,17 @@ class FunctionInfo(BaseModel):
 
 
 class ClassInfo(BaseModel):
-    """Metadata for a class."""
+    """Metadata for class."""
 
     name: str
+    docstring: str | None
     bases: list[str]
     decorators: list[str]
     methods: list[FunctionInfo]
 
 
 class ModuleInfo(BaseModel):
-    """Metadata for a parsed source module."""
+    """Metadata for parsed source module."""
 
     path: Path
     relative_path: str
@@ -55,7 +57,10 @@ class ModuleInfo(BaseModel):
 
 
 class CodeStructureAnalyzer(BaseModel):
-    """Performs static AST analysis and generates an LLM-ready markdown summary."""
+    """Run AST static analysis and write markdown summary.
+
+    Reads project path, writes to output file or default path.
+    """
 
     project_path: DirectoryPath
     output_file: Path | None = None
@@ -64,7 +69,7 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def target_output_path(self) -> Path:
-        """Returns the calculated output file path."""
+        """Get output file path, fallback to project name."""
         if self.output_file:
             return self.output_file
         project_name = self.project_path.resolve().name
@@ -72,35 +77,38 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def src_path(self) -> Path:
-        """Returns the expected 'src' subfolder path."""
+        """Get src subfolder path."""
         return self.project_path / "src"
 
-    def execute(self) -> bool:
-        """Orchestrates code analysis and markdown generation.
+    def execute(self) -> int:
+        """Run analysis workflow and write markdown file.
 
-        Returns True if successful, False otherwise.
+        Returns 0 on success, 1 on error.
         """
         logger.info(
-            "Target Project Folder: %s",
+            "Starting CodeStructureAnalyzer workflow execution for project path: [%s]",
             self.project_path,
         )
 
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
-                "Required 'src' subfolder missing at target: %s",
+                "[src path missing] Required 'src' subfolder missing at target: [%s]",
                 self.src_path,
             )
-            return False
+            return 1
 
         modules = self._analyze_modules()
         if not modules:
             logger.warning(
-                "No python modules found in %s",
+                "[no modules found] No python modules found in [%s]",
                 self.src_path,
             )
-            return False
+            return 1
 
         self._resolve_call_graphs(modules)
+        logger.info(
+            "Successfully resolved call graphs across analyzed modules.",
+        )
 
         markdown_content = self._generate_markdown(modules)
 
@@ -109,19 +117,28 @@ class CodeStructureAnalyzer(BaseModel):
             output_path.write_text(markdown_content, encoding="utf-8")
         except OSError:
             logger.exception(
-                "Failed to write structure markdown to: %s",
+                "[file write error] Failed to write structure markdown to: [%s]",
                 output_path,
             )
-            return False
+            return 1
 
         logger.info(
-            "Code structure successfully generated at: %s",
+            "Successfully generated markdown output at: [%s]",
             output_path,
         )
-        return True
+        logger.info(
+            "Workflow execution summary: Status=SUCCESS, ModulesAnalyzed=%d,"
+            " TargetOutput=%s",
+            len(modules),
+            output_path.name,
+        )
+        return 0
 
     def _analyze_modules(self) -> list[ModuleInfo]:
-        """Scan and parse all .py files in the src folder."""
+        """Scan and parse python files in src folder.
+
+        Skips ignored dirs.
+        """
         modules: list[ModuleInfo] = []
         source_files = [
             path
@@ -138,7 +155,7 @@ class CodeStructureAnalyzer(BaseModel):
                 tree = ast.parse(file_path.read_text(encoding="utf-8"))
             except Exception:
                 logger.exception(
-                    "Failed to parse AST for file: %s",
+                    "[ast parse error] Failed to parse AST for file: [%s]",
                     file_path,
                 )
                 continue
@@ -146,6 +163,10 @@ class CodeStructureAnalyzer(BaseModel):
             module_info = self._parse_ast_tree(tree, file_path, rel_path)
             modules.append(module_info)
 
+        logger.info(
+            "Successfully parsed [%03d] python modules from src folder.",
+            len(modules),
+        )
         return modules
 
     def _parse_ast_tree(
@@ -154,7 +175,7 @@ class CodeStructureAnalyzer(BaseModel):
         file_path: Path,
         rel_path: str,
     ) -> ModuleInfo:
-        """Extract module-level elements from an AST tree."""
+        """Extract module elements from AST tree."""
         docstring = ast.get_docstring(tree)
         constants: dict[str, str] = {}
         imports: list[str] = []
@@ -188,7 +209,7 @@ class CodeStructureAnalyzer(BaseModel):
         classes: list[ClassInfo],
         functions: list[FunctionInfo],
     ) -> None:
-        """Process individual AST statement nodes at the module level."""
+        """Process module-level AST statement node."""
         if isinstance(node, ast.Import):
             imports.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
@@ -218,7 +239,7 @@ class CodeStructureAnalyzer(BaseModel):
         node: ast.Assign,
         constants: dict[str, str],
     ) -> None:
-        """Process Assign AST nodes for global constants."""
+        """Extract global constants from Assign node."""
         for target in node.targets:
             if isinstance(target, ast.Name):
                 try:
@@ -231,7 +252,7 @@ class CodeStructureAnalyzer(BaseModel):
         node: ast.AnnAssign,
         constants: dict[str, str],
     ) -> None:
-        """Process AnnAssign AST nodes for global constants."""
+        """Extract global constants from AnnAssign node."""
         if isinstance(node.target, ast.Name):
             try:
                 val_str = ast.unparse(node.value) if node.value else "<unassigned>"
@@ -241,6 +262,7 @@ class CodeStructureAnalyzer(BaseModel):
 
     def _parse_class_node(self, node: ast.ClassDef) -> ClassInfo:
         """Extract class definition metadata."""
+        docstring = ast.get_docstring(node)
         bases = [self._safe_unparse(base) for base in node.bases]
         decorators = [self._safe_unparse(dec) for dec in node.decorator_list]
         methods = [
@@ -251,6 +273,7 @@ class CodeStructureAnalyzer(BaseModel):
 
         return ClassInfo(
             name=node.name,
+            docstring=docstring,
             bases=bases,
             decorators=decorators,
             methods=methods,
@@ -260,7 +283,8 @@ class CodeStructureAnalyzer(BaseModel):
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> FunctionInfo:
-        """Extract function or method signature and internal metrics."""
+        """Extract function signature and metrics."""
+        docstring = ast.get_docstring(node)
         decorators = [self._safe_unparse(dec) for dec in node.decorator_list]
         signature = self._build_signature(node)
         uncaught_exceptions = self._find_uncaught_exceptions(node)
@@ -269,13 +293,14 @@ class CodeStructureAnalyzer(BaseModel):
         return FunctionInfo(
             name=node.name,
             signature=signature,
+            docstring=docstring,
             decorators=decorators,
             uncaught_exceptions=uncaught_exceptions,
             calls=calls,
         )
 
     def _safe_unparse(self, node: ast.AST) -> str:
-        """Safely unparse an AST node to string."""
+        """Unparse AST node, fallback on OS error."""
         try:
             return ast.unparse(node)
         except OSError:
@@ -285,7 +310,7 @@ class CodeStructureAnalyzer(BaseModel):
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> str:
-        """Reconstruct a readable signature for a function/method."""
+        """Build readable function or method signature string."""
         args_str = self._safe_unparse(node.args)
         returns_str = f" -> {self._safe_unparse(node.returns)}" if node.returns else ""
         prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
@@ -295,7 +320,7 @@ class CodeStructureAnalyzer(BaseModel):
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> list[str]:
-        """Detect raise statements not enclosed in a local try/except block."""
+        """Find raise statements outside local try blocks."""
         uncaught: list[str] = []
 
         class ExceptionVisitor(ast.NodeVisitor):
@@ -324,7 +349,7 @@ class CodeStructureAnalyzer(BaseModel):
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
     ) -> list[str]:
-        """Extract function/method calls made inside a function scope."""
+        """Extract function calls inside scope."""
         calls: list[str] = []
 
         class CallVisitor(ast.NodeVisitor):
@@ -341,7 +366,7 @@ class CodeStructureAnalyzer(BaseModel):
         return calls
 
     def _resolve_call_graphs(self, modules: list[ModuleInfo]) -> None:
-        """Cross-reference function calls to build 'called_by' relationships."""
+        """Build called-by relationships across modules."""
         function_registry: dict[str, list[FunctionInfo]] = {}
 
         for module in modules:
@@ -379,24 +404,37 @@ class CodeStructureAnalyzer(BaseModel):
                     if caller_name not in target_func.called_by:
                         target_func.called_by.append(caller_name)
 
+    def _append_docstring(
+        self,
+        docstring: str | None,
+        lines: list[str],
+        indent: str = "",
+    ) -> None:
+        """Append rendered docstring block to lines."""
+        if docstring:
+            for doc_line in docstring.strip().splitlines():
+                if doc_line.strip():
+                    lines.append(f"{indent}> {doc_line.strip()}")
+                else:
+                    lines.append(f"{indent}>")
+            lines.append("")
+
     def _append_module_header(
         self,
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append module header and docstring to lines."""
+        """Append module header and docstring."""
         lines.append(f"### Module: `{mod.relative_path}`")
         lines.append("")
-        if mod.docstring:
-            lines.append(f"> {mod.docstring.strip()}")
-            lines.append("")
+        self._append_docstring(mod.docstring, lines, indent="")
 
     def _append_module_constants(
         self,
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append global constants to lines."""
+        """Append global constants block."""
         if mod.constants:
             lines.append("#### Global Constants")
             for c_name, c_val in mod.constants.items():
@@ -409,9 +447,12 @@ class CodeStructureAnalyzer(BaseModel):
         lines: list[str],
         indent: str = "",
     ) -> None:
-        """Append function/method details to lines."""
+        """Append function details and metrics."""
         prefix = f"{indent}- "
         lines.append(f"{prefix}`{func.signature}`")
+        lines.append("")
+        if func.docstring:
+            self._append_docstring(func.docstring, lines, indent=f"{indent}  ")
         sub_indent = f"{indent}  - "
         if func.decorators:
             lines.append(
@@ -432,7 +473,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append classes and methods to lines."""
+        """Append classes and methods block."""
         if mod.classes:
             lines.append("#### Classes")
             for cls in mod.classes:
@@ -443,6 +484,9 @@ class CodeStructureAnalyzer(BaseModel):
                 lines.append(
                     f"- **`{decorators_str}class {cls.name}{bases_str}`**",
                 )
+                lines.append("")
+                if cls.docstring:
+                    self._append_docstring(cls.docstring, lines, indent="    ")
                 for method in cls.methods:
                     self._append_function_details(method, lines, indent="  ")
             lines.append("")
@@ -452,7 +496,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Separator for standalone functions."""
+        """Append standalone functions block."""
         if mod.functions:
             lines.append("#### Functions")
             for func in mod.functions:
@@ -464,7 +508,7 @@ class CodeStructureAnalyzer(BaseModel):
         modules: list[ModuleInfo],
         lines: list[str],
     ) -> None:
-        """Append Mermaid.js module dependency graph."""
+        """Append Mermaid dependency graph block."""
         lines.append("## 📊 Module Dependency Graph")
         lines.append("")
         lines.append("```mermaid")
@@ -484,7 +528,7 @@ class CodeStructureAnalyzer(BaseModel):
         lines.append("")
 
     def _generate_markdown(self, modules: list[ModuleInfo]) -> str:
-        """Compile all analyzed data into an LLM-ready markdown string."""
+        """Compile analyzed data into markdown string."""
         lines: list[str] = []
 
         project_name = self.project_path.resolve().name
@@ -528,7 +572,7 @@ class CodeStructureAnalyzer(BaseModel):
 
 
 def main() -> None:
-    """CLI Gateway transforming raw arguments into verified analysis contexts."""
+    """Parse CLI arguments and run analyzer."""
     parser = argparse.ArgumentParser(
         description=(
             "Extract functions, classes, signatures, and dependencies "
@@ -565,12 +609,14 @@ def main() -> None:
             project_path=Path(args.project_path),
             output_file=Path(args.output) if args.output else None,
         )
-        success = analyzer.execute()
+        status_code = analyzer.execute()
     except Exception:
-        logger.exception("Execution terminated due to validation breakdown")
-        success = False
+        logger.exception(
+            "[fatal error] Execution terminated due to validation breakdown",
+        )
+        status_code = 1
 
-    sys.exit(0 if success else 1)
+    sys.exit(status_code)
 
 
 if __name__ == "__main__":  # pragma: no cover

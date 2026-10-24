@@ -2,7 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Compliance engine for workspace files, managing license and path stamps."""
+"""Inject SPDX license and path stamps into files.
+
+Reads root LICENSE and NOTICE files.
+"""
 
 import argparse
 import logging
@@ -25,7 +28,7 @@ LICENSE_TAG = "SPDX-License-Identifier"
 
 
 class FileComplianceStatus(Enum):
-    """Defines explicit states for individual target file layouts."""
+    """File compliance states for stamp injection."""
 
     COMPLIANT = auto()  # File is already properly formatted; no-op.
     MUTATED = auto()  # File was out of compliance but safely updated.
@@ -34,14 +37,14 @@ class FileComplianceStatus(Enum):
 
 
 class FileProcessReport(NamedTuple):
-    """Value object carrying the diagnostic results of a single file execution."""
+    """Result of single file processing."""
 
     file_path: Path
     status: FileComplianceStatus
 
 
 class TargetWorkspace(BaseModel):
-    """Encapsulates and validates workspace paths and feature flag combinations."""
+    """Workspace path configuration and feature flags."""
 
     project_dir: DirectoryPath
     target_path: Path
@@ -51,7 +54,7 @@ class TargetWorkspace(BaseModel):
     extracted_license_id: str | None = Field(default=None, exclude=True)
 
     def resolve_files(self) -> list[Path]:
-        """Collect files safely, filtering out environments and caches."""
+        """Get list of Python files. Skips virtual envs and caches."""
         if self.target_path.is_file():
             return [self.target_path] if self.target_path.suffix == ".py" else []
 
@@ -67,12 +70,15 @@ class TargetWorkspace(BaseModel):
 
 
 class WorkspaceStamper(BaseModel):
-    """Path-stamping and SPDX license metadata injection engine."""
+    """Inject path stamp and SPDX license metadata into files. Check content changes."""
 
     workspace: TargetWorkspace
 
     def run(self) -> bool:
-        """Execute compliance checking, synthesizing reports for the process run."""
+        """Run compliance check and write file reports.
+
+        Fails if blocked mutations or I/O errors occur.
+        """
         prefix = self.workspace.target_path.name
         logger.info(
             "[%s] Initializing compliance engine for target: %s",
@@ -124,7 +130,7 @@ class WorkspaceStamper(BaseModel):
         return not (blocked_count > 0 or io_errors_count > 0)
 
     def _evaluate_legal_infrastructure(self, prefix: str) -> None:
-        """Process legal headers, loading context rules from root workspace assets."""
+        """Read root LICENSE and NOTICE files to extract copyright and license ID."""
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
@@ -181,7 +187,7 @@ class WorkspaceStamper(BaseModel):
                 logger.warning("[%s] Could not read NOTICE file: %s", prefix, e)
 
     def _find_insertion_point(self, lines: list[str]) -> int:
-        """Locate safe insertion point past interpreter lines."""
+        """Find file insertion point past shebang and encoding lines."""
         idx = 0
         if idx < len(lines) and lines[idx].startswith("#!"):
             idx += 1
@@ -195,7 +201,7 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Apply or purge top-of-file path comment macros."""
+        """Add or purge top-of-file path comment."""
         is_modified = False
         new_lines = list(lines)
         if self.workspace.run_path_stamp:
@@ -231,7 +237,7 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Apply or purge SPDX license compliance definitions."""
+        """Add or purge SPDX license and copyright tags."""
         is_modified = False
         new_lines = list(lines)
         if self.workspace.run_license_stamp:
@@ -275,7 +281,7 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Identify and slice out legacy tags within comments safely."""
+        """Purge legacy copyright and license tags from file comments."""
         is_modified = False
         new_lines = list(lines)
         lookahead = min(len(new_lines), idx + 10)
@@ -295,7 +301,7 @@ class WorkspaceStamper(BaseModel):
         file_path: Path,
         content: str,
     ) -> tuple[str, bool]:
-        """Calculate file layouts dynamically based on state configurations."""
+        """Yield updated file content with path and license stamps."""
         lines = content.splitlines(keepends=True)
         is_modified = False
 
@@ -314,7 +320,10 @@ class WorkspaceStamper(BaseModel):
         return "".join(lines), is_modified
 
     def _process_file(self, file_path: Path, prefix: str) -> FileProcessReport:
-        """Process an isolated target path and return an explicit operational report."""
+        """Process file and return report. Write file if mutated.
+
+        Catch OS and permission errors.
+        """
         try:
             content = file_path.read_text(encoding="utf-8")
             new_content, is_modified = self._generate_updated_content(
@@ -354,7 +363,7 @@ class WorkspaceStamper(BaseModel):
         new_content: str,
         prefix: str,
     ) -> bool:
-        """Enforce strict safety verification checks dynamically in-memory."""
+        """Check if file edits involve only path or license comments."""
         orig_normalized = original_content.replace("\r\n", "\n").splitlines()
         new_normalized = new_content.replace("\r\n", "\n").splitlines()
 
@@ -395,12 +404,12 @@ class WorkspaceStamper(BaseModel):
 
 
 def validate_license_id(license_id: str) -> bool:
-    """Check if license_id contains only alphanumericals, dashes, dots, or plus sign."""
+    """Check if license ID contains only valid alphanumeric and symbol characters."""
     return all(c.isalnum() or c in "-.+" for c in license_id)
 
 
 def main() -> None:
-    """CLI Executive Run Entrypoint."""
+    """Run CLI argument parser and execute workspace stamper."""
     parser = argparse.ArgumentParser(
         description="Enforces workspace layouts, path stamps, and legal headers.",
     )

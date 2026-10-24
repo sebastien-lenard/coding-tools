@@ -2,11 +2,16 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Centralized file and path management for tool outputs, logs, and coverage."""
+"""Manage paths for tool outputs, logs, and coverage.
+
+Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
+.ruff_output, .llm_output) relative to target project root.
+"""
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -15,42 +20,142 @@ COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
 PYTEST_OUTPUT_DIR = ".pytest_output"
 PYRIGHT_OUTPUT_DIR = ".pyright_output"
 RUFF_OUTPUT_DIR = ".ruff_output"
+LLM_OUTPUT_DIR = ".llm_output"
 
 ALL_TOOL_OUTPUT_DIRS = {
     COVERAGE_ANNOTATIONS_DIR,
     PYTEST_OUTPUT_DIR,
     PYRIGHT_OUTPUT_DIR,
     RUFF_OUTPUT_DIR,
+    LLM_OUTPUT_DIR,
 }
+
+WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
+
+
+@dataclass
+class LLMOutputPathParameters:
+    """Hold naming and timestamp fields for LLM output paths.
+
+    Build unique nested paths under .llm_output dir.
+    """
+
+    llm_name: str
+    start_date: str
+    tool_name: str
+    process_step: str
+    target_file: str | Path
+    status_label: str
+    timestamp: int
+    hhmiss: str
+    project_root: Path | None = None
+
+
+def get_project_root(target_path: str | Path) -> Path:
+    """Deduct project root dir from path.
+
+    Scan parents for workspace root markers (config, docs, src, tests).
+    """
+    path = Path(target_path).resolve()
+    current = path if path.is_dir() else path.parent
+
+    while current != current.parent:
+        if any((current / marker).exists() for marker in WORKSPACE_ROOT_MARKERS):
+            return current
+        current = current.parent
+
+    return path if path.is_dir() else path.parent.parent
+
+
+def get_pyproject_path(target_path: str | Path) -> Path:
+    """Get absolute path to pyproject.toml for project."""
+    return get_project_root(target_path) / "pyproject.toml"
+
+
+def get_conftest_path(target_path: str | Path) -> Path:
+    """Get absolute path to tests/conftest.py for project."""
+    return get_project_root(target_path) / "tests/conftest.py"
 
 
 def ensure_directory(dir_path: str | Path) -> Path:
-    """Ensure a target directory exists and return its Path object."""
+    """Create target dir if missing and return Path.
+
+    Write to disk with parent creation enabled.
+    """
     path = Path(dir_path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
+def get_tool_output_dir(target_file_path: str | Path, dir_name: str) -> Path:
+    """Get tool output dir relative to project root.
+
+    Write to disk.
+    """
+    proj_root = get_project_root(target_file_path)
+    return ensure_directory(proj_root / dir_name)
+
+
+def _get_stem_filename(test_file_path: str | Path) -> str:
+    """Get file stem or name without duplicate extensions."""
+    path = Path(test_file_path)
+    return path.stem if path.suffix == ".py" else path.name
+
+
 def get_pytest_log_path(test_file_path: str | Path) -> Path:
-    """Return the calculated path for a pytest execution log file."""
-    test_stem = Path(test_file_path).stem
-    return ensure_directory(PYTEST_OUTPUT_DIR) / f"unit-test-{test_stem}.txt"
+    """Get pytest log path under project root.
+
+    Write to disk under .pytest_output.
+    """
+    base_dir = get_tool_output_dir(test_file_path, PYTEST_OUTPUT_DIR)
+    stem = _get_stem_filename(test_file_path)
+    return base_dir / f"unit-test-{stem}.txt"
 
 
 def get_basedpyright_log_path(test_file_path: str | Path) -> Path:
-    """Return the calculated path for a basedpyright execution log file."""
-    test_stem = Path(test_file_path).stem
-    return ensure_directory(PYRIGHT_OUTPUT_DIR) / f"based-pyright-{test_stem}.txt"
+    """Get based-pyright log path under project root.
+
+    Write to disk under .pyright_output.
+    """
+    base_dir = get_tool_output_dir(test_file_path, PYRIGHT_OUTPUT_DIR)
+    stem = _get_stem_filename(test_file_path)
+    return base_dir / f"based-pyright-{stem}.txt"
 
 
 def get_ruff_log_path(test_file_path: str | Path) -> Path:
-    """Return the calculated path for a ruff execution log file."""
-    test_stem = Path(test_file_path).stem
-    return ensure_directory(RUFF_OUTPUT_DIR) / f"ruff-{test_stem}.txt"
+    """Get ruff log path under project root.
+
+    Write to disk under .ruff_output.
+    """
+    base_dir = get_tool_output_dir(test_file_path, RUFF_OUTPUT_DIR)
+    stem = _get_stem_filename(test_file_path)
+    return base_dir / f"ruff-{stem}.txt"
 
 
 def get_coverage_annotation_path(source_file_path: str | Path) -> Path:
-    """Return the calculated path for a coverage annotated source file."""
-    source_path = Path(source_file_path)
-    cov_dir = ensure_directory(COVERAGE_ANNOTATIONS_DIR)
-    return cov_dir / f"{source_path.name},cover"
+    """Get coverage annotation path under project root.
+
+    Write to disk under .coverage_annotations.
+    """
+    base_dir = get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
+    return base_dir / Path(source_file_path).name
+
+
+def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
+    """Get unique nested path for LLM execution outputs.
+
+    Write to disk under .llm_output.
+    """
+    proj_root = params.project_root or get_project_root(params.target_file)
+    sanitized_llm_name = (
+        params.llm_name.replace("/", "-").replace("\\", "-").replace(":", "-")
+    )
+    target_filename = Path(params.target_file).name
+    filename = (
+        f"{params.hhmiss}-{params.tool_name}-{params.process_step}-"
+        f"{target_filename}-{params.status_label}-{params.timestamp}.json"
+    )
+
+    dir_path = proj_root / LLM_OUTPUT_DIR / sanitized_llm_name / params.start_date
+    ensure_directory(dir_path)
+    return dir_path / filename

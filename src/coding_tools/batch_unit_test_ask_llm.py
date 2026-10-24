@@ -2,10 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run automated test generation, type checking, and linting concurrently.
-
-Processed for multiple files with 5 iterations max.
-"""
+"""Run batch or single unit test workflow concurrently with semaphore limits."""
 
 from __future__ import annotations
 
@@ -26,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_test_file_path(source_file: str | Path) -> str:
-    """Automatically detect the unit test file path from a source file path."""
+    """Get unit test path matching source path under tests/unit.
+
+    Strips src prefix if present, prepends tests/unit.
+    """
     path = Path(source_file)
     parts = path.parts
     if "src" in parts:
@@ -48,10 +48,9 @@ def get_test_file_path(source_file: str | Path) -> str:
 
 
 def ensure_test_file_exists(test_file: str) -> None:
-    """Ensure the test file and its parent directories exist.
+    """Create test file and parent dirs if missing with minimal header stub.
 
-    If the file does not exist, create it with a minimal valid test stub
-    to prevent empty-file parser failures.
+    Writes UTF-8 text with SPDX headers if file is absent or empty.
     """
     test_path = Path(test_file)
     test_path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +72,10 @@ async def run_workflow_with_iterations(
     max_iterations: int = 5,
     semaphore: asyncio.Semaphore | None = None,
 ) -> dict[str, Any]:
-    """Run a single test file's workflow in a loop up to max_iterations."""
+    """Run execute_workflow loop up to max iterations with semaphore limit.
+
+    Disables LLM on final iteration. Stops on success or fatal stagnation.
+    """
     prefix = Path(test_file).name
 
     async def task() -> dict[str, Any]:
@@ -167,7 +169,7 @@ def print_summary_table(
     *,
     processed_multiple: bool,
 ) -> None:
-    """Print a clean synthetic summary table of all processed test files."""
+    """Log formatted summary table of results for test files."""
     title = (
         "BATCH WORKFLOW EXECUTION SUMMARY"
         if processed_multiple
@@ -182,7 +184,7 @@ def print_summary_table(
     )
     logger.info(
         "%s",
-        f"{'Test File':<38} | {'Stage':<18} | {'Status':<16} | {'Iters':<5}",
+        f"{ 'Test File':<38} | { 'Stage':<18} | { 'Status':<16} | { 'Iters':<5}",
     )
     logger.info(
         "-----------------------------------------------------------------------------------",
@@ -199,7 +201,10 @@ def print_summary_table(
 
 
 async def async_main() -> None:
-    """Execute workflows concurrently for multiple files with iteration loops."""
+    """Parse args, collect source files, and run tasks concurrently.
+
+    Limits concurrency to 2 via semaphore. Skips __init__.py.
+    """
     parser = argparse.ArgumentParser(
         description="Run automated unit test workflow.",
     )
@@ -272,7 +277,7 @@ async def async_main() -> None:
 
 
 def main() -> None:
-    """Initiate the asynchronous event loop (Synchronous CLI Gateway)."""
+    """Run async_main in event loop."""
     asyncio.run(async_main())
 
 
