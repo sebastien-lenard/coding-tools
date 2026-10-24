@@ -214,7 +214,7 @@ def test_process_file_workflow_success(
     )
     mock_get_client.return_value = client
     semaphore = asyncio.Semaphore(1)
-    res = asyncio.run(process_file_workflow(p, semaphore))
+    res = asyncio.run(process_file_workflow(p, semaphore, "26-01-01"))
     assert res["status"] == "SUCCESS"
     assert "Enhanced." in p.read_text(encoding="utf-8")
     mock_stamper.return_value.run.assert_called_once()
@@ -237,7 +237,7 @@ def test_process_file_workflow_pass1_fail(
     )
     mock_get_client.return_value = client
     semaphore = asyncio.Semaphore(1)
-    res = asyncio.run(process_file_workflow(p, semaphore))
+    res = asyncio.run(process_file_workflow(p, semaphore, "26-01-01"))
     assert res["status"] == "FAILED"
     assert res["stage"] == "Pass 1: Enhancement"
 
@@ -265,7 +265,7 @@ def test_process_file_workflow_pass2_fail_fallback(
     ]
     mock_get_client.return_value = client
     semaphore = asyncio.Semaphore(1)
-    res = asyncio.run(process_file_workflow(p, semaphore))
+    res = asyncio.run(process_file_workflow(p, semaphore, "26-01-01"))
     assert res["status"] == "SUCCESS"
     assert "Pass1." in p.read_text(encoding="utf-8")
 
@@ -292,7 +292,7 @@ def test_process_file_workflow_stamper_exception(
         "Stamper error",
     )
     semaphore = asyncio.Semaphore(1)
-    res = asyncio.run(process_file_workflow(p, semaphore))
+    res = asyncio.run(process_file_workflow(p, semaphore, "26-01-01"))
     assert res["status"] == "SUCCESS"
 
 

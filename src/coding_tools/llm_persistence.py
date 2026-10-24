@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Agnostic persistence utility for LLM execution outputs."""
+"""Persist LLM execution output dumps to disk."""
 
 from __future__ import annotations
 
@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from coding_tools.file_handler import LLMOutputPathParameters, get_llm_output_path
+from coding_tools.file_handler import (
+    LLMOutputPathParameters,
+    get_llm_output_path,
+    get_project_root,
+)
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -24,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PersistOutputParameters:
-    """Hold parameters for persisting LLM output dumps."""
+    """Hold parameters to persist LLM output dumps.
+
+    Dataclass carrying options, status, payload variants, and cache flags.
+    """
 
     options: StructuredGenerationOptions
     status_label: str
@@ -38,10 +45,16 @@ class PersistOutputParameters:
 
 
 def persist_llm_output(params: PersistOutputParameters) -> None:
-    """Persist structured LLM output dump to disk in an agnostic manner."""
+    """Write structured LLM output dump to disk as JSON.
+
+    Saves to .unit-test-tmp/ path based on timestamp and parameters. Writes file with
+    UTF-8 encoding. Logs errors if write fails.
+    """
     now_local = datetime.now(UTC).astimezone()
     timestamp = int(now_local.timestamp())
     hhmiss = now_local.strftime("%H%M%S")
+
+    proj_root = get_project_root(params.options.target_file)
 
     max_reached_step = "raw_response"
     response_payload: Any = params.raw_text
@@ -69,7 +82,12 @@ def persist_llm_output(params: PersistOutputParameters) -> None:
 
     transferred_files = [str(params.options.target_file)]
     if not params.supports_caching:
-        transferred_files.extend(["pyproject.toml", "tests/conftest.py"])
+        transferred_files.extend(
+            [
+                str(proj_root / "pyproject.toml"),
+                str(proj_root / "tests/conftest.py"),
+            ],
+        )
 
     dump_data: dict[str, Any] = {
         "metadata": {
@@ -104,6 +122,7 @@ def persist_llm_output(params: PersistOutputParameters) -> None:
             status_label=params.status_label,
             timestamp=timestamp,
             hhmiss=hhmiss,
+            project_root=proj_root,
         )
         out_path = get_llm_output_path(path_params)
         out_path.write_text(json.dumps(dump_data, indent=2), encoding="utf-8")

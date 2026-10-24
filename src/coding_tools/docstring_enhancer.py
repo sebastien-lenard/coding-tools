@@ -31,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("coding_tools.docstring_enhancer")
 
-MAX_DOCSTRING_LINES = 5
+MAX_DOCSTRING_LINES = 10
 
 
 def _strip_docstrings(tree: ast.AST) -> None:

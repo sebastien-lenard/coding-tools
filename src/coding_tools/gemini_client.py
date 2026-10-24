@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-"""Google GenAI client meeting LLMClientProtocol.
+"""Google GenAI wrapper meeting LLMClientProtocol.
 
-Needs API key. Uses google-genai v2.
+Ties into google-genai v2. Needs API key. Handles structured generation and context caching.
 """
 
 from __future__ import annotations
@@ -25,6 +25,10 @@ from google.genai.errors import ServerError
 from pydantic import BaseModel
 
 from coding_tools.config import get_provider_mapping, is_caching_allowed
+from coding_tools.file_handler import (
+    get_conftest_path,
+    get_pyproject_path,
+)
 from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
@@ -54,7 +58,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetryRequestParameters:
-    """Hold parameters for Gemini API execution attempts."""
+    """Store parameters for Gemini API execution attempts.
+
+    Holds client, model name, contents list, config kwargs, prefix, and spinner message.
+    """
 
     client: Client
     model_name: str
@@ -66,7 +73,7 @@ class RetryRequestParameters:
 
 @contextmanager
 def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None]:
-    """Print inline dots in console while waiting for API calls.
+    """Print inline dots in console during API wait.
 
     Writes to sys.stdout.
     """
@@ -74,6 +81,7 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
     stop_event = threading.Event()
 
     def spin() -> None:
+        """Loop and write dot to stdout until stop event set."""
         while not stop_event.is_set():
             sys.stdout.write(".")
             sys.stdout.flush()
@@ -90,7 +98,7 @@ def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None
         sys.stdout.flush()
 
 
-def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
+def upload_static_file(client: Client, file_path: str | Path, prefix: str) -> File:
     """Upload static reference file to Gemini API.
 
     Needs API key and valid file path. Raise LLMAPIError on failure.
@@ -98,11 +106,15 @@ def upload_static_file(client: Client, file_path: str, prefix: str) -> File:
     logger.info("[%s] Uploading static reference file: %s", prefix, file_path)
     try:
         return client.files.upload(
-            file=file_path,
+            file=str(file_path),
             config=types.UploadFileConfig(mime_type="text/plain"),
         )
-    except errors.APIError as e:
-        msg = e.message or "Unknown Gemini API error during file upload"
+    except (errors.APIError, Exception) as e:
+        msg = (
+            getattr(e, "message", None)
+            or str(e)
+            or "Unknown Gemini API error during file upload"
+        )
         raise LLMAPIError(
             message=msg,
             status_code=getattr(e, "code", None),
@@ -130,7 +142,7 @@ def build_config(
     system_instruction: str | None = None,
     cache_name: str | None = None,
 ) -> dict[str, object]:
-    """Build config dict for structured GenAI execution with thinking and schema.
+    """Build config dict for structured GenAI execution.
 
     Sets response mime type to application/json and disables automatic function calling.
     """
@@ -189,14 +201,22 @@ def call_gemini_with_retry(
                 "[%s] Gemini Server Error persist after retries",
                 params.prefix,
             )
-            msg = e.message or "Gemini Server Error persist after retries"
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Gemini Server Error persist after retries"
+            )
             raise LLMServerError(
                 message=msg,
                 status_code=getattr(e, "code", None),
                 retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
             ) from e
-        except errors.APIError as e:
-            msg = e.message or "Unknown Gemini API error during generation"
+        except (errors.APIError, Exception) as e:
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Unknown Gemini API error during generation"
+            )
             raise LLMAPIError(
                 message=msg,
                 status_code=getattr(e, "code", None),
@@ -222,7 +242,7 @@ def _raise_schema_error(schema_name: str) -> None:
 
 
 class GeminiClientAdapter:
-    """Google GenAI client meeting LLMClientProtocol.
+    """Google GenAI wrapper meeting LLMClientProtocol.
 
     Needs API key. Handles structured generation and context caching.
     """
@@ -351,9 +371,12 @@ class GeminiClientAdapter:
         if not self.supports_caching:
             return None, uploaded_files  # type: ignore[return-value]
 
+        pyproject_path = get_pyproject_path(source_file_path)
+        conftest_path = get_conftest_path(source_file_path)
+
         logger.info("[%s] Caching enabled. Uploading static reference files...", prefix)
-        file_config = upload_static_file(self.client, "project.toml", prefix)
-        file_conftest = upload_static_file(self.client, "tests/conftest.py", prefix)
+        file_config = upload_static_file(self.client, pyproject_path, prefix)
+        file_conftest = upload_static_file(self.client, conftest_path, prefix)
         file_source = upload_static_file(self.client, source_file_path, prefix)
         uploaded_files.extend([file_config, file_conftest, file_source])
 
@@ -392,8 +415,12 @@ class GeminiClientAdapter:
                     system_instruction=load_skill("unit_test_generation.md"),
                 ),
             )
-        except errors.APIError as e:
-            msg = e.message or "Unknown Gemini API error during cache creation"
+        except (errors.APIError, Exception) as e:
+            msg = (
+                getattr(e, "message", None)
+                or str(e)
+                or "Unknown Gemini API error during cache creation"
+            )
             raise LLMAPIError(
                 message=msg,
                 status_code=getattr(e, "code", None),
@@ -412,11 +439,11 @@ class GeminiClientAdapter:
                 try:
                     file_name = cast("Any", f).name
                     self.client.files.delete(name=file_name)
-                except errors.APIError as e:
+                except (errors.APIError, Exception) as e:  # noqa: BLE001
                     logger.warning(
                         "[%s] Failed to delete remote file: %s",
                         prefix,
-                        e.message,
+                        getattr(e, "message", None) or str(e) or "Unknown error",
                     )
 
 
@@ -480,10 +507,12 @@ def build_contents_list(
     Include pyproject.toml and conftest.py if caching disabled.
     """
     contents_list: list[str] = []
+    pyproject_path = get_pyproject_path(test_file_path)
+    conftest_path = get_conftest_path(test_file_path)
 
     if not is_caching_allowed("gemini"):
-        toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
-        conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
+        toml_content = pyproject_path.read_text(encoding="utf-8")
+        conftest_content = conftest_path.read_text(encoding="utf-8")
         source_content = Path(source_file_path).read_text(encoding="utf-8")
 
         contents_list.extend(
