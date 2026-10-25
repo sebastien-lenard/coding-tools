@@ -2,30 +2,25 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run batch or single unit test workflow concurrently with semaphore limits."""
+"""Run batch or single unit test writing jointly with caps on parallel runs."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 from pathlib import Path
 from typing import Any
 
+from coding_tools.logger import get_project_logger, setup_logging
 from coding_tools.unit_test_orchestrator import execute_workflow
 
-# Configure logging format and level
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+logger = get_project_logger(__name__)
 
 
 def get_test_file_path(source_file: str | Path) -> str:
     """Get unit test path matching source path under tests/unit.
 
-    Strips src prefix if present, prepends tests/unit.
+    Strips src prefix if present, adds tests/unit.
     """
     path = Path(source_file)
     parts = path.parts
@@ -48,7 +43,7 @@ def get_test_file_path(source_file: str | Path) -> str:
 
 
 def ensure_test_file_exists(test_file: str) -> None:
-    """Create test file and parent dirs if missing with minimal header stub.
+    """Create test file and parent dirs if missing with min header stub.
 
     Writes UTF-8 text with SPDX headers if file is absent or empty.
     """
@@ -63,7 +58,7 @@ def ensure_test_file_exists(test_file: str) -> None:
             f"from __init__ import *\n\n"
         )
         test_path.write_text(header, encoding="utf-8")
-        logger.info("[%s] Initialized missing or empty test file.", test_file)
+        logger.progress(test_file, "Created test file")
 
 
 async def run_workflow_with_iterations(
@@ -72,15 +67,15 @@ async def run_workflow_with_iterations(
     max_iterations: int = 5,
     semaphore: asyncio.Semaphore | None = None,
 ) -> dict[str, Any]:
-    """Run execute_workflow loop up to max iterations with semaphore limit.
+    """Run execute_workflow loop up to max iterations with parallel run limit.
 
-    Disables LLM on final iteration. Stops on success or fatal stagnation.
+    No call to LLM on final step. Ends on success or when llm not able to fix issues.
     """
     prefix = Path(test_file).name
 
     async def task() -> dict[str, Any]:
         final_stage = "Pytest/Coverage"
-        final_status = "FAILED"
+        final_status = "Failed"
         iterations_run = 0
 
         try:
@@ -88,12 +83,10 @@ async def run_workflow_with_iterations(
                 iterations_run = iteration
                 allow_gemini = iteration < max_iterations
 
-                logger.info(
-                    "[%s] Starting iteration %d/%d (Gemini allowed: %s)",
+                logger.progress(
                     prefix,
-                    iteration,
-                    max_iterations,
-                    allow_gemini,
+                    f"Start step {iteration}/{max_iterations}"
+                    f" using llm call: {allow_gemini}",
                 )
 
                 # Run the synchronous workflow in a thread pool executor
@@ -108,48 +101,42 @@ async def run_workflow_with_iterations(
                 final_status = status
 
                 if success:
-                    logger.info(
-                        "[%s] All checks passed successfully on iteration %d!",
+                    logger.progress(
                         prefix,
-                        iteration,
+                        f"Done step {iteration}",
                     )
                     final_stage = "All Stages"
-                    final_status = "SUCCESS"
+                    final_status = "Success"
                     break
 
-                if status == "No solution":
+                if status == "No LLM fix":
                     logger.error(
-                        "[%s] Encountered fatal stagnation ('No solution'). "
-                        "Stopping iterations early.",
                         prefix,
+                        "Failed. LLM not able to fix issues",
                     )
                     break
 
-                if status == "FIXED":
-                    logger.info(
-                        "[%s] Iteration %d applied a fix. Proceeding to next "
-                        "iteration to verify...",
+                if status == "Fixed":
+                    logger.progress(
                         prefix,
-                        iteration,
+                        f"Applied fix by step {iteration}",
                     )
                     continue
 
                 logger.warning(
-                    "[%s] Iteration %d finished - Stage: %s | Status: %s",
                     prefix,
-                    iteration,
-                    final_stage,
-                    final_status,
+                    f"End step {iteration}. Stage: {final_stage}. "
+                    f"Status: {final_status}",
                 )
                 if not allow_gemini:
                     break
 
         except Exception:
             logger.exception(
-                "[%s] Workflow encountered an unhandled exception.",
                 prefix,
+                "Failed run_workflow_with_iterations()",
             )
-            final_status = "ERROR"
+            final_status = "Error"
 
         return {
             "test_file": test_file,
@@ -171,54 +158,38 @@ def print_summary_table(
 ) -> None:
     """Log formatted summary table of results for test files."""
     title = (
-        "BATCH WORKFLOW EXECUTION SUMMARY"
+        "Unit test writing (batch) Summary:"
         if processed_multiple
-        else "SINGLE FILE WORKFLOW EXECUTION SUMMARY"
+        else "Unit test writing (file) Summary"
     )
-    logger.info(
-        "\n===================================================================================",
-    )
-    logger.info("%s", f"{title:^83}")
-    logger.info(
-        "===================================================================================",
-    )
-    logger.info(
-        "%s",
-        f"{ 'Test File':<38} | { 'Stage':<18} | { 'Status':<16} | { 'Iters':<5}",
-    )
-    logger.info(
-        "-----------------------------------------------------------------------------------",
-    )
-    for res in results:
-        logger.info(
-            "%s",
-            f"{res['test_file']:<38} | {res['stage']:<18} | {res['status']:<16} | "
-            f"{res['iterations']:<5}",
-        )
-    logger.info(
-        "===================================================================================\n",
-    )
+    headers = ["Test File", "Stage", "Status", "Steps"]
+    rows = [
+        [res["test_file"], res["stage"], res["status"], str(res["iterations"])]
+        for res in results
+    ]
+    logger.summary_table(title, headers, rows)
 
 
 async def async_main() -> None:
-    """Parse args, collect source files, and run tasks concurrently.
+    """Parse args, collect source files, and run tasks jointly.
 
-    Limits concurrency to 2 via semaphore. Skips __init__.py.
+    Caps parallel runs to 2 via semaphore. Skips __init__.py.
     """
+    func = f"{__name__}"
     parser = argparse.ArgumentParser(
-        description="Run automated unit test workflow.",
+        description="Pen unit tests",
     )
     parser.add_argument(
         "target",
         nargs="?",
         default="src",
-        help="Path to source file or directory (default: src)",
+        help="Path to source file or dir (default: src)",
     )
     parser.add_argument(
         "--max-iterations",
         type=int,
         default=5,
-        help="Maximum iterations per file (default: 5)",
+        help="Max number of steps per file (default: 5)",
     )
     args = parser.parse_args()
 
@@ -232,7 +203,7 @@ async def async_main() -> None:
             ensure_test_file_exists(test_file)
             targets.append((test_file, source_file))
         else:
-            logger.error("Target file must be a Python (.py) file.")
+            logger.error(None, "Bad file extension (Needed .py)")
             return
     elif target_path.is_dir():
         src_dir = target_path / "src" if (target_path / "src").is_dir() else target_path
@@ -245,18 +216,18 @@ async def async_main() -> None:
             ensure_test_file_exists(test_file)
             targets.append((test_file, source_file))
     else:
-        logger.error("Target path does not exist: %s", target_path)
+        logger.error(None, f"Missing target file or dir {target_path}")
         return
 
     processed_multiple = len(targets) > 1
     max_iterations = args.max_iterations
-    logger.info("=" * 65)
-    logger.info("STARTING BATCH UNIT TEST WORKFLOW")
-    logger.info("Max Iterations per File : %d", max_iterations)
-    logger.info("Target Files to Process : %d", len(targets))
+
+    logger.progress(
+        None,
+        f"Start {func}. Max steps: {max_iterations}. Targets: {len(targets)}",
+    )
     for test_f, src_f in targets:
-        logger.info("  - Test: %s | Source: %s", test_f, src_f)
-    logger.info("=" * 65)
+        logger.progress(None, f"Test: {test_f}. Src: {src_f}")
 
     semaphore = asyncio.Semaphore(2)
 
@@ -273,11 +244,12 @@ async def async_main() -> None:
     )
 
     print_summary_table(list(results), processed_multiple=processed_multiple)
-    logger.info("Batch concurrent workflow completed successfully.")
+    logger.progress(None, f"End f{func}")
 
 
 def main() -> None:
     """Run async_main in event loop."""
+    setup_logging()
     asyncio.run(async_main())
 
 

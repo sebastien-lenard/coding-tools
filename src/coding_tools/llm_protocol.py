@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Define protocol, shared models, and exceptions for LLM wrappers."""
+"""Give protocol, shared models, and exceptions for LLM wrappers."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class LLMAPIError(LLMError):
 
 
 class LLMServerError(LLMError):
-    """Agnostic server error mirroring server failure and retryability."""
+    """Agnostic server error mirroring server failure and retries."""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class LLMServerError(LLMError):
 
 
 class LLMResponse(BaseModel):
-    """Expected JSON structure for code generation LLMs."""
+    """Expected JSON structure for LLMs."""
 
     message: str
     code: str
@@ -56,7 +56,7 @@ class LLMResponse(BaseModel):
 
 @dataclass
 class StructuredGenerationOptions:
-    """Parameters for structured text generation."""
+    """Params for structured text writing."""
 
     response_schema: type[BaseModel]
     prefix: str
@@ -71,11 +71,11 @@ class StructuredGenerationOptions:
 
 
 class LLMClientProtocol(Protocol):
-    """High-level operations for any LLM client."""
+    """High-level ops for any LLM client."""
 
     @property
     def supports_caching(self) -> bool:
-        """Check whether client supports remote caching."""
+        """Check if client supports remote caching."""
         ...
 
     def generate_structured_response(
@@ -83,7 +83,7 @@ class LLMClientProtocol(Protocol):
         contents_list: list[object],
         options: StructuredGenerationOptions,
     ) -> BaseModel:
-        """Get validated Pydantic model response from contents."""
+        """Get checked Pydantic model response from contents."""
         ...
 
     def setup_cache(

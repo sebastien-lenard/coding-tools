@@ -57,7 +57,7 @@ async def test_run_workflow_with_iterations_success() -> None:
     """Test successful workflow execution on first iteration."""
     with patch(
         "coding_tools.batch_unit_test_ask_llm.execute_workflow",
-        return_value=(True, "All Stages", "SUCCESS"),
+        return_value=(True, "All Stages", "Success"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
             "tests/unit/test_dummy.py", "src/dummy.py", max_iterations=3,
@@ -65,18 +65,18 @@ async def test_run_workflow_with_iterations_success() -> None:
         assert result == {
             "test_file": "tests/unit/test_dummy.py",
             "stage": "All Stages",
-            "status": "SUCCESS",
+            "status": "Success",
             "iterations": 1,
         }
         assert mock_exec.call_count == 1
 
 
 @pytest.mark.anyio
-async def test_run_workflow_with_iterations_no_solution() -> None:
-    """Test workflow execution stopping on 'No solution' status."""
+async def test_run_workflow_with_iterations_no_llm_fix() -> None:
+    """Test workflow execution stopping on 'No LLM fix' status."""
     with patch(
         "coding_tools.batch_unit_test_ask_llm.execute_workflow",
-        return_value=(False, "Pytest/Coverage", "No solution"),
+        return_value=(False, "Pytest/Coverage", "No LLM fix"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
             "tests/unit/test_dummy.py", "src/dummy.py", max_iterations=3,
@@ -84,7 +84,7 @@ async def test_run_workflow_with_iterations_no_solution() -> None:
         assert result == {
             "test_file": "tests/unit/test_dummy.py",
             "stage": "Pytest/Coverage",
-            "status": "No solution",
+            "status": "No LLM fix",
             "iterations": 1,
         }
         assert mock_exec.call_count == 1
@@ -92,12 +92,12 @@ async def test_run_workflow_with_iterations_no_solution() -> None:
 
 @pytest.mark.anyio
 async def test_run_workflow_with_iterations_fixed() -> None:
-    """Test workflow execution with FIXED status followed by success."""
+    """Test workflow execution with Fixed status followed by success."""
     with patch(
         "coding_tools.batch_unit_test_ask_llm.execute_workflow",
         side_effect=[
-            (False, "Pytest/Coverage", "FIXED"),
-            (True, "All Stages", "SUCCESS"),
+            (False, "Pytest/Coverage", "Fixed"),
+            (True, "All Stages", "Success"),
         ],
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
@@ -106,32 +106,29 @@ async def test_run_workflow_with_iterations_fixed() -> None:
         assert result == {
             "test_file": "tests/unit/test_dummy.py",
             "stage": "All Stages",
-            "status": "SUCCESS",
+            "status": "Success",
             "iterations": 2,
         }
         assert mock_exec.call_count == 2
 
 
 @pytest.mark.anyio
-async def test_run_workflow_with_iterations_failure_then_success() -> None:
-    """Test workflow execution with failure followed by success."""
+async def test_run_workflow_with_iterations_warning_then_no_gemini() -> None:
+    """Test workflow execution with warning status when allow_gemini is False."""
     with patch(
         "coding_tools.batch_unit_test_ask_llm.execute_workflow",
-        side_effect=[
-            (False, "Pytest/Coverage", "FAILED"),
-            (True, "All Stages", "SUCCESS"),
-        ],
+        return_value=(False, "Pytest/Coverage", "WarningState"),
     ) as mock_exec:
         result = await butag.run_workflow_with_iterations(
-            "tests/unit/test_dummy.py", "src/dummy.py", max_iterations=3,
+            "tests/unit/test_dummy.py", "src/dummy.py", max_iterations=1,
         )
         assert result == {
             "test_file": "tests/unit/test_dummy.py",
-            "stage": "All Stages",
-            "status": "SUCCESS",
-            "iterations": 2,
+            "stage": "Pytest/Coverage",
+            "status": "WarningState",
+            "iterations": 1,
         }
-        assert mock_exec.call_count == 2
+        assert mock_exec.call_count == 1
 
 
 @pytest.mark.anyio
@@ -166,7 +163,7 @@ async def test_run_workflow_with_iterations_exception() -> None:
         assert result == {
             "test_file": "tests/unit/test_dummy.py",
             "stage": "Pytest/Coverage",
-            "status": "ERROR",
+            "status": "Error",
             "iterations": 1,
         }
 
@@ -177,7 +174,7 @@ async def test_run_workflow_with_semaphore() -> None:
     semaphore = asyncio.Semaphore(1)
     with patch(
         "coding_tools.batch_unit_test_ask_llm.execute_workflow",
-        return_value=(True, "All Stages", "SUCCESS"),
+        return_value=(True, "All Stages", "Success"),
     ):
         result = await butag.run_workflow_with_iterations(
             "tests/unit/test_dummy.py",
@@ -185,7 +182,7 @@ async def test_run_workflow_with_semaphore() -> None:
             max_iterations=1,
             semaphore=semaphore,
         )
-        assert result["status"] == "SUCCESS"
+        assert result["status"] == "Success"
 
 
 def test_print_summary_table(caplog: pytest.LogCaptureFixture) -> None:
@@ -194,14 +191,14 @@ def test_print_summary_table(caplog: pytest.LogCaptureFixture) -> None:
         {
             "test_file": "tests/unit/test_a.py",
             "stage": "All Stages",
-            "status": "SUCCESS",
+            "status": "Success",
             "iterations": 1,
         },
     ]
     with caplog.at_level("INFO"):
         butag.print_summary_table(results, processed_multiple=False)
     assert any(
-        "SINGLE FILE WORKFLOW EXECUTION SUMMARY" in record.message
+        "Unit test writing (file) Summary" in record.message
         for record in caplog.records
     )
     assert any("tests/unit/test_a.py" in record.message for record in caplog.records)
@@ -222,7 +219,7 @@ def test_print_summary_table_multiple(
     with caplog.at_level("INFO"):
         butag.print_summary_table(results, processed_multiple=True)
     assert any(
-        "BATCH WORKFLOW EXECUTION SUMMARY" in record.message
+        "Unit test writing (batch) Summary:" in record.message
         for record in caplog.records
     )
 
@@ -245,7 +242,7 @@ def test_main_file_target(
         mock_run.return_value = {
             "test_file": test_file_str,
             "stage": "All Stages",
-            "status": "SUCCESS",
+            "status": "Success",
             "iterations": 1,
         }
         butag.main()
@@ -294,7 +291,7 @@ def test_main_dir_target(
         mock_run.return_value = {
             "test_file": "tests/unit/test_sample.py",
             "stage": "All Stages",
-            "status": "SUCCESS",
+            "status": "Success",
             "iterations": 1,
         }
         butag.main()

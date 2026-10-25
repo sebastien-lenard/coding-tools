@@ -23,10 +23,7 @@ from coding_tools.workspace_guard import WorkspaceGuard
 
 @pytest.fixture(autouse=True)
 def clean_cover_files() -> Generator[None, None, None]:
-    """Clean up workspace_guard coverage annotation file before and after tests.
-
-    NB: Only the target coverage file is deleted, not other coverage files
-    """
+    """Clean up workspace_guard coverage annotation file before and after tests."""
     cover_file = Path("src/coding_tools/workspace_guard.py,cover")
     with contextlib.suppress(FileNotFoundError, OSError):
         cover_file.unlink()
@@ -266,7 +263,7 @@ def test_execute_test_and_guard_with_pollution(
     monkeypatch.setattr("subprocess.run", mock_run_polluted)
     success, errors = guard.execute_test_and_guard(f)
     assert success is False
-    assert any("pollution" in err.lower() for err in errors)
+    assert any("spot file creation" in err.lower() for err in errors)
 
 
 def test_execute_test_and_guard_with_coverage(
@@ -359,7 +356,15 @@ def test_run_checks_and_summary(
     assert r_passed_poll is False
     assert any(res["status"] == "FAILED" for res in r_res_poll)
 
-    workspace_guard._print_summary_table(s_res + r_res)
+    summary_data = [
+        [res["file"], res["check"], res["status"], res["details"]]
+        for res in s_res + r_res
+    ]
+    workspace_guard.logger.summary_table(
+        "Summary:",
+        ["Test File", "Check Type", "Status", "Details"],
+        summary_data,
+    )
 
 
 def test_main_cli_success(

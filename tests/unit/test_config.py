@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
@@ -19,24 +19,22 @@ from coding_tools.config import (
     load_llm_config,
 )
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 def test_strip_jsonc_comments() -> None:
     """Test stripping JSONC comments."""
-    content = """
-    {
-        // Single line comment
-        "default_model": "test-model", /* block comment */
-        "providers": {
-            // another comment
-            "gemini": {
-                "supports_caching": true
-            }
-        }
-    }
-    """
+    content = (
+        "\n    {\n"
+        '        // Single line comment\n'
+        '        "default_model": "test-model", /* block comment */\n'
+        '        "providers": {\n'
+        '            // another comment\n'
+        '            "gemini": {\n'
+        '                "supports_caching": true\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+        '    '
+    )
     stripped = _strip_jsonc_comments(content)
     parsed = json.loads(stripped)
     assert parsed["default_model"] == "test-model"
@@ -81,8 +79,60 @@ def test_load_llm_config_missing_both(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(
         FileNotFoundError,
-        match=r"Missing LLM configuration file and example\.",
+        match=r"Missing LLM conf file and example\.",
     ):
+        load_llm_config()
+
+
+def test_load_llm_config_copy_os_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test OSError handling when copying from example config."""
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config" / "parameters"
+    config_dir.mkdir(parents=True)
+    example_file = config_dir / "llm_config.jsonc.example"
+    example_file.write_text('{"default_model": "model-example"}', encoding="utf-8")
+
+    def mock_write_text(*args: object, **kwargs: object) -> None:
+        msg = "Disk full"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "write_text", mock_write_text)
+    with pytest.raises(OSError, match="Disk full"):
+        load_llm_config()
+
+
+def test_load_llm_config_read_os_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test OSError handling when reading config file."""
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config" / "parameters"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "llm_config.jsonc"
+    config_file.write_text('{"default_model": "model-a"}', encoding="utf-8")
+
+    def mock_read_text(*args: object, **kwargs: object) -> str:
+        msg = "Read error"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text)
+    with pytest.raises(OSError, match="Read error"):
+        load_llm_config()
+
+
+def test_load_llm_config_json_decode_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test JSONDecodeError handling when parsing config file."""
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config" / "parameters"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "llm_config.jsonc"
+    config_file.write_text("invalid json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
         load_llm_config()
 
 

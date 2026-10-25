@@ -4,11 +4,16 @@
 
 """Unit tests for file_handler."""
 
+import contextlib
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from coding_tools import file_handler
+from coding_tools.logger import get_project_logger
+
+logger = get_project_logger(__name__)
 
 
 def test_ensure_directory(tmp_path: Path) -> None:
@@ -21,6 +26,22 @@ def test_ensure_directory(tmp_path: Path) -> None:
     res_str = file_handler.ensure_directory(str(target))
     assert res_str == target
     assert res_str.is_dir()
+
+
+def test_ensure_directory_os_error(tmp_path: Path) -> None:
+    """Test ensure_directory raises OSError and logs exception when mkdir fails."""
+    target = tmp_path / "invalid"
+    msg = "Disk error"
+
+    def _raise_error() -> None:
+        raise OSError(msg)
+
+    with patch("pathlib.Path.mkdir", side_effect=OSError(msg)):
+        with contextlib.suppress(OSError):
+            _raise_error()
+
+        with pytest.raises(OSError, match=msg):
+            file_handler.ensure_directory(target)
 
 
 def test_get_project_root_fallbacks(tmp_path: Path) -> None:

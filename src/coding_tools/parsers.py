@@ -2,13 +2,12 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Parse local files, run test/lint commands, diff, and validate code."""
+"""Parse local files, run test/lint commands, diff, and check code."""
 
 from __future__ import annotations
 
 import ast
 import difflib
-import logging
 import subprocess
 from pathlib import Path
 
@@ -18,10 +17,11 @@ from coding_tools.file_handler import (
     get_pytest_log_path,
     get_ruff_log_path,
 )
+from coding_tools.logger import get_project_logger
 from coding_tools.workspace_guard import WorkspaceGuard
 from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
 
-logger = logging.getLogger(__name__)
+logger = get_project_logger(__name__)
 
 MIN_PARTS_FOR_COVERAGE = 3
 MIN_PARTS_WITH_MISSING = 4
@@ -57,7 +57,7 @@ def run_pytest_command(
         test_file_path,
     ]
     cmd_str = " ".join(cmd_list)
-    logger.info("[%s] Running command: %s", prefix, cmd_str)
+    logger.progress(prefix, f"Run `{cmd_str}`")
 
     result = subprocess.run(  # noqa: S603
         cmd_list,
@@ -83,7 +83,7 @@ def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
         test_file_path,
     ]
     cmd_str = " ".join(cmd_list)
-    logger.info("[%s] Running command: %s", prefix, cmd_str)
+    logger.progress(prefix, f"Run `{cmd_str}`")
 
     result = subprocess.run(  # noqa: S603
         cmd_list,
@@ -112,7 +112,7 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
         "--fix",
     ]
     cmd_str = " ".join(cmd_list)
-    logger.info("[%s] Running command: %s", prefix, cmd_str)
+    logger.progress(prefix, f"Run `{cmd_str}`")
 
     result = subprocess.run(  # noqa: S603
         cmd_list,
@@ -121,15 +121,15 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
         check=False,
     )
 
-    summary_line = "All checks passed!"
+    summary_line = "Passed all checks"
     for line in result.stdout.splitlines():
-        if "Found " in line or "All checks passed!" in line:
+        if "Found " in line or "Passed all checks" in line:
             summary_line = line.strip()
             break
     if result.returncode != 0 and "Found " not in result.stdout:
         summary_line = f"Ruff failed with exit code {result.returncode}"
 
-    logger.info("[%s] Ruff Execution Result: %s", prefix, summary_line)
+    logger.progress(prefix, f"Ruff: {summary_line}")
 
     output_path = get_ruff_log_path(test_file_path)
     full_content = (
@@ -143,7 +143,7 @@ def run_ruff_command(test_file_path: str, prefix: str) -> str:
 def _check_pytest_syntax_error(output_text: str) -> tuple[bool, str]:
     """Check pytest output for collection or syntax errors.
 
-    True if ERRORS, SyntaxError, or collection interruption found.
+    True if ERRORS, SyntaxError, or collection stop found.
     """
     if (
         "ERRORS" in output_text
@@ -151,9 +151,8 @@ def _check_pytest_syntax_error(output_text: str) -> tuple[bool, str]:
         or "Interrupted: 1 error during collection" in output_text
     ):
         logger.error(
-            "[%s] Fatal Pytest Collection / Syntax Error detected:\n%s",
-            "Pytest",
-            output_text,
+            None,
+            f"Fatal Pytest Collection / Syntax Error detected:\n{output_text}",
         )
         return True, output_text
     return False, "None"
@@ -276,14 +275,14 @@ def extract_pytest_warnings(pytest_output: str) -> str:
 
 
 def extract_pytest_errors(pytest_output: str) -> str:
-    """Extract lines starting with E from pytest output and log warnings."""
+    """Get lines starting with E from pytest output and log warnings."""
     lines = pytest_output.splitlines()
     error_lines = [line for line in lines if line.startswith("E ")]
     cleaned = "\n".join(error_lines).strip()
     if cleaned:
         logger.warning(
-            "Pytest Assertion/Execution Errors detected (E lines):\n%s",
-            cleaned,
+            None,
+            f"Pytest Assertion/Execution Errors detected (E lines):\n{cleaned}",
         )
     return cleaned or "None"
 
@@ -334,7 +333,7 @@ def parse_ruff_summary(output_text: str) -> str:
 
 
 def filter_ruff_output(output_text: str) -> str:
-    """Remove config conflict warning lines starting with warning: from ruff output."""
+    """Clear config conflict warning lines starting with warning: from ruff output."""
     filtered_lines = [
         line
         for line in output_text.splitlines()
@@ -344,7 +343,7 @@ def filter_ruff_output(output_text: str) -> str:
 
 
 def extract_uncovered_blocks(coverage_text: str) -> list[str]:
-    """Extract 1st line of each contiguous block of uncovered lines starting with !."""
+    """Get 1st line of each contiguous block of uncovered lines starting with !."""
     lines = coverage_text.splitlines()
     uncovered_snippets: list[str] = []
     in_block = False
@@ -367,7 +366,7 @@ def extract_uncovered_blocks(coverage_text: str) -> list[str]:
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Inspect uncovered lines and build precise hints.
+    """Scan uncovered lines and build hints.
 
     Reads coverage annotation and source files.
     """
@@ -425,9 +424,9 @@ def read_local_files(
 
     Handles missing coverage annotation file.
     """
-    logger.info(
-        "[%s] Reading local dynamic test, coverage, and log files for payload...",
+    logger.progress(
         prefix,
+        "Read local dynamic test, coverage, and log files",
     )
     test_content = Path(test_file_path).read_text(encoding="utf-8")
 
@@ -439,7 +438,7 @@ def read_local_files(
         coverage_content = cover_path.read_text(encoding="utf-8")
     else:
         coverage_content = (
-            "No coverage report generated due to pytest collection or execution error."
+            "No coverage report built due to pytest collection or execution error."
         )
 
     pytest_output = get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
@@ -455,10 +454,7 @@ def run_preflight_compliance_and_validation(
 
     Checks file existence, length, syntax, static isolation, and SPDX header.
     """
-    logger.info(
-        "[%s] Running pre-pytest run compliance and static validations...",
-        prefix,
-    )
+    logger.progress(prefix, "Run pre-pytest checks")
     prioritized_errors: list[str] = []
     test_path = Path(test_file_path)
 
@@ -473,14 +469,14 @@ def run_preflight_compliance_and_validation(
         )
         stamper = WorkspaceStamper(workspace=workspace)
         stamper.run()
-        logger.info(
-            "[%s] Pre-pytest run workspace_stamper executed successfully.",
+        logger.progress(
             prefix,
+            "Done workspace_stamper",
         )
     except Exception:
         logger.exception(
-            "[%s] Pre-pytest run workspace_stamper encountered an issue",
             prefix,
+            "Failed workspace_stamper",
         )
 
     if not test_path.exists():
@@ -536,17 +532,17 @@ def run_preflight_compliance_and_validation(
     )
 
     if all_passed:
-        logger.info("[%s] %s", prefix, synthesis_msg)
+        logger.progress(prefix, synthesis_msg)
     else:
-        logger.warning("[%s] %s", prefix, synthesis_msg)
+        logger.warning(prefix, synthesis_msg)
 
     return all_passed, prioritized_errors
 
 
 def validate_llm_code(code: str) -> tuple[bool, str]:
-    """Validate LLM code length, comment tags, syntax, and isolation.
+    """Check LLM code length, comment tags, syntax, and isolation.
 
-    Writes temporary file and deletes after check.
+    Writes temp file and clears after check.
     """
     lines = [line for line in code.splitlines() if line.strip()]
     if len(lines) <= MIN_LINES_FOR_LLM_CODE:
@@ -579,7 +575,7 @@ def validate_llm_code(code: str) -> tuple[bool, str]:
 
 
 def process_and_save_code(new_code: str, test_file_path: str, prefix: str) -> None:
-    """Calculate diff statistics, log diff, and write new test code.
+    """Yield diff statistics, log diff, and write new test code.
 
     Uses unified diff and overwrites test file.
     """
@@ -598,7 +594,7 @@ def process_and_save_code(new_code: str, test_file_path: str, prefix: str) -> No
         ),
     )
     if diff:
-        logger.info("[%s] Code Diff:\n%s", prefix, "".join(diff))
+        logger.progress(prefix, f"Code Diff:\n{''.join(diff)}")
 
     test_path.write_text(new_code, encoding="utf-8")
-    logger.info("[%s] Saved updated test script to %s", prefix, test_path)
+    logger.progress(prefix, f"Done. Saved script to {test_path}")

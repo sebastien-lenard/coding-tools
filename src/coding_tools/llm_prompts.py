@@ -2,18 +2,21 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Build prompts, load skills, and construct contents list."""
+"""Build prompts, load skills, and contents list."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from coding_tools.config import is_caching_allowed
+from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
     extract_uncovered_blocks,
 )
+
+logger = get_project_logger(__name__)
 
 
 def load_skill(skill_filename: str) -> str:
@@ -22,7 +25,11 @@ def load_skill(skill_filename: str) -> str:
     Raise FileNotFoundError if missing.
     """
     skill_path = Path("config/skills") / skill_filename
-    return skill_path.read_text(encoding="utf-8")
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except OSError:
+        logger.exception(skill_path, "Failed to load skill file")
+        raise
 
 
 def generate_coverage_hints(source_file_path: str) -> list[str]:
@@ -38,8 +45,12 @@ def generate_coverage_hints(source_file_path: str) -> list[str]:
     if not source_path.exists():
         return []
 
-    source_lines = source_path.read_text(encoding="utf-8").splitlines()
-    cover_lines = cover_path.read_text(encoding="utf-8").splitlines()
+    try:
+        source_lines = source_path.read_text(encoding="utf-8").splitlines()
+        cover_lines = cover_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        logger.exception(source_path, "Failed to read source or cover file for hints")
+        return []
 
     hints = []
     for idx, cover_line in enumerate(cover_lines):
@@ -82,14 +93,21 @@ def build_contents_list(
 ) -> list[str]:
     """Build contents list with source, tests, coverage, and pytest logs.
 
-    Include pyproject.toml and conftest.py if caching disallowed.
+    Add pyproject.toml and conftest.py if no caching.
     """
     contents_list: list[str] = []
 
     if not is_caching_allowed("gemini"):
-        toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
-        conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
-        source_content = Path(source_file_path).read_text(encoding="utf-8")
+        try:
+            toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
+            conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
+            source_content = Path(source_file_path).read_text(encoding="utf-8")
+        except OSError:
+            logger.exception(
+                source_file_path,
+                "Failed to read project setup files for contents",
+            )
+            raise
 
         contents_list.extend(
             [

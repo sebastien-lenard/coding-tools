@@ -5,6 +5,7 @@
 """Unit tests for coding_tools.llm_prompts."""
 
 from pathlib import Path
+from typing import Never
 
 import pytest
 
@@ -55,7 +56,7 @@ def test_generate_coverage_hints_no_source_file(tmp_path: Path) -> None:
 
 
 def test_generate_coverage_hints_idx_out_of_bounds(tmp_path: Path) -> None:
-    """Test generate_coverage_hints when cover file has more lines than source file."""
+    """Test generate_coverage_hints when cover file has more lines."""
     source = tmp_path / "source.py"
     source.write_text("x = 1\n", encoding="utf-8")
     cover = tmp_path / "source.py,cover"
@@ -64,8 +65,26 @@ def test_generate_coverage_hints_idx_out_of_bounds(tmp_path: Path) -> None:
     assert hints == []
 
 
+def test_generate_coverage_hints_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test generate_coverage_hints handles OSError."""
+    source = tmp_path / "source.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    cover = tmp_path / "source.py,cover"
+    cover.write_text("! x = 1\n", encoding="utf-8")
+
+    def mock_read_text(*args: object, **kwargs: object) -> Never:
+        msg = "Disk error"
+        raise OSError(msg)
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text)
+    hints = generate_coverage_hints(str(source))
+    assert hints == []
+
+
 def test_generate_coverage_hints_various_lines(tmp_path: Path) -> None:
-    """Test generate_coverage_hints with various uncovered code structures."""
+    """Test generate_coverage_hints with various uncovered structures."""
     source = tmp_path / "source.py"
     source_content = (
         "x = 1\n"
@@ -96,7 +115,9 @@ def test_generate_coverage_hints_various_lines(tmp_path: Path) -> None:
     assert len(hints) > 0
 
 
-def test_build_contents_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_contents_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test build_contents_list with caching allowed and disallowed."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
@@ -132,3 +153,34 @@ def test_build_contents_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         pytest_output="some pytest output",
     )
     assert isinstance(contents_no_cache, list)
+
+
+def test_build_contents_list_no_cache_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test build_contents_list raises OSError when reading files."""
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "source.py"
+    source.write_text("print('hello')\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "coding_tools.llm_prompts.is_caching_allowed",
+        lambda name: False,
+    )
+
+    def mock_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if "pyproject.toml" in str(self):
+            msg = "Read error"
+            raise OSError(msg)
+        return "content"
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text)
+
+    with pytest.raises(OSError, match="Read error"):
+        build_contents_list(
+            test_file_path="tests/test_source.py",
+            source_file_path=str(source),
+            test_content="def test_foo(): pass",
+            coverage_content="some coverage",
+            pytest_output="some pytest output",
+        )

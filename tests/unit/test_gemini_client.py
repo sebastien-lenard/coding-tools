@@ -84,7 +84,7 @@ def test_upload_static_file_error_no_message(tmp_path: Path) -> None:
 
     with pytest.raises(LLMAPIError) as exc_info:
         upload_static_file(mock_client, f, "TEST")
-    assert "Unknown Gemini API error during file upload" in str(exc_info.value)
+    assert "Failed upload to Gemini" in str(exc_info.value)
 
 
 def test_validate_file_uris_success() -> None:
@@ -112,7 +112,7 @@ def test_validate_file_uris_none(
     f2 = MagicMock(uri=f2_uri)
     f3 = MagicMock(uri=f3_uri)
     with pytest.raises(
-        ValueError, match=r"One or more uploaded file URIs resolved to None.",
+        ValueError, match=r"Bad URIs of uploaded file\(s\)",
     ):
         validate_file_uris(f1, f2, f3)
 
@@ -227,7 +227,7 @@ def test_call_gemini_with_retry_server_error_no_message() -> None:
     ):
         with pytest.raises(LLMServerError) as exc_info:
             call_gemini_with_retry(params)
-        assert "Gemini Server Error persist after retries" in str(exc_info.value)
+        assert "Failed tries to bypass http 503" in str(exc_info.value)
 
 
 def test_call_gemini_with_retry_non_503_server_error() -> None:

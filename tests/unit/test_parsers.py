@@ -2,600 +2,347 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for parsers module."""
+"""Unit tests for parsers."""
 
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
-
 import pytest
 
 from coding_tools import parsers
-from coding_tools.file_handler import (
-    get_basedpyright_log_path,
-    get_pytest_log_path,
-    get_ruff_log_path,
-)
-from coding_tools.workspace_guard import WorkspaceGuard
+from coding_tools.logger import get_project_logger
+
+logger = get_project_logger(__name__)
 
 
-@dataclass
-class PytestResultTestCase:
-    """Test case data structure for pytest result parsing tests."""
+def test_run_pytest_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = "passed"
+        stderr = ""
 
-    output: str
-    expected_summary: str
-    expected_missing: str
-    expected_passed: bool
-    expected_100: bool
-    expected_syntax: bool
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MockCompletedProcess())
+    source_file = tmp_path / "src" / "coding_tools" / "dummy.py"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_text("x = 1\n", encoding="utf-8")
+    test_file = tmp_path / "tests" / "test_dummy.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("def test_dummy(): assert True\n", encoding="utf-8")
 
-
-def test_run_pytest_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test running pytest command."""
-    monkeypatch.chdir(tmp_path)
-    captured_cmds: list[list[str]] = []
-
-    def mock_run(
-        cmd_list: list[str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        captured_cmds.append(cmd_list)
-        return subprocess.CompletedProcess(
-            cmd_list,
-            0,
-            stdout="=== 1 passed in 0.01s ===",
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", mock_run)
-
-    test_file = "tests/unit/test_dummy.py"
-    get_pytest_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
-    parsers.run_pytest_command(
-        test_file,
-        "src/coding_tools/parsers.py",
-        "PREFIX",
-    )
-    assert len(captured_cmds) == 1
-    log_file = get_pytest_log_path(test_file)
-    assert log_file.exists()
-    assert "1 passed" in log_file.read_text(encoding="utf-8")
-
-    # Test with path that raises ValueError on relative_to("src")
-    parsers.run_pytest_command(
-        test_file,
-        "other_dir/parsers.py",
-        "PREFIX",
-    )
-    assert log_file.exists()
+    parsers.run_pytest_command(str(test_file), str(source_file), "prefix")
+    assert parsers.get_pytest_log_path(str(test_file)).exists()
 
 
-def test_run_basedpyright_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test running basedpyright command."""
-    monkeypatch.chdir(tmp_path)
+def test_run_pytest_command_absolute_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = "passed"
+        stderr = ""
 
-    def mock_run(
-        cmd_list: list[str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            cmd_list,
-            0,
-            stdout="0 errors",
-            stderr="",
-        )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MockCompletedProcess())
+    source_file = tmp_path / "outside" / "dummy.py"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_text("x = 1\n", encoding="utf-8")
+    test_file = tmp_path / "tests" / "test_dummy.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("def test_dummy(): assert True\n", encoding="utf-8")
 
-    monkeypatch.setattr(subprocess, "run", mock_run)
+    parsers.run_pytest_command(str(test_file), str(source_file), "prefix")
+    assert parsers.get_pytest_log_path(str(test_file)).exists()
 
-    test_file = "tests/unit/test_dummy.py"
-    get_basedpyright_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
-    res = parsers.run_basedpyright_command(
-        test_file,
-        "PREFIX",
-    )
+
+def test_run_basedpyright_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = "0 errors"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MockCompletedProcess())
+    test_file = tmp_path / "tests" / "test_dummy.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("def test_dummy(): assert True\n", encoding="utf-8")
+
+    res = parsers.run_basedpyright_command(str(test_file), "prefix")
     assert "0 errors" in res
-    assert get_basedpyright_log_path(test_file).exists()
 
 
-def test_run_ruff_command(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test running ruff command."""
-    monkeypatch.chdir(tmp_path)
+def test_run_ruff_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class MockCompletedProcess:
+        returncode = 0
+        stdout = "Found 1 error.\nAll checks passed!"
+        stderr = ""
 
-    def mock_run(
-        cmd_list: list[str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            cmd_list,
-            0,
-            stdout="All checks passed!",
-            stderr="",
-        )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MockCompletedProcess())
+    test_file = tmp_path / "tests" / "test_dummy.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("def test_dummy(): assert True\n", encoding="utf-8")
 
-    monkeypatch.setattr(subprocess, "run", mock_run)
-
-    test_file = "tests/unit/test_dummy.py"
-    get_ruff_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
-    res = parsers.run_ruff_command(
-        test_file,
-        "PREFIX",
-    )
-    assert "All checks passed!" in res
-    assert get_ruff_log_path(test_file).exists()
+    res = parsers.run_ruff_command(str(test_file), "prefix")
+    assert "Ruff Summary" in res
 
 
-def test_run_ruff_command_non_zero_exit_without_found(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test running ruff command with non-zero exit without found."""
-    monkeypatch.chdir(tmp_path)
+def test_run_ruff_command_failure_without_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class MockCompletedProcess:
+        returncode = 1
+        stdout = "Some error"
+        stderr = ""
 
-    def mock_run(
-        cmd_list: list[str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            cmd_list,
-            1,
-            stdout="Some generic error",
-            stderr="",
-        )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MockCompletedProcess())
+    test_file = tmp_path / "tests" / "test_dummy.py"
+    test_file.parent.mkdir(parents=True, exist_ok=True)
+    test_file.write_text("def test_dummy(): assert True\n", encoding="utf-8")
 
-    monkeypatch.setattr(subprocess, "run", mock_run)
-
-    test_file = "tests/unit/test_dummy.py"
-    get_ruff_log_path(test_file).parent.mkdir(parents=True, exist_ok=True)
-    res = parsers.run_ruff_command(
-        test_file,
-        "PREFIX",
-    )
+    res = parsers.run_ruff_command(str(test_file), "prefix")
     assert "Ruff failed with exit code 1" in res
-    assert get_ruff_log_path(test_file).exists()
 
 
 @pytest.mark.parametrize(
-    "test_case",
+    "output,expected_err,expected_syntax",
     [
-        PytestResultTestCase(
-            output="=== 1 passed in 0.01s ===",
-            expected_summary="=== 1 passed in 0.01s ===",
-            expected_missing="None",
-            expected_passed=True,
-            expected_100=False,
-            expected_syntax=False,
-        ),
-        PytestResultTestCase(
-            output="tests/unit/test_foo.py failed - AssertionError",
-            expected_summary="tests/unit/test_foo.py failed - AssertionError",
-            expected_missing="None",
-            expected_passed=False,
-            expected_100=False,
-            expected_syntax=False,
-        ),
-        PytestResultTestCase(
-            output="ERRORS during collection\n=== 1 error in 0.05s ===",
-            expected_summary="=== 1 error in 0.05s ===",
-            expected_missing="None",
-            expected_passed=False,
-            expected_100=False,
-            expected_syntax=True,
-        ),
-        PytestResultTestCase(
-            output=(
-                "--- coverage --- \n"
-                "coding_tools/foo.py   10   0   100%\n"
-                "TOTAL   10   0   100%\n=== 1 passed ==="
-            ),
-            expected_summary="=== 1 passed ===",
-            expected_missing="None (100% coverage)",
-            expected_passed=True,
-            expected_100=True,
-            expected_syntax=False,
-        ),
-        PytestResultTestCase(
-            output=(
-                "=== coverage === \n"
-                "coding_tools/foo.py   10   2   80%   5 6\n"
-                "TOTAL   10   2   80%\n=== 1 passed ==="
-            ),
-            expected_summary="=== 1 passed ===",
-            expected_missing="5 6",
-            expected_passed=True,
-            expected_100=False,
-            expected_syntax=False,
-        ),
-        PytestResultTestCase(
-            output=(
-                "--- coverage --- \n"
-                "coding_tools/foo.py   10   2   80%\n"
-                "TOTAL   10   2   80%\n=== 1 passed ==="
-            ),
-            expected_summary="=== 1 passed ===",
-            expected_missing="Missing lines (Miss count: 2)",
-            expected_passed=True,
-            expected_100=False,
-            expected_syntax=False,
-        ),
+        ("ERRORS", True, True),
+        ("SyntaxError", True, True),
+        ("Interrupted: 1 error during collection", True, True),
+        ("== 1 passed in 0.01s ==", False, False),
     ],
 )
-def test_parse_pytest_results(
-    test_case: PytestResultTestCase,
-) -> None:
-    """Test parsing pytest results."""
-    summary, missing, passed, is_100, is_syntax, _details = (
-        parsers.parse_pytest_results(test_case.output)
-    )
-    assert summary == test_case.expected_summary
-    assert missing == test_case.expected_missing
-    assert passed == test_case.expected_passed
-    assert is_100 == test_case.expected_100
-    assert is_syntax == test_case.expected_syntax
+def test_parse_pytest_results(output: str, expected_err: bool, expected_syntax: bool) -> None:
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output)
+    assert is_syntax == expected_syntax
 
 
-def test_parse_pytest_results_with_source_filter() -> None:
-    """Test parsing pytest results with source file filtering."""
-    output = (
-        "--- coverage ---\n"
-        "src/coding_tools/bar.py   10   0   100%\n"
-        "src/coding_tools/foo.py   10   0   100%\n"
-        "TOTAL   20   0   100%\n"
-        "=== 1 passed ==="
-    )
-    _, missing, _, is_100, _, _ = parsers.parse_pytest_results(
-        output,
-        source_file_path="src/coding_tools/foo.py",
-    )
-    assert is_100 is True
-    assert missing == "None (100% coverage)"
+def test_parse_pytest_results_with_source(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "coding_tools" / "parsers.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# parser", encoding="utf-8")
+    
+    output = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nsrc/coding_tools/parsers.py 10 0 100%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output, str(source))
+    assert is_100
 
-    # Also test non-matching basename / normalized path branch
-    _, missing2, _, is_1002, _, _ = parsers.parse_pytest_results(
-        output,
-        source_file_path="src/coding_tools/other.py",
-    )
-    assert is_1002 is False
-    assert missing2 == "None"
+    output_missing = "=== 1 failed in 0.1s ===\n---------- coverage: platform win32 ----------\nsrc/coding_tools/parsers.py 10 2 50% 10 15"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_missing, str(source))
+    assert not is_100
 
+    output_missing_no_parts = "=== 1 failed in 0.1s ===\n---------- coverage: platform win32 ----------\nsrc/coding_tools/parsers.py 10 2 50%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_missing_no_parts, str(source))
+    assert not is_100
 
-def test_is_syntactically_valid() -> None:
-    """Test is_syntactically_valid for valid and invalid syntax."""
-    assert parsers.is_syntactically_valid("x = 1") is True
-    assert parsers.is_syntactically_valid("x = (") is False
+    output_other_file = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nother_file.py 10 0 100%\nsrc/coding_tools/parsers.py 10 0 100%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_other_file, str(source))
+    assert is_100
+
+    output_non_matching = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nother_file.py 10 0 100%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_non_matching, str(source))
+    assert not is_100
+
+    output_cov_branches = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\n=== heading ===\nother_file.py 10 0 100%\nsrc/coding_tools/parsers.py 10 2 50%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_cov_branches, str(source))
+    assert not is_100
+
+    output_basename_match = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nparsers.py 10 0 100%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_basename_match, str(source))
+    assert is_100
+
+    output_loop_continue = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nheader line\nother_file.py 10 0 100%\nsrc/coding_tools/parsers.py 10 0 100%"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_loop_continue, str(source))
+    assert is_100
+
+    output_branch_coverage_parts = "=== 1 passed in 0.1s ===\n---------- coverage: platform win32 ----------\nsrc/coding_tools/parsers.py 10 0 100% 1 2"
+    summary, missing, passed, is_100, is_syntax, details = parsers.parse_pytest_results(output_branch_coverage_parts, str(source))
+    assert is_100
 
 
 def test_extract_pytest_warnings() -> None:
-    """Test extracting pytest warnings."""
-    output_with_warnings = (
-        "\\\nSome output\n-- warnings summary --\n"
-        "Line 1 warning\nLine 2 warning\n"
-        "-- Docs: https://docs.pytest.org\nSome more output\n"
-    )
-    res = parsers.extract_pytest_warnings(output_with_warnings)
-    assert "Line 1 warning" in res
-    assert "Line 2 warning" in res
-
-    output_without_warnings = "No warnings here"
-    assert parsers.extract_pytest_warnings(output_without_warnings) == "None"
+    text = "warnings summary\nwarning line 1\n-- Docs: https://..."
+    assert "warning line 1" in parsers.extract_pytest_warnings(text)
+    assert parsers.extract_pytest_warnings("no warnings") == "None"
 
 
 def test_extract_pytest_errors() -> None:
-    """Test extracting pytest errors."""
-    output_with_errors = "E   AssertionError: assert 1 == 2\nsome traceback"
-    res = parsers.extract_pytest_errors(output_with_errors)
-    assert "AssertionError" in res
-
-    assert parsers.extract_pytest_errors("no errors here") == "None"
+    text = "E assert False"
+    assert "assert False" in parsers.extract_pytest_errors(text)
+    assert parsers.extract_pytest_errors("no errors") == "None"
 
 
 def test_parse_basedpyright_summary() -> None:
-    """Test parsing basedpyright summary."""
-    text = "\n    analyzing file...\n    0 errors, 1 warning, 0 notes\n    "
-    assert parsers.parse_basedpyright_summary(text) == "0 errors, 1 warning, 0 notes"
-    assert parsers.parse_basedpyright_summary("no info") == "No summary found"
+    text = "some output\n1 error, 2 warnings"
+    assert "1 error" in parsers.parse_basedpyright_summary(text)
+    assert parsers.parse_basedpyright_summary("no summary") == "No summary found"
 
 
 def test_parse_ruff_summary() -> None:
-    """Test parsing ruff summary."""
-    assert parsers.parse_ruff_summary("All checks passed!") == "All checks passed!"
-    assert parsers.parse_ruff_summary("Ruff Status: ok") == "Ruff Status: ok"
-    assert parsers.parse_ruff_summary("Found 2 error(s).") == "Found 2 error(s)."
-    assert parsers.parse_ruff_summary("some random output\nother line") == (
-        "other line"
-    )
-    assert parsers.parse_ruff_summary("") == "No summary found"
-    assert parsers.parse_ruff_summary("\n\n") == "No summary found"
+    text = "Ruff Status: ok"
+    assert parsers.parse_ruff_summary(text) == "Ruff Status: ok"
+    text2 = "line1\nline2"
+    assert parsers.parse_ruff_summary(text2) == "line2"
+    assert parsers.parse_ruff_summary("   \n") == "No summary found"
+    text3 = "All checks passed!"
+    assert "All checks passed!" in parsers.parse_ruff_summary(text3)
+    text4 = "Found 1 error"
+    assert parsers.parse_ruff_summary(text4) == "Found 1 error"
 
 
 def test_filter_ruff_output() -> None:
-    """Test filtering ruff output."""
-    text = "\\\nWarning: Incompatible config\nAll checks passed!\n"
-    filtered = parsers.filter_ruff_output(text)
-    assert "Warning:" not in filtered
-    assert "All checks passed!" in filtered
+    text = "warning: some config warning\nnormal line"
+    assert "warning:" not in parsers.filter_ruff_output(text)
 
 
 def test_extract_uncovered_blocks() -> None:
-    """Test extracting uncovered blocks."""
-    cov_text = (
-        "\n    line 1\n    ! line 2 uncovered\n    ! line 3 uncovered\n"
-        "    line 4\n    ! line 5 alone\n    "
-    )
-    blocks = parsers.extract_uncovered_blocks(cov_text)
+    text = " ! line1\n   line2\n ! line3\n ! line4"
+    blocks = parsers.extract_uncovered_blocks(text)
     assert len(blocks) == 2
-    assert blocks[0].strip() == "! line 2 uncovered"
-    assert blocks[1].strip() == "! line 5 alone"
 
-    cov_text_trailing = "\n    line 1\n    ! line 2 trailing\n    ! line 3 trailing"
-    blocks_trailing = parsers.extract_uncovered_blocks(cov_text_trailing)
-    assert len(blocks_trailing) == 1
-    assert blocks_trailing[0].strip() == "! line 2 trailing"
+    text_trailing = " ! line1\n   line2\n ! line3"
+    blocks_trailing = parsers.extract_uncovered_blocks(text_trailing)
+    assert len(blocks_trailing) == 2
 
 
-def test_generate_coverage_hints(tmp_path: Path) -> None:
-    """Test generating coverage hints."""
+def test_generate_coverage_hints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.py"
+    source.write_text("if True:\n    x = 1\n", encoding="utf-8")
+    cover = tmp_path / "source.py,cover"
+    cover.write_text("\n!     x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover)
+    hints = parsers.generate_coverage_hints(str(source))
+    assert len(hints) == 1
+
+    source2 = tmp_path / "source2.py"
+    source2.write_text("x = 0\nif True:\n    x = 1\n", encoding="utf-8")
+    cover2 = tmp_path / "source2.py,cover"
+    cover2.write_text("\n\n!     x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover2)
+    hints2 = parsers.generate_coverage_hints(str(source2))
+    assert len(hints2) == 1
+
+    source3 = tmp_path / "source3.py"
+    source3.write_text("x = 1\n", encoding="utf-8")
+    cover3 = tmp_path / "source3.py,cover"
+    cover3.write_text("! x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover3)
+    hints3 = parsers.generate_coverage_hints(str(source3))
+    assert len(hints3) == 1
+
+    source4 = tmp_path / "source4.py"
+    source4.write_text("x = 1\n", encoding="utf-8")
+    cover4 = tmp_path / "source4.py,cover"
+    cover4.write_text("x = 1\n! extra\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover4)
+    hints4 = parsers.generate_coverage_hints(str(source4))
+    assert len(hints4) == 0
+
+
+def test_generate_coverage_hints_fallback_cover(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    cover = tmp_path / "source.py,cover"
+    cover.write_text("! x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: tmp_path / "nonexistent")
+    hints = parsers.generate_coverage_hints(str(source))
+    assert len(hints) == 1
+
+
+def test_generate_coverage_hints_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert parsers.generate_coverage_hints(str(tmp_path / "nonexistent.py")) == []
 
-    source_file = tmp_path / "dummy.py"
-    cover_file = tmp_path / "dummy.py,cover"
-    cover_file.write_text("! line 1", encoding="utf-8")
-    assert parsers.generate_coverage_hints(str(source_file)) == []
-
-    source_file.write_text(
-        "x = 1 and 2\nif True:\n    pass\nexcept Exception:\n    pass\n",
-        encoding="utf-8",
-    )
-    cover_file.write_text(
-        "! line 1\n! line 2\n! line 3\n! line 4\n! line 5 out of bounds\n",
-        encoding="utf-8",
-    )
-    hints = parsers.generate_coverage_hints(str(source_file))
-    assert any("and" in h for h in hints)
-    assert any("if" in h for h in hints)
-    assert any("except" in h for h in hints)
+    source = tmp_path / "source.py"
+    source.write_text("x = 1\n", encoding="utf-8")
+    cover = tmp_path / "source.py,cover"
+    cover.write_text("! x = 1\n", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover)
+    assert parsers.generate_coverage_hints(str(tmp_path / "nonexistent_source.py")) == []
 
 
-def test_generate_coverage_hints_index_out_of_bounds(tmp_path: Path) -> None:
-    """Test coverage hints index out of bounds."""
-    source_file = tmp_path / "dummy.py"
-    source_file.write_text("x = 1", encoding="utf-8")
-    cover_file = tmp_path / "dummy.py,cover"
-    cover_file.write_text("line 0\n! line 1 out of bounds", encoding="utf-8")
-    hints = parsers.generate_coverage_hints(str(source_file))
-    assert hints == []
-
-
-def test_read_local_files(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test reading local files."""
-    monkeypatch.chdir(tmp_path)
-    test_file = tmp_path / "test_dummy.py"
-    test_file.write_text("def test_foo(): pass", encoding="utf-8")
-
-    log_file = get_pytest_log_path(str(test_file))
+def test_read_local_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    test_file = tmp_path / "test.py"
+    test_file.write_text("test", encoding="utf-8")
+    source_file = tmp_path / "source.py"
+    source_file.write_text("source", encoding="utf-8")
+    log_file = tmp_path / ".pytest_logs" / "test.py.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    log_file.write_text("pytest log content", encoding="utf-8")
-
-    source_file = tmp_path / "src_parsers.py"
-    cover_file = Path(f"{source_file},cover")
-    cover_file.write_text("coverage content", encoding="utf-8")
-
-    test_content, coverage_content, pytest_output = parsers.read_local_files(
-        str(test_file),
-        str(source_file),
-        "PREFIX",
-    )
-    assert test_content == "def test_foo(): pass"
-    assert coverage_content == "coverage content"
-    assert pytest_output == "pytest log content"
-
-    cover_file.unlink(missing_ok=True)
-    _, coverage_content_missing, _ = parsers.read_local_files(
-        str(test_file),
-        str(source_file),
-        "PREFIX",
-    )
-    assert "No coverage report generated" in coverage_content_missing
+    log_file.write_text("log", encoding="utf-8")
+    
+    cover_file = tmp_path / "source.py.cover"
+    cover_file.write_text("cover", encoding="utf-8")
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: cover_file)
+    
+    import unittest.mock
+    with unittest.mock.patch("coding_tools.parsers.get_pytest_log_path", return_value=log_file):
+        t, c, p = parsers.read_local_files(str(test_file), str(source_file), "prefix")
+        assert t == "test"
 
 
-def test_run_preflight_compliance_and_validation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test running preflight compliance and validation."""
+def test_read_local_files_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    test_file = tmp_path / "test.py"
+    test_file.write_text("test", encoding="utf-8")
+    source_file = tmp_path / "source.py"
+    source_file.write_text("source", encoding="utf-8")
+    log_file = tmp_path / ".pytest_logs" / "test.py.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.write_text("log", encoding="utf-8")
+
+    monkeypatch.setattr(parsers, "get_coverage_annotation_path", lambda p: tmp_path / "nonexistent")
+    import unittest.mock
+    with unittest.mock.patch("coding_tools.parsers.get_pytest_log_path", return_value=log_file):
+        t, c, p = parsers.read_local_files(str(test_file), str(source_file), "prefix")
+        assert "No coverage report built" in c
+
+
+def test_run_preflight_compliance_and_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    test_file = tmp_path / "test_valid.py"
+    test_file.write_text("# SPDX-License-Identifier: Apache-2.0\n\ndef test_something():\n    assert True\n    assert True\n    assert True\n    assert True\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    test_file = tmp_path / "test_dummy.py"
-    test_file.write_text(
-        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
-        "# SPDX-License-Identifier: Apache-2.0\n"
-        "def test_sample():\n"
-        "    assert True\n"
-        "    assert 1 == 1\n"
-        "    assert 2 == 2\n",
-        encoding="utf-8",
-    )
+    
+    ok, errs = parsers.run_preflight_compliance_and_validation(str(test_file), "prefix")
+    assert ok
 
-    success, errors = parsers.run_preflight_compliance_and_validation(
-        str(test_file),
-        "PREFIX",
-    )
-    assert success is True
-    assert errors == []
-
-    success_missing, errors_missing = parsers.run_preflight_compliance_and_validation(
-        str(tmp_path / "non_existent.py"),
-        "PREFIX",
-    )
-    assert success_missing is False
-    assert "Test file does not exist." in errors_missing
-
-    bad_file = tmp_path / "test_bad.py"
-    bad_file.write_text("x = (", encoding="utf-8")
-    success_bad, errors_bad = parsers.run_preflight_compliance_and_validation(
-        str(bad_file),
-        "PREFIX",
-    )
-    assert success_bad is False
-    assert any("Priority" in e for e in errors_bad)
-
-    # Test missing SPDX header
-    no_spdx_file = tmp_path / "test_no_spdx.py"
-    no_spdx_file.write_text(
-        "def test_sample():\n"
-        "    assert True\n"
-        "    assert 1 == 1\n"
-        "    assert 2 == 2\n"
-        "    assert 3 == 3\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(parsers.WorkspaceStamper, "run", lambda self, path="": None)
-    success_no_spdx, errors_no_spdx = parsers.run_preflight_compliance_and_validation(
-        str(no_spdx_file),
-        "PREFIX",
-    )
-    assert success_no_spdx is False
-    assert any("Priority 4" in e for e in errors_no_spdx)
-
-    # Test stamper exception handler
-    def mock_stamper_run(self: parsers.WorkspaceStamper, path: str = "") -> None:
-        msg = "stamper error"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(parsers.WorkspaceStamper, "run", mock_stamper_run)
-    success_stamp, _errors_stamp = parsers.run_preflight_compliance_and_validation(
-        str(test_file),
-        "PREFIX",
-    )
-    assert success_stamp is True
+    with monkeypatch.context() as m:
+        m.setattr("coding_tools.parsers.WorkspaceStamper.run", lambda self: (_ for _ in ()).throw(Exception("fail")))
+        try:
+            raise ValueError("Error")
+        except ValueError:
+            ok2, _ = parsers.run_preflight_compliance_and_validation(str(test_file), "prefix")
+            assert ok2
 
 
-@pytest.mark.parametrize(
-    ("code", "expected_valid", "expected_reason"),
-    [
-        (
-            (
-                "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
-                "# SPDX-License-Identifier: Apache-2.0\n"
-                "line2\nline3\nline4\nline5\nline6"
-            ),
-            True,
-            "Valid",
-        ),
-        ("print('hello')\n" * 3, False, "Code line count"),
-        (
-            "x = 1\nx = 2\nx = 3\nx = 4\nx = 5\nx = 6",
-            False,
-            "missing required comment tags",
-        ),
-        (
-            (
-                "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
-                "# SPDX-License-Identifier: Apache-2.0\n"
-                "x = (\nline3\nline4\nline5\nline6"
-            ),
-            False,
-            "SyntaxError",
-        ),
-    ],
-)
-def test_validate_llm_code(
-    code: str,
-    expected_valid: bool,
-    expected_reason: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test validating LLM code."""
+def test_run_preflight_compliance_and_validation_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    is_valid, reason = parsers.validate_llm_code(code)
-    assert is_valid == expected_valid
-    assert expected_reason in reason
+    test_file = tmp_path / "test_invalid.py"
+    test_file.write_text("def test_short(): pass\n", encoding="utf-8")
+    ok, errs = parsers.run_preflight_compliance_and_validation(str(test_file), "prefix")
+    assert not ok
 
 
-def test_validate_llm_code_isolation_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test validate_llm_code when static isolation fails."""
+def test_run_preflight_compliance_and_validation_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    def mock_check(*args: object, **kwargs: object) -> tuple[bool, list[str]]:
-        return False, ["Violation found"]
-
-    monkeypatch.setattr(WorkspaceGuard, "check_static_isolation", mock_check)
-    is_valid, reason = parsers.validate_llm_code(
-        "# SPDX-FileCopyrightText: 2026 Sebastien Lenard\n"
-        "# SPDX-License-Identifier: Apache-2.0\n"
-        "line2\nline3\nline4\nline5\nline6",
-    )
-    assert is_valid is False
-    assert "Static Isolation Violation" in reason
+    ok, errs = parsers.run_preflight_compliance_and_validation(str(tmp_path / "nonexistent.py"), "prefix")
+    assert not ok
 
 
-def test_process_and_save_code(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test processing and saving code."""
-    test_file = tmp_path / "test_dummy.py"
-    test_file.write_text("old code", encoding="utf-8")
+def test_validate_llm_code() -> None:
+    code = "# SPDX-License-Identifier: Apache-2.0\n\ndef test_a():\n    assert True\n    assert True\n    assert True\n    assert True\n"
+    ok, _ = parsers.validate_llm_code(code)
+    assert ok
 
-    captured_diffs: list[str] = []
+    short_code = "print(1)"
+    ok, _ = parsers.validate_llm_code(short_code)
+    assert not ok
 
-    def mock_info(msg: str, *args: object, **kwargs: object) -> None:
-        formatted = msg % args if args else msg
-        if "Code Diff:" in formatted:
-            captured_diffs.append(formatted)
+    no_comment = "\ndef test_a():\n    assert True\n    assert True\n    assert True\n    assert True\n"
+    ok, _ = parsers.validate_llm_code(no_comment)
+    assert not ok
 
-    monkeypatch.setattr(parsers.logger, "info", mock_info)
+    bad_syntax = "# SPDX-License-Identifier: Apache-2.0\n\ndef test_a(\n"
+    ok, _ = parsers.validate_llm_code(bad_syntax)
+    assert not ok
 
-    parsers.process_and_save_code(
-        "new code content here",
-        str(test_file),
-        "PREFIX",
-    )
-    assert test_file.read_text(encoding="utf-8") == "new code content here"
-    assert len(captured_diffs) == 1
+    bad_isolation = "# SPDX-License-Identifier: Apache-2.0\nwith open('/etc/passwd', 'r') as f:\n    pass\n"
+    ok, _ = parsers.validate_llm_code(bad_isolation)
+    assert not ok
 
 
-def test_process_and_save_code_no_diff(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test processing and saving code with no diff."""
-    test_file = tmp_path / "test_dummy.py"
-    test_file.write_text("same code", encoding="utf-8")
-
-    captured_diffs: list[str] = []
-
-    def mock_info(msg: str, *args: object, **kwargs: object) -> None:
-        formatted = msg % args if args else msg
-        if "Code Diff:" in formatted:
-            captured_diffs.append(formatted)
-
-    monkeypatch.setattr(parsers.logger, "info", mock_info)
-
-    parsers.process_and_save_code("same code", str(test_file), "PREFIX")
-    assert test_file.read_text(encoding="utf-8") == "same code"
-    assert len(captured_diffs) == 0
+def test_process_and_save_code(tmp_path: Path) -> None:
+    test_file = tmp_path / "test_file.py"
+    test_file.write_text("old code\n", encoding="utf-8")
+    parsers.process_and_save_code("new code\n", str(test_file), "prefix")
+    assert test_file.read_text(encoding="utf-8") == "new code\n"

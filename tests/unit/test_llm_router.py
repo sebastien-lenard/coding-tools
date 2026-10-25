@@ -65,8 +65,8 @@ def test_get_llm_client_no_adapter_path() -> None:
         }
 
         msg = (
-            "Unsupported LLM model specified or model not found in "
-            "provider configuration: model-a"
+            "Unsupported LLM model or model not found in "
+            "provider config: model-a"
         )
         with pytest.raises(ValueError, match=msg):
             get_llm_client("model-a")
@@ -114,8 +114,8 @@ def test_get_llm_client_unsupported(unsupported_model: str) -> None:
             },
         }
         msg = (
-            "Unsupported LLM model specified or model not found in "
-            f"provider configuration: {unsupported_model}"
+            "Unsupported LLM model or model not found in "
+            f"provider config: {unsupported_model}"
         )
         with pytest.raises(ValueError, match=msg):
             get_llm_client(unsupported_model)

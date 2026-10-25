@@ -10,12 +10,13 @@ File I/O on config/parameters/llm_config.jsonc.
 from __future__ import annotations
 
 import json
-import logging
 import re
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from coding_tools.logger import get_project_logger
+
+logger = get_project_logger(__name__)
 
 
 def _strip_jsonc_comments(content: str) -> str:
@@ -37,19 +38,33 @@ def load_llm_config() -> dict[str, Any]:
     if not config_path.exists():
         example_path = Path("config/parameters/llm_config.jsonc.example")
         if example_path.exists():
-            logger.info("Local llm_config.jsonc not found. Copying from example...")
+            logger.progress(config_path, "Missing conf, copying from example")
             config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(
-                example_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
+            try:
+                config_path.write_text(
+                    example_path.read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
+            except OSError:
+                logger.exception(config_path, "Failed to copy conf")
+                raise
         else:
-            msg = "Missing LLM configuration file and example."
+            msg = "Missing LLM conf file and example."
+            logger.error(config_path, msg)
             raise FileNotFoundError(msg)
 
-    raw_content = config_path.read_text(encoding="utf-8")
+    try:
+        raw_content = config_path.read_text(encoding="utf-8")
+    except OSError:
+        logger.exception(config_path, "Failed to read conf")
+        raise
+
     clean_json = _strip_jsonc_comments(raw_content)
-    return json.loads(clean_json)
+    try:
+        return json.loads(clean_json)
+    except json.JSONDecodeError:
+        logger.exception(config_path, "Failed to parse JSONC")
+        raise
 
 
 def get_default_model() -> str:

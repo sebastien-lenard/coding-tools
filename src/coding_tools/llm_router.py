@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-"""Route dynamic instantiation of LLM client adapter based on config."""
+"""Route dynamic creation of LLM client adapter based on config."""
 
 from __future__ import annotations
 
@@ -11,9 +11,12 @@ import importlib
 from typing import TYPE_CHECKING
 
 from coding_tools.config import get_default_model, get_provider_mapping
+from coding_tools.logger import get_project_logger
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
+
+logger = get_project_logger(__name__)
 
 
 def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
@@ -37,8 +40,6 @@ def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
             adapter_class = getattr(module, class_str)
             return adapter_class(model_name=target_model)
 
-    msg = (
-        "Unsupported LLM model specified or model not found in "
-        f"provider configuration: {target_model}"
-    )
+    msg = f"Unsupported LLM model or model not found in provider config: {target_model}"
+    logger.error(None, msg)
     raise ValueError(msg)

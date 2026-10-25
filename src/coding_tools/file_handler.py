@@ -10,11 +10,12 @@ Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from coding_tools.logger import get_project_logger
+
+logger = get_project_logger(__name__)
 
 COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
 PYTEST_OUTPUT_DIR = ".pytest_output"
@@ -37,7 +38,7 @@ WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
 class LLMOutputPathParameters:
     """Hold naming and timestamp fields for LLM output paths.
 
-    Build unique nested paths under .llm_output dir.
+    Build nested paths under .llm_output dir.
     """
 
     llm_name: str
@@ -83,7 +84,11 @@ def ensure_directory(dir_path: str | Path) -> Path:
     Write to disk with parent creation enabled.
     """
     path = Path(dir_path)
-    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.exception(path, "Failed to create target dir")
+        raise
     return path
 
 
@@ -142,7 +147,7 @@ def get_coverage_annotation_path(source_file_path: str | Path) -> Path:
 
 
 def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
-    """Get unique nested path for LLM execution outputs.
+    """Get nested path for LLM outputs.
 
     Write to disk under .llm_output.
     """

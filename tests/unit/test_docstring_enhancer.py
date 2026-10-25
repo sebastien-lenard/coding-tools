@@ -53,7 +53,7 @@ def test_validate_docstring_mutations_syntax_error() -> None:
     new = "def foo(: pass"
     valid, reason = validate_docstring_mutations(orig, new, "test")
     assert not valid
-    assert "SyntaxError" in reason
+    assert "Bad code syntax" in reason
 
 
 def test_validate_docstring_mutations_too_long() -> None:
@@ -68,7 +68,7 @@ def test_validate_docstring_mutations_too_long() -> None:
     )
     valid, reason = validate_docstring_mutations(orig, new, "test")
     assert not valid
-    assert "Docstring exceeds max" in reason
+    assert "Docstring lines:" in reason
 
 
 def test_validate_docstring_mutations_code_modified() -> None:
@@ -77,7 +77,7 @@ def test_validate_docstring_mutations_code_modified() -> None:
     new = "def foo(): return 1"
     valid, reason = validate_docstring_mutations(orig, new, "test")
     assert not valid
-    assert "Non-docstring code structures were modified" in reason
+    assert "Spotted code edits" in reason
 
 
 def test_validate_docstring_mutations_success() -> None:
@@ -86,7 +86,7 @@ def test_validate_docstring_mutations_success() -> None:
     new = 'def foo():\n    """Docstring."""\n    pass'
     valid, reason = validate_docstring_mutations(orig, new, "test")
     assert valid
-    assert reason == "Valid"
+    assert reason == "OK"
 
 
 def test_run_enhancement_pass_success_first_try() -> None:
@@ -241,8 +241,8 @@ def test_process_file_workflow_pass1_fail(
     mock_get_client.return_value = client
     semaphore = asyncio.Semaphore(1)
     res = asyncio.run(process_file_workflow(p, semaphore, "26-01-01"))
-    assert res["status"] == "FAILED"
-    assert res["stage"] == "Pass 1: Enhancement"
+    assert res["status"] == "Failed"
+    assert res["stage"] == "Step 1: Enhancement"
 
 
 @patch("coding_tools.docstring_enhancer.get_llm_client")
@@ -307,7 +307,7 @@ def test_print_summary_table(tmp_path: Path) -> None:
     f2 = Path("absolute_outside_path.py")
     results = [
         {"file": str(f1), "status": "SUCCESS", "stage": "Completed"},
-        {"file": str(f2), "status": "FAILED", "stage": "Pass 1: Enhancement"},
+        {"file": str(f2), "status": "FAILED", "stage" : "Pass 1: Enhancement"},
     ]
     print_summary_table(results, tmp_path)
 

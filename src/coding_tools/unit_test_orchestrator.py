@@ -2,15 +2,14 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Orchestrate test, coverage, basedpyright, and ruff check pipeline.
+"""Lead test, coverage, basedpyright, and ruff checks.
 
 Runs pytest, basedpyright, ruff sequentially. Calls LLM API for fixes. Cleans
-cache files on completion.
+cache files on wrapup.
 """
 
 from __future__ import annotations
 
-import logging
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,7 @@ from coding_tools.llm_remediation import (
     WorkflowContext,
     WorkflowStatus,
 )
+from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     filter_ruff_output,
     parse_basedpyright_summary,
@@ -29,12 +29,7 @@ from coding_tools.parsers import (
     run_ruff_command,
 )
 
-# Configure logging format and level
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger(__name__)
+logger = get_project_logger(__name__)
 
 
 def _evaluate_stage_status(
@@ -59,9 +54,9 @@ def _run_stage_chain(
     uploaded_files: list[Any],
     ctx: WorkflowContext,
 ) -> tuple[bool, str, str]:
-    """Run pytest, basedpyright, and ruff workflow stages sequentially.
+    """Run pytest, basedpyright, and ruff stages.
 
-    Use LLMRemediator for automated fixes per stage. Return success tuple.
+    Use LLMRemediator for fixes per stage. Return success tuple.
     """
     # --- STAGE 1: Pytest / Coverage ---
     res = _evaluate_stage_status(
@@ -124,9 +119,9 @@ def execute_workflow(
     *,
     allow_llm: bool = True,
 ) -> tuple[bool, str, str]:
-    """Run complete test, type check, and lint workflow.
+    """Run test, type check, and lint workflow.
 
-    Setup LLM cache, run stage chain, clean uploaded files if client supports caching.
+    Setup LLM cache, run stage chain, clean uploaded files if caching.
     Catch LLMError, OSError, ValueError, and SubprocessError.
     """
     prefix = Path(test_file_path).name
@@ -153,15 +148,15 @@ def execute_workflow(
             remediator.client.cleanup_files(uploaded_files, prefix)
     except LLMError:
         logger.exception(
-            "[%s] LLM API / Server Error encountered",
             prefix,
+            "Failed LLM API or Server Error",
         )
         return False, "Pytest/Coverage", "API_ERROR"
     except (OSError, ValueError):
-        logger.exception("[%s] File I/O or Value Error", prefix)
+        logger.exception(prefix, "File I/O or Value Error")
         raise
     except subprocess.SubprocessError:
-        logger.exception("[%s] Subprocess Execution Error", prefix)
+        logger.exception(prefix, "Subprocess Error")
         raise
     else:
         return True, "ALL_STAGES", "SUCCESS"

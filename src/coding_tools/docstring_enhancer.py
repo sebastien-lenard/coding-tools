@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Automate docstring enhancement and verification via LLM API.
+"""Pen and check docstrings using a LLM.
 
-AST validation of mutations. Concurrency with semaphore. Writes files, stamps workspace.
+AST check of unexpected edits of code. Parallel runs with cap.
+Writes files, stamps workspace.
 """
 
 from __future__ import annotations
@@ -12,30 +13,26 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
-import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMResponse, StructuredGenerationOptions
 from coding_tools.llm_router import get_llm_client
+from coding_tools.logger import get_project_logger
 from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger("coding_tools.docstring_enhancer")
+logger = get_project_logger("coding_tools.docstring_enhancer")
 
 MAX_DOCSTRING_LINES = 10
 
 
 def _strip_docstrings(tree: ast.AST) -> None:
-    """Remove docstrings from AST nodes in place.
+    """Clear docstrings from AST nodes in place.
 
     Walk tree and pop first body expr if constant string.
     """
@@ -57,17 +54,18 @@ def validate_docstring_mutations(
     new_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Scan AST mutations to ensure only docstrings changed.
+    """Scan AST changes to ensure only docstrings changed.
 
     False if syntax error, line count exceed max, or non-docstring code changed.
     """
-    logger.info("[%s] Validating AST transformations...", prefix)
+    logger.progress(prefix, "Check AST edits")
     try:
         orig_tree = ast.parse(original_code)
         new_tree = ast.parse(new_code)
     except SyntaxError as e:
-        logger.exception("[%s] SyntaxError in modified code", prefix)
-        return False, f"SyntaxError in modified code: {e}"
+        msg = "Bad code syntax (failed scan)"
+        logger.exception(prefix, msg)
+        return False, f"{msg}: {e}"
 
     for node in ast.walk(new_tree):
         if isinstance(
@@ -82,19 +80,9 @@ def validate_docstring_mutations(
             doc_lines = node.body[0].value.value.splitlines()
             total_lines = len(doc_lines)
             if total_lines > MAX_DOCSTRING_LINES:
-                logger.warning(
-                    "[%s] Docstring line count %d exceeds maximum %d lines.",
-                    prefix,
-                    total_lines,
-                    MAX_DOCSTRING_LINES,
-                )
-                return (
-                    False,
-                    (
-                        f"Docstring exceeds max {MAX_DOCSTRING_LINES}"
-                        f" lines (found {total_lines})."
-                    ),
-                )
+                msg = f"Docstring lines: {total_lines} (over max {MAX_DOCSTRING_LINES})"
+                logger.warning(prefix, msg)
+                return (False, msg)
 
     _strip_docstrings(orig_tree)
     _strip_docstrings(new_tree)
@@ -103,17 +91,12 @@ def validate_docstring_mutations(
     new_normalized = ast.unparse(new_tree)
 
     if orig_normalized != new_normalized:
-        logger.warning(
-            "[%s] Non-docstring structures mutation detected.",
-            prefix,
-        )
-        return (
-            False,
-            "Non-docstring code structures were modified.",
-        )
+        msg = "Spotted code edits"
+        logger.warning(prefix, msg)
+        return (False, msg)
 
-    logger.info("[%s] AST validation passed.", prefix)
-    return True, "Valid"
+    logger.progress(prefix, "Done AST check")
+    return True, "OK"
 
 
 async def _run_enhancement_pass(
@@ -123,16 +106,16 @@ async def _run_enhancement_pass(
     original_code: str,
     prefix: str,
 ) -> tuple[bool, str]:
-    """Call LLM API and check response against Pydantic schema.
+    """Call LLM and check response against Pydantic schema.
 
-    Retry up to two times on failure. Return original code on failure.
+    Retry up to twice on failure. Return original code on failure.
     """
-    for attempt in range(2):
+    max_step = 2
+    for attempt in range(max_step):
         try:
-            logger.info(
-                "[%s] Executing pass (Attempt %d/2)...",
+            logger.progress(
                 prefix,
-                attempt + 1,
+                f"Start step {attempt + 1}/{max_step} of run_enhancement_pass()",
             )
             response = client.generate_structured_response(
                 contents,
@@ -147,20 +130,22 @@ async def _run_enhancement_pass(
                 prefix,
             )
             if valid:
-                logger.info("[%s] Pass validated successfully.", prefix)
+                logger.progress(
+                    prefix,
+                    f"End step {attempt + 1}/{max_step} of run_enhancement_pass()",
+                )
                 return True, candidate_code
             logger.warning(
-                "[%s] Validation failed: %s. Retrying...",
                 prefix,
-                reason,
+                f"Failed check: {reason}",
             )
             contents.append(
-                (f"Previous attempt validation failed: {reason}. Fix and try again."),
+                (f"Previous try failed: {reason}. Fix"),
             )
         except Exception:
             logger.exception(
-                "[%s] Pass execution encountered exception",
                 prefix,
+                "Failed run of run_enhancement_pass()",
             )
     return False, original_code
 
@@ -170,17 +155,13 @@ async def process_file_workflow(
     semaphore: asyncio.Semaphore,
     start_date: str,
 ) -> dict[str, Any]:
-    """Run two-pass docstring enhancement workflow on file via LLM API.
+    """Run two-step docstring penning/editing on .py script using LLM.
 
-    Writes enhanced code, stamps workspace, and returns execution dict status.
+    Pens neater docstrings, stamps workspace, and returns execution dict status.
     """
     async with semaphore:
         prefix = file_path.stem
-        logger.info(
-            "[%s] Starting docstring workflow for %s",
-            prefix,
-            file_path,
-        )
+        logger.progress(prefix, f"Start process_file_workflow() for {file_path}")
 
         client = get_llm_client()
         original_code = file_path.read_text(encoding="utf-8")
@@ -195,7 +176,7 @@ async def process_file_workflow(
         options_pass1 = StructuredGenerationOptions(
             response_schema=LLMResponse,
             prefix=prefix,
-            spinner_msg="Enhancing docstrings...",
+            spinner_msg="Pen docstrings",
             system_instruction=skill_content,
             tool_name="docstring-enhancer",
             process_step="pass-1",
@@ -211,11 +192,11 @@ async def process_file_workflow(
             prefix,
         )
         if not success:
-            logger.error("[%s] Pass 1 failed after retry limit.", prefix)
+            logger.error(prefix, "Failed step 1 failed after retry limit")
             return {
                 "file": str(file_path),
-                "status": "FAILED",
-                "stage": "Pass 1: Enhancement",
+                "status": "Failed",
+                "stage": "Step 1: Enhancement",
             }
         current_code = candidate
 
@@ -245,12 +226,12 @@ async def process_file_workflow(
             current_code = candidate_v2
         else:
             logger.warning(
-                "[%s] Pass 2 verification failed, falling back.",
                 prefix,
+                "Pass 2 verification failed, falling back.",
             )
 
         file_path.write_text(current_code, encoding="utf-8")
-        logger.info("[%s] Saved enhanced code to %s", prefix, file_path)
+        logger.progress(prefix, f"Saved enhanced code to {file_path}", full_path=True)
 
         try:
             workspace = TargetWorkspace(
@@ -264,15 +245,11 @@ async def process_file_workflow(
             stamper.run()
         except Exception:
             logger.exception(
-                "[%s] Workspace stamper issue during save",
                 prefix,
+                "Workspace stamper issue during save",
             )
 
-        logger.info(
-            "[%s] Ended docstring workflow for %s",
-            prefix,
-            file_path,
-        )
+        logger.progress(prefix, f"Done docstring for {file_path}")
         return {
             "file": str(file_path),
             "status": "SUCCESS",
@@ -281,55 +258,46 @@ async def process_file_workflow(
 
 
 def print_summary_table(results: list[dict[str, Any]], project_root: Path) -> None:
-    """Log summary table of processed files and statuses.
+    """Log summary table of edited files and statuses.
 
-    Compute relative paths from project root.
+    Yield relative paths from project root.
     """
-    logger.info("==================================================")
-    logger.info("DOCSTRING ENHANCER EXECUTION SUMMARY TABLE")
-    logger.info("==================================================")
-    logger.info("%-45s | %-10s | %-15s", "File", "Status", "Stage")
-    logger.info("-" * 76)
+    headers = ["File", "Status", "Stage"]
+    rows = []
     for res in results:
         file_path_obj = Path(res["file"])
         try:
             display_path = file_path_obj.relative_to(project_root).as_posix()
         except ValueError:
             display_path = str(file_path_obj)
-        logger.info(
-            "%-45s | %-10s | %-15s",
-            display_path,
-            res["status"],
-            res["stage"],
-        )
-    logger.info("==================================================")
+        rows.append([display_path, res["status"], res["stage"]])
+
+    logger.summary_table("Docstring Summary", headers, rows)
 
 
 async def async_main() -> None:
-    """Run async main execution flow for docstring enhancer.
+    """Run async main flow for docstring writer.
 
-    Parse arguments, get target files, run concurrent workflows via semaphore limit 4.
+    Parse arguments, get target files, cap to 4 parallel runs.
     Exit if target missing or empty.
     """
-    start_date = datetime.now(UTC).strftime("%y-%m-%d")
-    logger.info(
-        "[INFO] Initializing docstring_enhancer workflow [start_date: %s]...",
-        start_date,
-    )
+    start_date = datetime.now().astimezone().strftime("%y-%m-%d")
+    logger.progress(None, "Start docstring write")
+
     parser = argparse.ArgumentParser(
-        description="Automated Python docstring enhancer and corrector via Gemini LLM.",
+        description="Pen docstrings using LLMs",
     )
     parser.add_argument(
         "target",
         type=str,
-        help="Target Python source file or directory (mandatory).",
+        help="Target Python file or directory (needed).",
     )
     args = parser.parse_args()
 
     project_root = Path.cwd().resolve()
     target_path = Path(args.target).resolve()
     if not target_path.exists():
-        logger.error("[ERROR] Target path does not exist: %s", target_path)
+        logger.error(None, f"Target path doesn't exist: {target_path}")
         raise SystemExit(1)
 
     targets: list[Path] = []
@@ -339,22 +307,19 @@ async def async_main() -> None:
         targets.extend(sorted(target_path.rglob("*.py")))
 
     if not targets:
-        logger.error(
-            "[ERROR] No Python source files found at target: %s",
-            target_path,
-        )
+        logger.error(None, f"No .py files at: {target_path}")
         raise SystemExit(1)
 
-    logger.info(
-        "[INFO] Collected %d target source files for enhancement.",
-        len(targets),
+    logger.progress(
+        None,
+        f"Got {len(targets)} .py files",
     )
     semaphore = asyncio.Semaphore(4)
     tasks = [process_file_workflow(f, semaphore, start_date) for f in targets]
     results = await asyncio.gather(*tasks)
 
     print_summary_table(list(results), project_root)
-    logger.info("[INFO] docstring_enhancer workflow finished.")
+    logger.progress(None, "Done docstring pen")
 
 
 def main() -> None:

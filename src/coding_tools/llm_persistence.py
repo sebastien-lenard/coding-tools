@@ -2,12 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Persist LLM execution output dumps to disk."""
+"""Save LLM outputs."""
 
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -17,18 +16,19 @@ from coding_tools.file_handler import (
     get_llm_output_path,
     get_project_root,
 )
+from coding_tools.logger import get_project_logger
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from coding_tools.llm_protocol import StructuredGenerationOptions
 
-logger = logging.getLogger(__name__)
+logger = get_project_logger(__name__)
 
 
 @dataclass
 class PersistOutputParameters:
-    """Hold parameters to persist LLM output dumps.
+    """Hold parameters to save LLM outputs.
 
     Dataclass carrying options, status, payload variants, and cache flags.
     """
@@ -45,7 +45,7 @@ class PersistOutputParameters:
 
 
 def persist_llm_output(params: PersistOutputParameters) -> None:
-    """Write structured LLM output dump to disk as JSON.
+    """Write structured LLM outputs as JSON.
 
     Saves to .unit-test-tmp/ path based on timestamp and parameters. Writes file with
     UTF-8 encoding. Logs errors if write fails.
@@ -126,10 +126,12 @@ def persist_llm_output(params: PersistOutputParameters) -> None:
         )
         out_path = get_llm_output_path(path_params)
         out_path.write_text(json.dumps(dump_data, indent=2), encoding="utf-8")
-        logger.info(
-            "[%s] Saved structured LLM output dump to %s",
-            params.options.prefix,
-            out_path,
+        logger.progress(
+            params.options.target_file,
+            f"Done. LLM output file: {out_path}",
         )
     except Exception:
-        logger.exception("[%s] Failed to write LLM output dump", params.options.prefix)
+        logger.exception(
+            params.options.target_file,
+            "End. Failed to write LLM output",
+        )

@@ -84,7 +84,7 @@ class CodeStructureAnalyzer(BaseModel):
         return self.project_path / "src"
 
     def execute(self) -> int:
-        """Run analysis workflow and write markdown file.
+        """Run project analysis and write markdown file.
 
         Returns 0 on success, 1 on error.
         """
@@ -97,7 +97,7 @@ class CodeStructureAnalyzer(BaseModel):
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
                 self.src_path,
-                f"Required 'src' subfolder missing at target: {self.src_path}",
+                f"No 'src' folder at: {self.src_path}",
             )
             return 1
 
@@ -107,7 +107,7 @@ class CodeStructureAnalyzer(BaseModel):
             return 1
 
         self._resolve_call_graphs(modules)
-        logger.progress(None, "Resolved call graphs across analyzed modules")
+        logger.progress(None, "Done call graphs across modules")
 
         markdown_content = self._generate_markdown(modules)
 
@@ -122,7 +122,7 @@ class CodeStructureAnalyzer(BaseModel):
             )
             return 1
 
-        logger.progress(output_path, "Generated markdown output", full_path=True)
+        logger.progress(output_path, "Done markdown output", full_path=True)
         logger.summary_line(
             "Analyzer Summary:",
             ["Modules Analyzed", "Target Output"],
@@ -401,7 +401,7 @@ class CodeStructureAnalyzer(BaseModel):
         lines: list[str],
         indent: str = "",
     ) -> None:
-        """Append rendered docstring block to lines."""
+        """Add docstrings."""
         if docstring:
             for doc_line in docstring.strip().splitlines():
                 if doc_line.strip():
@@ -415,7 +415,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append module header and docstring."""
+        """Add module header and docstring."""
         lines.append(f"### Module: `{mod.relative_path}`")
         lines.append("")
         self._append_docstring(mod.docstring, lines, indent="")
@@ -425,7 +425,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append global constants block."""
+        """Add global constants block."""
         if mod.constants:
             lines.append("#### Global Constants")
             for c_name, c_val in mod.constants.items():
@@ -438,7 +438,7 @@ class CodeStructureAnalyzer(BaseModel):
         lines: list[str],
         indent: str = "",
     ) -> None:
-        """Append function details and metrics."""
+        """Add function details and metrics."""
         prefix = f"{indent}- "
         lines.append(f"{prefix}`{func.signature}`")
         lines.append("")
@@ -464,7 +464,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append classes and methods block."""
+        """Add classes and methods block."""
         if mod.classes:
             lines.append("#### Classes")
             for cls in mod.classes:
@@ -487,7 +487,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append standalone functions block."""
+        """Add standalone functions block."""
         if mod.functions:
             lines.append("#### Functions")
             for func in mod.functions:
@@ -499,7 +499,7 @@ class CodeStructureAnalyzer(BaseModel):
         modules: list[ModuleInfo],
         lines: list[str],
     ) -> None:
-        """Append Mermaid dependency graph block."""
+        """Add Mermaid dependency graph block."""
         lines.append("## 📊 Module Dependency Graph")
         lines.append("")
         lines.append("```mermaid")
@@ -567,7 +567,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Extract functions, classes, signatures, and dependencies "
-            "from a project's src folder into an LLM-ready markdown document."
+            "from a project's src into an LLM-ready markdown document."
         ),
     )
     parser.add_argument(
@@ -575,7 +575,7 @@ def main() -> None:
         type=str,
         nargs="?",
         default=".",
-        help=("Path to the target project directory (default: current directory)"),
+        help=("Path to target project dir (default: current dir)"),
     )
     parser.add_argument(
         "-o",
@@ -583,7 +583,7 @@ def main() -> None:
         type=str,
         default=None,
         help=(
-            "Destination markdown file path "
+            "Target markdown file path "
             "(default: '[project_name]_structure.md' at project root)"
         ),
     )
@@ -598,7 +598,7 @@ def main() -> None:
         )
         status_code = analyzer.execute()
     except Exception:
-        logger.exception(None, "Terminated due to validation breakdown")
+        logger.exception(None, "End. Failed due to validation breakdown")
         status_code = 1
 
     sys.exit(status_code)

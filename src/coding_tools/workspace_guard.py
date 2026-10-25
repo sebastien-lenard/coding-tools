@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -20,8 +19,9 @@ from typing import Any
 from pydantic import BaseModel, DirectoryPath
 
 from coding_tools.file_handler import ALL_TOOL_OUTPUT_DIRS, get_pytest_log_path
+from coding_tools.logger import get_project_logger, setup_logging
 
-logger = logging.getLogger("coding_tools.workspace_guard")
+logger = get_project_logger(__name__)
 
 IGNORED_DIRS = {
     ".venv",
@@ -38,9 +38,9 @@ CHECKED_EXTENSIONS = {".py"}
 
 
 class WorkspaceGuard(BaseModel):
-    """Enforce test file isolation and block workspace pollution.
+    """Apply test file isolation and block workspace pollution.
 
-    AST inspection and file snapshot diffs during pytest runs.
+    AST scan and file snapshot diffs during pytest runs.
     """
 
     project_path: DirectoryPath
@@ -48,7 +48,7 @@ class WorkspaceGuard(BaseModel):
     def check_static_isolation(
         self,
         test_file_path: str | Path,
-        prefix: str = "Guard",
+        _prefix: str = "Guard",
     ) -> tuple[bool, list[str]]:
         """Scan test file AST to spot I/O without tmp_path fixture.
 
@@ -57,21 +57,16 @@ class WorkspaceGuard(BaseModel):
         path = Path(test_file_path)
         if not path.exists():
             logger.warning(
-                "[%s] Static check skipped: Test file not found at %s",
-                prefix,
                 path,
+                "Test file not found. Static check skipped",
             )
             return True, []
 
-        logger.info(
-            "[%s] Running static isolation check on test file: %s",
-            prefix,
-            path,
-        )
+        logger.progress(path, "Run static isolation check")
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError as e:
-            logger.exception("[%s] SyntaxError during static AST inspection", prefix)
+            logger.exception(path, "Failed AST scan (SyntaxError)")
             return False, [f"SyntaxError during AST inspection: {e}"]
 
         violations: list[str] = []
@@ -105,26 +100,18 @@ class WorkspaceGuard(BaseModel):
 
         IsolationVisitor().visit(tree)
         if violations:
-            logger.warning(
-                "[%s] Static isolation violations detected in %s",
-                prefix,
-                path,
-            )
+            logger.warning(path, "Spot creation files (AST)")
         else:
-            logger.info("[%s] Static isolation check passed for %s", prefix, path)
+            logger.progress(path, "Passed AST")
 
         return len(violations) == 0, violations
 
-    def snapshot_workspace(self, prefix: str = "Guard") -> set[Path]:
-        """Get set of relative file paths across repository.
+    def snapshot_workspace(self, _prefix: str = "Guard") -> set[Path]:
+        """Get set of relative file paths across repo.
 
         Skips ignored dirs and non-python files.
         """
-        logger.info(
-            "[%s] Snapshotting workspace repository at: %s",
-            prefix,
-            self.project_path,
-        )
+        logger.progress(None, "Snapshot repo", f"path={self.project_path}")
         snapshot: set[Path] = set()
         for p in self.project_path.rglob("*"):
             if any(part in IGNORED_DIRS for part in p.parts):
@@ -135,10 +122,9 @@ class WorkspaceGuard(BaseModel):
                     snapshot.add(rel)
                 except ValueError:
                     continue
-        logger.info(
-            "[%s] Workspace snapshot captured (%d Python files tracked).",
-            prefix,
-            len(snapshot),
+        logger.progress(
+            None,
+            f"Caught snapshot. {len(snapshot)} .py files",
         )
         return snapshot
 
@@ -151,7 +137,7 @@ class WorkspaceGuard(BaseModel):
 
         False if new files appear.
         """
-        logger.info("[%s] Checking for runtime workspace pollution...", prefix)
+        logger.progress(None, "Check file creation (run)")
         current = self.snapshot_workspace(prefix)
         new_files = current - baseline
 
@@ -160,22 +146,16 @@ class WorkspaceGuard(BaseModel):
         for f in new_files:
             unauthorized_list.append(str(f))
             violations.append(
-                f"Unauthorized file pollution detected in workspace: {f}",
+                f"Spot file creation: {f}",
             )
 
         if violations:
             logger.warning(
-                "[%s] Runtime workspace pollution detected "
-                "(%d unauthorized Python files: %s).",
-                prefix,
-                len(violations),
-                unauthorized_list,
+                None,
+                f"Spot file creation: {len(violations)} Files: {unauthorized_list}",
             )
         else:
-            logger.info(
-                "[%s] Runtime workspace pollution check passed cleanly.",
-                prefix,
-            )
+            logger.progress(None, "Done. No file creation (runtime)")
 
         return len(violations) == 0, violations
 
@@ -218,7 +198,7 @@ class WorkspaceGuard(BaseModel):
         cmd_list.append(str(path))
         cmd_str = " ".join(cmd_list)
 
-        logger.info("[%s] Executing test runner: %s", prefix, cmd_str)
+        logger.progress(path, "run test_runner", cmd_str)
 
         result = subprocess.run(  # noqa: S603
             cmd_list,
@@ -231,10 +211,10 @@ class WorkspaceGuard(BaseModel):
         full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
         output_path.write_text(full_content, encoding="utf-8")
 
-        logger.info(
-            "[%s] Test runner finished with return code %d",
-            prefix,
-            result.returncode,
+        logger.progress(
+            path,
+            "End Test runner",
+            f"return_code={result.returncode}",
         )
 
         is_clean, pollution_errors = self.check_runtime_pollution(baseline, prefix)
@@ -243,7 +223,7 @@ class WorkspaceGuard(BaseModel):
 
         errors = []
         if not test_passed:
-            errors.append(f"Test execution failed for {path}")
+            errors.append(f"Test run failed for {path}")
         errors.extend(pollution_errors)
 
         return overall_success, errors
@@ -276,9 +256,10 @@ def _run_static_checks(
     """
     all_passed = True
     results: list[dict[str, Any]] = []
-    logger.info(
-        "Running static test isolation checks on %d file(s)...",
-        len(test_files),
+    logger.progress(
+        None,
+        "Run static isolation checks",
+        f"files_count={len(test_files)}",
     )
     for tf in test_files:
         is_isolated, errors = guard.check_static_isolation(tf, tf.name)
@@ -300,16 +281,13 @@ def _run_runtime_checks(
     guard: WorkspaceGuard,
     test_files: list[Path],
 ) -> tuple[bool, list[dict[str, Any]]]:
-    """Run runtime test execution and pollution checks on test files.
+    """Run runtime test run and pollution checks on test files.
 
     Return success bool and result dicts.
     """
     all_passed = True
     results: list[dict[str, Any]] = []
-    logger.info(
-        "Running runtime test execution and workspace guard checks on %d file(s)...",
-        len(test_files),
-    )
+    logger.progress(None, "Run runtime checks", f"files_count={len(test_files)}")
     for tf in test_files:
         _, errors = guard.execute_test_and_guard(tf, tf.name)
         has_pollution = any("pollution" in err.lower() for err in errors)
@@ -332,71 +310,40 @@ def _run_runtime_checks(
     return all_passed, results
 
 
-def _print_summary_table(results: list[dict[str, Any]]) -> None:
-    """Log summary table of processed test files."""
-    logger.info(
-        "\n===================================================================================",
-    )
-    logger.info("%s", f"{'WORKSPACE GUARD EXECUTION SUMMARY':^83}")
-    logger.info(
-        "===================================================================================",
-    )
-    logger.info(
-        "%s",
-        f"{'Test File':<38} | {'Check Type':<22} | {'Status':<10} | {'Details':<10}",
-    )
-    logger.info(
-        "-----------------------------------------------------------------------------------",
-    )
-    for res in results:
-        logger.info(
-            "%s",
-            f"{res['file']:<38} | {res['check']:<22} | {res['status']:<10} | "
-            f"{res['details']:<10}",
-        )
-    logger.info(
-        "===================================================================================\n",
-    )
-
-
 def main() -> None:
     """Run CLI gateway for workspace guard validation.
 
     Parse args for static, runtime, or all checks. Exit status based on success.
     """
     parser = argparse.ArgumentParser(
-        description="Check test static isolation and runtime workspace pollution.",
+        description="Check tests don't create files in workspace (static and runtime)",
     )
     parser.add_argument(
         "target",
         type=str,
         nargs="?",
         default="tests",
-        help="Target test file or directory (default: tests)",
+        help="Target test file or dir (default: tests)",
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--static",
         action="store_true",
-        help="Perform only static AST isolation checks on test files.",
+        help="Static AST checks only",
     )
     group.add_argument(
         "--runtime",
         action="store_true",
-        help="Perform runtime snapshotting, execute pytest, and check pollution.",
+        help="Runtime pytest snapshot checks only",
     )
     group.add_argument(
         "--all",
         action="store_true",
-        help="Perform both static isolation and runtime test execution guard checks.",
+        help="All checks",
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    setup_logging()
 
     guard = WorkspaceGuard(project_path=Path.cwd())
     target_path = Path(args.target)
@@ -406,10 +353,10 @@ def main() -> None:
 
     test_files = _collect_test_files(target_path)
     if not test_files and target_path.exists():
-        logger.error("No actionable test files found at target: %s", target_path)
+        logger.error(target_path, "Failed. No test files found")
         sys.exit(1)
     elif not target_path.exists():
-        logger.error("Target path does not exist: %s", target_path)
+        logger.error(target_path, "Failed. Target path doesn't exist")
         sys.exit(1)
 
     all_results: list[dict[str, Any]] = []
@@ -423,7 +370,15 @@ def main() -> None:
         _, runtime_results = _run_runtime_checks(guard, test_files)
         all_results.extend(runtime_results)
 
-    _print_summary_table(all_results)
+    rows = [
+        [res["file"], res["check"], res["status"], res["details"]]
+        for res in all_results
+    ]
+    logger.summary_table(
+        "Workspace Guard Summary:",
+        ["Test File", "Check Type", "Status", "Details"],
+        rows,
+    )
     sys.exit(0 if success else 1)
 
 
