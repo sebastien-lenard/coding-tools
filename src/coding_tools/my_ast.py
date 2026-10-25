@@ -9,9 +9,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from coding_tools.logger import get_project_logger
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 class ASTNodeMapper(ast.NodeVisitor):

@@ -8,16 +8,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coding_tools import pytest_cov
+from coding_tools import my_logger, pytest_cov
 from coding_tools.config import is_caching_allowed
-from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
     extract_uncovered_blocks,
 )
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 def load_skill(skill_filename: str) -> str:

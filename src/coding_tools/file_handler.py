@@ -13,9 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from coding_tools.logger import get_project_logger
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
 PYTEST_OUTPUT_DIR = ".pytest_output"

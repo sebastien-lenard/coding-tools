@@ -16,14 +16,15 @@ from coding_tools.file_handler import (
     get_llm_output_path,
     get_project_root,
 )
-from coding_tools.logger import get_project_logger
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from coding_tools.llm_protocol import StructuredGenerationOptions
 
-logger = get_project_logger(__name__)
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
 
 
 @dataclass

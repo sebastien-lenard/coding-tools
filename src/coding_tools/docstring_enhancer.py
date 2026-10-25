@@ -17,16 +17,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from coding_tools import my_logger
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMResponse, StructuredGenerationOptions
 from coding_tools.llm_router import get_llm_client
-from coding_tools.logger import get_project_logger
 from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
-logger = get_project_logger("coding_tools.docstring_enhancer")
+logger = my_logger.logger("coding_tools.docstring_enhancer")
 
 MAX_DOCSTRING_LINES = 10
 

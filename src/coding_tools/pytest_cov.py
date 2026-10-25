@@ -10,10 +10,9 @@ import re
 from pathlib import Path
 
 import coding_tools.file_handler as my_path
-from coding_tools import my_ast, my_io
-from coding_tools.logger import get_project_logger
+from coding_tools import my_ast, my_io, my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 DEFAULT_COVERAGE_REPORT = (
     "--- Programmatic Branch & Coverage Analysis ---\n"

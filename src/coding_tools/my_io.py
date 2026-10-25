@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from coding_tools.logger import get_project_logger
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 def read_lines(path: Path | str) -> list[str]:

@@ -17,9 +17,9 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
-from coding_tools.logger import get_project_logger, setup_logging
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 class UntrackedBackupManager(BaseModel):
@@ -184,7 +184,7 @@ def main() -> None:
         help="Verbose",
     )
     args = parser.parse_args()
-    setup_logging()
+    my_logger.setup()
 
     try:
         manager = UntrackedBackupManager(

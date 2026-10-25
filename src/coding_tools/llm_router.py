@@ -11,12 +11,13 @@ import importlib
 from typing import TYPE_CHECKING
 
 from coding_tools.config import get_default_model, get_provider_mapping
-from coding_tools.logger import get_project_logger
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
-logger = get_project_logger(__name__)
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
 
 
 def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:

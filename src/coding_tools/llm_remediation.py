@@ -22,7 +22,6 @@ from coding_tools.llm_protocol import (
     StructuredGenerationOptions,
 )
 from coding_tools.llm_router import get_llm_client
-from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     parse_pytest_results,
     process_and_save_code,
@@ -37,7 +36,9 @@ if TYPE_CHECKING:
 
     from coding_tools.llm_protocol import LLMClientProtocol
 
-logger = get_project_logger(__name__)
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
 
 
 class WorkflowStatus(Enum):

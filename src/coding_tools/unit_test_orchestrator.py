@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from coding_tools import my_logger
 from coding_tools.llm_protocol import LLMError
 from coding_tools.llm_remediation import (
     LLMRemediator,
@@ -21,7 +22,6 @@ from coding_tools.llm_remediation import (
     WorkflowContext,
     WorkflowStatus,
 )
-from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     filter_ruff_output,
     parse_basedpyright_summary,
@@ -29,7 +29,7 @@ from coding_tools.parsers import (
     run_ruff_command,
 )
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 def _evaluate_stage_status(

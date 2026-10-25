@@ -18,10 +18,10 @@ from typing import Any
 
 from pydantic import BaseModel, DirectoryPath
 
+from coding_tools import my_logger
 from coding_tools.file_handler import ALL_TOOL_OUTPUT_DIRS, get_pytest_log_path
-from coding_tools.logger import get_project_logger, setup_logging
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 IGNORED_DIRS = {
     ".venv",
@@ -343,7 +343,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    setup_logging()
+    my_logger.setup()
 
     guard = WorkspaceGuard(project_path=Path.cwd())
     target_path = Path(args.target)

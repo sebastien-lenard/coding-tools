@@ -24,7 +24,7 @@ from google.genai import Client, errors, types
 from google.genai.errors import ServerError
 from pydantic import BaseModel
 
-from coding_tools import pytest_cov
+from coding_tools import my_logger, pytest_cov
 from coding_tools.config import get_provider_mapping, is_caching_allowed
 from coding_tools.file_handler import (
     get_conftest_path,
@@ -33,7 +33,6 @@ from coding_tools.file_handler import (
 from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
-from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
@@ -51,7 +50,8 @@ HTTP_SERVICE_UNAVAILABLE = 503
 
 T = TypeVar("T", bound=BaseModel)
 
-logger = get_project_logger(__name__)
+
+logger = my_logger.logger(__name__)
 
 
 @dataclass

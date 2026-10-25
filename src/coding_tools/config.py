@@ -14,9 +14,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from coding_tools.logger import get_project_logger
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 def _strip_jsonc_comments(content: str) -> str:

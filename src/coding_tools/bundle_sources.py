@@ -14,12 +14,12 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
-from coding_tools.logger import get_project_logger, setup_logging
-
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-logger = get_project_logger(__name__)
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
 
 
 class SourceBundler(BaseModel):
@@ -199,7 +199,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    setup_logging()
+    my_logger.setup()
 
     try:
         bundler = SourceBundler(

@@ -11,10 +11,10 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from coding_tools.logger import get_project_logger, setup_logging
+from coding_tools import my_logger
 from coding_tools.unit_test_orchestrator import execute_workflow
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 
 def get_test_file_path(source_file: str | Path) -> str:
@@ -249,7 +249,7 @@ async def async_main() -> None:
 
 def main() -> None:
     """Run async_main in event loop."""
-    setup_logging()
+    my_logger.setup()
     asyncio.run(async_main())
 
 

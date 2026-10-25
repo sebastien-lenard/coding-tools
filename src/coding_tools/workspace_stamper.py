@@ -17,9 +17,9 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, DirectoryPath, Field
 
-from coding_tools.logger import get_project_logger, setup_logging
+from coding_tools import my_logger
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 # Global Engineering Constants
 FILE_LICENSE = "LICENSE"
@@ -431,7 +431,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    setup_logging()
+    my_logger.setup()
 
     if args.no_path and args.no_license:
         logger.warning(

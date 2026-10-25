@@ -11,16 +11,16 @@ import difflib
 import subprocess
 from pathlib import Path
 
+from coding_tools import my_logger
 from coding_tools.file_handler import (
     get_basedpyright_log_path,
     get_pytest_log_path,
     get_ruff_log_path,
 )
-from coding_tools.logger import get_project_logger
 from coding_tools.workspace_guard import WorkspaceGuard
 from coding_tools.workspace_stamper import TargetWorkspace, WorkspaceStamper
 
-logger = get_project_logger(__name__)
+logger = my_logger.logger(__name__)
 
 MIN_PARTS_FOR_COVERAGE = 3
 MIN_PARTS_WITH_MISSING = 4
