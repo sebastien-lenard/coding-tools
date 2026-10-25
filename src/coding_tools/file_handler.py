@@ -137,7 +137,7 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
     return base_dir / f"ruff-{stem}.txt"
 
 
-def get_coverage_annotation_path(source_file_path: str | Path) -> Path:
+def pytest_cov_path(source_file_path: str | Path) -> Path:
     """Get coverage annotation path under project root.
 
     Write to disk under .coverage_annotations.

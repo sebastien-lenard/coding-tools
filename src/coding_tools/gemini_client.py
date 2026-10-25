@@ -24,6 +24,7 @@ from google.genai import Client, errors, types
 from google.genai.errors import ServerError
 from pydantic import BaseModel
 
+from coding_tools import pytest_cov
 from coding_tools.config import get_provider_mapping, is_caching_allowed
 from coding_tools.file_handler import (
     get_conftest_path,
@@ -438,54 +439,6 @@ class GeminiClientAdapter:
                     )
 
 
-def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Scan uncovered lines in coverage file and yield hints.
-
-    Read <source_file_path>,cover file.
-    """
-    cover_path = Path(f"{source_file_path},cover")
-    if not cover_path.exists():
-        return []
-
-    source_path = Path(source_file_path)
-    if not source_path.exists():
-        return []
-
-    source_lines = source_path.read_text(encoding="utf-8").splitlines()
-    cover_lines = cover_path.read_text(encoding="utf-8").splitlines()
-
-    hints = []
-    for idx, cover_line in enumerate(cover_lines):
-        if cover_line.startswith(("!", ">")):
-            if idx >= len(source_lines):
-                continue
-
-            actual_code = source_lines[idx].strip()
-
-            if " and " in actual_code or " or " in actual_code:
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The compound boolean "
-                    f"expression `{actual_code}` was not fully covered. Ensure "
-                    "you write test cases where each side evaluates to "
-                    "both True and False independently,",
-                )
-            elif actual_code.startswith("if "):
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The conditional block "
-                    f"`{actual_code}` was never entered or its branch was "
-                    "missed. Provide a test input that forces this "
-                    "condition to evaluate to True,",
-                )
-            elif actual_code.startswith("except "):
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The exception handler "
-                    f"`{actual_code}` was never triggered. Write a test case "
-                    "that raises this specific exception,",
-                )
-
-    return hints
-
-
 def build_contents_list(
     test_file_path: str,
     source_file_path: str,
@@ -521,7 +474,7 @@ def build_contents_list(
         else "None"
     )
 
-    generic_hints = generate_coverage_hints(source_file_path)
+    generic_hints = pytest_cov.tips(source_file_path)
     hints_summary = (
         "\n".join([f"- {hint}" for hint in generic_hints])
         if generic_hints

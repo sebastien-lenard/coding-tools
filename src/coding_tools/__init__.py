@@ -10,7 +10,6 @@ from .backup_untracked import UntrackedBackupManager
 from .file_handler import (
     ALL_TOOL_OUTPUT_DIRS,
     get_basedpyright_log_path,
-    get_coverage_annotation_path,
     get_pytest_log_path,
     get_ruff_log_path,
 )
@@ -22,7 +21,6 @@ __all__ = [
     "UntrackedBackupManager",
     "WorkspaceStamper",
     "get_basedpyright_log_path",
-    "get_coverage_annotation_path",
     "get_pytest_log_path",
     "get_ruff_log_path",
     "setup_logging",

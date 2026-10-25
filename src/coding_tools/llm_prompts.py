@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from coding_tools import pytest_cov
 from coding_tools.config import is_caching_allowed
 from coding_tools.logger import get_project_logger
 from coding_tools.parsers import (
@@ -30,58 +31,6 @@ def load_skill(skill_filename: str) -> str:
     except OSError:
         logger.exception(skill_path, "Failed to load skill file")
         raise
-
-
-def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Yield hints for uncovered lines from source and .cover files.
-
-    Return empty list if files missing.
-    """
-    cover_path = Path(f"{source_file_path},cover")
-    if not cover_path.exists():
-        return []
-
-    source_path = Path(source_file_path)
-    if not source_path.exists():
-        return []
-
-    try:
-        source_lines = source_path.read_text(encoding="utf-8").splitlines()
-        cover_lines = cover_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        logger.exception(source_path, "Failed to read source or cover file for hints")
-        return []
-
-    hints = []
-    for idx, cover_line in enumerate(cover_lines):
-        if cover_line.startswith(("!", ">")):
-            if idx >= len(source_lines):
-                continue
-
-            actual_code = source_lines[idx].strip()
-
-            if " and " in actual_code or " or " in actual_code:
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The compound boolean "
-                    f"expression `{actual_code}` was not fully covered. Ensure "
-                    "you write test cases where each side evaluates to "
-                    "both True and False independently,",
-                )
-            elif actual_code.startswith("if "):
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The conditional block "
-                    f"`{actual_code}` was never entered or its branch was "
-                    "missed. Provide a test input that forces this "
-                    "condition to evaluate to True,",
-                )
-            elif actual_code.startswith("except "):
-                hints.append(
-                    f"GENERIC HINT (Line {idx + 1}): The exception handler "
-                    f"`{actual_code}` was never triggered. Write a test case "
-                    "that raises this specific exception,",
-                )
-
-    return hints
 
 
 def build_contents_list(
@@ -124,12 +73,7 @@ def build_contents_list(
         else "None"
     )
 
-    generic_hints = generate_coverage_hints(source_file_path)
-    hints_summary = (
-        "\n".join([f"- {hint}" for hint in generic_hints])
-        if generic_hints
-        else "None identified."
-    )
+    analysis_section = pytest_cov.tips(source_file_path)
 
     pytest_errors = extract_pytest_errors(pytest_output)
     pytest_warnings = extract_pytest_warnings(pytest_output)
@@ -143,9 +87,8 @@ def build_contents_list(
                 f"{pytest_errors}\n\n"
                 "You MUST fix these assertion or execution failures first."
             ),
+            analysis_section,
             (
-                "--- Programmatic Branch & Coverage Analysis ---\n"
-                f"{hints_summary}\n\n"
                 "--- Uncovered Code Blocks Summary ---\n"
                 "The following code blocks are not or only partly covered:\n"
                 f"{uncovered_summary}\n\n"

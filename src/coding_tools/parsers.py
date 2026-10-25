@@ -13,7 +13,6 @@ from pathlib import Path
 
 from coding_tools.file_handler import (
     get_basedpyright_log_path,
-    get_coverage_annotation_path,
     get_pytest_log_path,
     get_ruff_log_path,
 )
@@ -365,61 +364,10 @@ def extract_uncovered_blocks(coverage_text: str) -> list[str]:
     return uncovered_snippets
 
 
-def generate_coverage_hints(source_file_path: str) -> list[str]:
-    """Scan uncovered lines and build hints.
-
-    Reads coverage annotation and source files.
-    """
-    cover_path = get_coverage_annotation_path(source_file_path)
-    if not cover_path.exists():
-        cover_path = Path(f"{source_file_path},cover")
-        if not cover_path.exists():
-            return []
-
-    source_path = Path(source_file_path)
-    if not source_path.exists():
-        return []
-
-    source_lines = source_path.read_text(encoding="utf-8").splitlines()
-    cover_lines = cover_path.read_text(encoding="utf-8").splitlines()
-
-    hints = []
-    for idx, cover_line in enumerate(cover_lines):
-        if cover_line.startswith("!"):
-            if idx >= len(source_lines):
-                continue
-
-            actual_code = source_lines[idx].strip()
-
-            guard_condition = "Unknown condition"
-            for prev_idx in range(
-                idx - 1,
-                max(-1, idx - MAX_BACKWARD_LOOKUP),
-                -1,
-            ):
-                if prev_idx < len(source_lines):
-                    prev_line = source_lines[prev_idx].strip()
-                    if prev_line.startswith("if "):
-                        guard_condition = prev_line
-                        break
-
-            hints.append(
-                f"GENERIC HINT (Line {idx + 1}): The statement `{actual_code}` "
-                f"inside the block guarded by `{guard_condition}` was never executed. "
-                "This means your tests never successfully entered this branch. "
-                "Analyze what variables or state values are required for "
-                f"`{guard_condition}` to evaluate to True and allow execution to "
-                f"reach `{actual_code}`.",
-            )
-
-    return hints
-
-
 def read_local_files(
     test_file_path: str,
-    source_file_path: str,
     prefix: str,
-) -> tuple[str, str, str]:
+) -> str:
     """Read test content, coverage report, and pytest log.
 
     Handles missing coverage annotation file.
@@ -428,22 +376,8 @@ def read_local_files(
         prefix,
         "Read local dynamic test, coverage, and log files",
     )
-    test_content = Path(test_file_path).read_text(encoding="utf-8")
 
-    cover_path = get_coverage_annotation_path(source_file_path)
-    if not cover_path.exists():
-        cover_path = Path(f"{source_file_path},cover")
-
-    if cover_path.exists():
-        coverage_content = cover_path.read_text(encoding="utf-8")
-    else:
-        coverage_content = (
-            "No coverage report built due to pytest collection or execution error."
-        )
-
-    pytest_output = get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
-
-    return test_content, coverage_content, pytest_output
+    return get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
 
 
 def run_preflight_compliance_and_validation(

@@ -328,9 +328,8 @@ class LLMRemediator:
                 run_coverage=True,
                 source_file_path=ctx.source_file_path,
             )
-            _, _, py_out = read_local_files(
+            py_out = read_local_files(
                 ctx.test_file_path,
-                ctx.source_file_path,
                 ctx.prefix,
             )
             if not passed and guard_errors:

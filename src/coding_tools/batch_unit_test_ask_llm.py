@@ -244,7 +244,7 @@ async def async_main() -> None:
     )
 
     print_summary_table(list(results), processed_multiple=processed_multiple)
-    logger.progress(None, f"End f{func}")
+    logger.progress(None, f"End {func}")
 
 
 def main() -> None:
