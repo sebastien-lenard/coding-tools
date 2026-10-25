@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the workspace layout and compliance metadata verification engine."""
 
+import logging
 import runpy
 import sys
 from pathlib import Path
@@ -120,11 +121,11 @@ def test_missing_license_triggers_warning_but_stamps_successfully(
     )
     engine = WorkspaceStamper(workspace=ws)
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         engine._evaluate_legal_infrastructure()
 
     assert ws.run_license_stamp
-    assert "is missing from project root" in caplog.text
+    assert "Missing 'LICENSE'" in caplog.text
 
 
 def test_missing_notice_triggers_warning_but_stamps_rest(
@@ -140,12 +141,12 @@ def test_missing_notice_triggers_warning_but_stamps_rest(
     )
     engine = WorkspaceStamper(workspace=ws)
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         engine._evaluate_legal_infrastructure()
 
     assert ws.run_license_stamp
     assert ws.extracted_copyright is None
-    assert "is missing from project root" in caplog.text
+    assert "Missing 'NOTICE'" in caplog.text
 
 
 def test_unparseable_license_captured_and_logged(
@@ -161,10 +162,10 @@ def test_unparseable_license_captured_and_logged(
     )
     engine = WorkspaceStamper(workspace=ws)
 
-    with caplog.at_level("INFO"):
+    with caplog.at_level(logging.INFO):
         engine._evaluate_legal_infrastructure()
 
-    assert "Headers detected" in caplog.text
+    assert "Caught headers" in caplog.text
 
 
 def test_evaluate_legal_infrastructure_os_error(
@@ -183,12 +184,10 @@ def test_evaluate_legal_infrastructure_os_error(
 
     monkeypatch.setattr(Path, "read_text", mock_read_text)
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         engine._evaluate_legal_infrastructure()
     assert ws.extracted_copyright is None
-    assert (
-        "Could not read file" in caplog.text
-    )
+    assert "Failed to read file: Disk error" in caplog.text
 
 
 def test_evaluate_legal_infrastructure_empty_notice(tmp_path: Path) -> None:
@@ -636,7 +635,7 @@ def test_engine_blocked_by_permission_error(
 
     script.write_bytes(b"\x80\x81\xff")
 
-    with caplog.at_level("WARNING"):
+    with caplog.at_level(logging.WARNING):
         assert not engine.run()
 
 
@@ -658,11 +657,11 @@ def test_process_file_failure_captured_gracefully(
 
     monkeypatch.setattr(Path, "write_text", mock_write_text)
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level(logging.ERROR):
         report = engine._process_file(target_file)
 
     assert report.status == FileComplianceStatus.IO_ERROR
-    assert "Failed lifecycle on target" in caplog.text
+    assert "Failed run of process_file()" in caplog.text
 
 
 def test_safety_engine_blocks_unauthorized_functional_mutations(
@@ -689,11 +688,11 @@ def test_safety_engine_blocks_unauthorized_functional_mutations(
         lambda f, c: (monkeypatch_content, True),
     )
 
-    with caplog.at_level("ERROR"):
+    with caplog.at_level(logging.ERROR):
         status = engine.run()
 
     assert not status
-    assert "SAFETY MODULE ALERT" in caplog.text
+    assert "Spotted banned changes" in caplog.text
     assert script.read_text(encoding="utf-8") == "print('safe')"
 
 
@@ -837,9 +836,9 @@ def test_cli_mutual_deactivation_termination(
     with pytest.raises(SystemExit) as sysexit:
         main()
 
-    assert sysexit.value.code == 0
     captured = capsys.readouterr()
-    assert "No stamping will be carried out" in captured.err
+    assert sysexit.value.code == 0
+    assert "End. No stamping due to --no-path and --no-license flags" in captured.err
 
 
 def test_main_invalid_project_dir(
@@ -876,7 +875,7 @@ def test_main_exception_roadblock_handling(
         ["workspace_stamper", str(script), "-p", str(tmp_path), "--no-license"],
     )
 
-    def mock_run(self: object) -> None:
+    def mock_run(self: object) -> bool:
         err_msg = "Simulated internal engine crash"
         raise ValueError(err_msg)
 
