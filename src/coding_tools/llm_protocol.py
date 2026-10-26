@@ -78,7 +78,7 @@ class LLMClientProtocol(Protocol):
         """Check if client supports remote caching."""
         ...
 
-    def generate_structured_response(
+    def response(
         self,
         contents_list: list[object],
         options: StructuredGenerationOptions,

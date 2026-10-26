@@ -8,9 +8,15 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
@@ -130,6 +136,32 @@ class MyLogger:
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.exception("%s%s", step, clean_msg)  # noqa: LOG004
+
+    @contextmanager
+    def run_spin(self, message: str, prefix: str = "") -> Generator[None, None, None]:
+        """Print inline dots in console during API wait.
+
+        Writes to sys.stdout.
+        """
+        self.progress(prefix, message, "(waiting)")
+        stop_event = threading.Event()
+
+        def spin() -> None:
+            """Loop and write dot to stdout until stop event set."""
+            while not stop_event.is_set():
+                sys.stdout.write(".")
+                sys.stdout.flush()
+                time.sleep(1)
+
+        spinner_thread = threading.Thread(target=spin, daemon=True)
+        spinner_thread.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            spinner_thread.join()
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
     def summary_table(
         self,

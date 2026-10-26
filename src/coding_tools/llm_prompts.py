@@ -13,7 +13,6 @@ from coding_tools.config import is_caching_allowed
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
-    extract_uncovered_blocks,
 )
 
 logger = my_logger.logger(__name__)
@@ -65,13 +64,6 @@ def build_contents_list(
             ],
         )
 
-    uncovered_blocks = extract_uncovered_blocks(coverage_content)
-    uncovered_summary = (
-        "\n".join([f"- starting by {line}" for line in uncovered_blocks])
-        if uncovered_blocks
-        else "None"
-    )
-
     analysis_section = pytest_cov.tips(source_file_path)
 
     pytest_errors = extract_pytest_errors(pytest_output)
@@ -87,13 +79,7 @@ def build_contents_list(
                 "You MUST fix these assertion or execution failures first."
             ),
             analysis_section,
-            (
-                "--- Uncovered Code Blocks Summary ---\n"
-                "The following code blocks are not or only partly covered:\n"
-                f"{uncovered_summary}\n\n"
-                "--- Coverage report (! marks uncovered lines) ---\n"
-                f"{coverage_content}"
-            ),
+            (pytest_cov.tips(source_file_path)),
             (
                 "--- Pytest Warnings Summary ---\n"
                 f"{pytest_warnings}\n\n"

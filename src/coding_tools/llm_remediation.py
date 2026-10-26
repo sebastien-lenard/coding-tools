@@ -181,7 +181,7 @@ class LLMRemediator:
                     target_file=ctx.test_file_path,
                     start_date=ctx.start_date,
                 )
-                raw_resp = self.client.generate_structured_response(
+                raw_resp = self.client.response(
                     contents_list=contents_list,
                     options=options,
                 )

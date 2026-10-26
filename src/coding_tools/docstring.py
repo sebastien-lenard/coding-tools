@@ -103,7 +103,7 @@ async def _edit_docstrings(
                 target_file=str(file_path),
                 start_date=ctx.start_date,
             )
-            response = ctx.llm.generate_structured_response(
+            response = ctx.llm.response(
                 contents,
                 options,
             )

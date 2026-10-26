@@ -42,10 +42,11 @@ def _read_input(
         logger.error(src_file_path, "Failed to read src file")
         return [], []
     cov_path = my_path.pytest_cov_path(src_file_path)
-    if not cov_path.exists():
+    if not cov_path:
         return src_lines, []
     cover_lines = my_io.read_lines(cov_path)
     if not cover_lines:
+        logger.warning(None, f"No lines read from cov path: {cov_path}")
         return src_lines, []
     return src_lines, cover_lines
 

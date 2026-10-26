@@ -9,7 +9,7 @@
     // Providers configuration mapping
     "providers": {
         "gemini": {
-            "adapter": "coding_tools.gemini_client:GeminiClientAdapter",
+            "adapter": "coding_tools.gemini:Gemini",
             "default_model": "gemini-3.5-flash-lite",
             "supports_caching": true,
             "models": [

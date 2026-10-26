@@ -164,7 +164,7 @@ class WorkspaceGuard(BaseModel):
         test_file_path: str | Path,
         prefix: str = "Guard",
         *,
-        run_coverage: bool = False,
+        run_coverage: bool = True,
         source_file_path: str | Path | None = None,
     ) -> tuple[bool, list[str]]:
         """Run pytest on test file and check workspace pollution.

@@ -1,4 +1,4 @@
-# src/coding_tools/gemini_client.py
+# src/coding_tools/gemini.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -12,10 +12,7 @@ Handles formatted writing and context caching.
 from __future__ import annotations
 
 import json
-import sys
-import threading
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -24,8 +21,8 @@ from google.genai import Client, errors, types
 from google.genai.errors import ServerError
 from pydantic import BaseModel
 
-from coding_tools import my_logger, pytest_cov
-from coding_tools.config import get_provider_mapping, is_caching_allowed
+from coding_tools import config, my_logger
+from coding_tools.config import is_caching_allowed
 from coding_tools.file_handler import (
     get_conftest_path,
     get_pyproject_path,
@@ -33,15 +30,8 @@ from coding_tools.file_handler import (
 from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
 from coding_tools.llm_prompts import load_skill
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
-from coding_tools.parsers import (
-    extract_pytest_errors,
-    extract_pytest_warnings,
-    extract_uncovered_blocks,
-)
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
-
     from google.genai.types import File
 
     from coding_tools.llm_protocol import StructuredGenerationOptions
@@ -67,33 +57,6 @@ class RetryRequestParameters:
     config_kwargs: dict[str, object]
     prefix: str
     spinner_msg: str
-
-
-@contextmanager
-def gemini_spinner(message: str, prefix: str = "") -> Generator[None, None, None]:
-    """Print inline dots in console during API wait.
-
-    Writes to sys.stdout.
-    """
-    logger.progress(prefix, message, "(waiting)")
-    stop_event = threading.Event()
-
-    def spin() -> None:
-        """Loop and write dot to stdout until stop event set."""
-        while not stop_event.is_set():
-            sys.stdout.write(".")
-            sys.stdout.flush()
-            time.sleep(1)
-
-    spinner_thread = threading.Thread(target=spin, daemon=True)
-    spinner_thread.start()
-    try:
-        yield
-    finally:
-        stop_event.set()
-        spinner_thread.join()
-        sys.stdout.write("\n")
-        sys.stdout.flush()
 
 
 def upload_static_file(client: Client, file_path: str | Path, prefix: str) -> File:
@@ -174,7 +137,7 @@ def call_gemini_with_retry(
     response: types.GenerateContentResponse | None = None
     for attempt in range(max_retries):
         try:
-            with gemini_spinner(params.spinner_msg, params.prefix):
+            with logger.run_spin(params.spinner_msg, params.prefix):
                 response = params.client.models.generate_content(
                     model=params.model_name,
                     contents=params.contents_list,
@@ -232,7 +195,7 @@ def _raise_schema_error(schema_name: str) -> None:
     raise ValueError(msg)
 
 
-class GeminiClientAdapter:
+class Gemini:
     """Google GenAI wrapper meeting LLMClientProtocol.
 
     Needs API key. Handles structured generation and context caching.
@@ -244,8 +207,7 @@ class GeminiClientAdapter:
         if model_name is not None:
             self.model_name = model_name
         else:
-            providers = get_provider_mapping()
-            gemini_config = providers.get("gemini", {})
+            gemini_config = config.get_provider_mapping().get("gemini", {})
             self.model_name = str(
                 gemini_config.get("default_model", "gemini-3.5-flash-lite"),
             )
@@ -255,7 +217,7 @@ class GeminiClientAdapter:
         """Get cache support status from config."""
         return is_caching_allowed("gemini")
 
-    def generate_structured_response(
+    def response(
         self,
         contents_list: list[object],
         options: StructuredGenerationOptions,
@@ -437,81 +399,3 @@ class GeminiClientAdapter:
                         f"Failed to delete remote file: "
                         f"{getattr(e, 'message', None) or str(e) or 'Unknown error'}",
                     )
-
-
-def build_contents_list(
-    test_file_path: str,
-    source_file_path: str,
-    test_content: str,
-    coverage_content: str,
-    pytest_output: str,
-) -> list[str]:
-    """Build dynamic contents list with source files, coverage, and pytest errors.
-
-    Include pyproject.toml and conftest.py if caching disabled.
-    """
-    contents_list: list[str] = []
-    pyproject_path = get_pyproject_path(test_file_path)
-    conftest_path = get_conftest_path(test_file_path)
-
-    if not is_caching_allowed("gemini"):
-        toml_content = pyproject_path.read_text(encoding="utf-8")
-        conftest_content = conftest_path.read_text(encoding="utf-8")
-        source_content = Path(source_file_path).read_text(encoding="utf-8")
-
-        contents_list.extend(
-            [
-                f"--- pyproject.toml ---\n{toml_content}",
-                f"--- tests/conftest.py ---\n{conftest_content}",
-                f"--- {source_file_path} ---\n{source_content}",
-            ],
-        )
-
-    uncovered_blocks = extract_uncovered_blocks(coverage_content)
-    uncovered_summary = (
-        "\n".join([f"- starting by {line}" for line in uncovered_blocks])
-        if uncovered_blocks
-        else "None"
-    )
-
-    generic_hints = pytest_cov.tips(source_file_path)
-    hints_summary = (
-        "\n".join([f"- {hint}" for hint in generic_hints])
-        if generic_hints
-        else "None identified."
-    )
-
-    pytest_errors = extract_pytest_errors(pytest_output)
-    pytest_warnings = extract_pytest_warnings(pytest_output)
-    test_filename = Path(test_file_path).name
-
-    contents_list.extend(
-        [
-            f"--- Current unit test script ({test_filename}) ---\n{test_content}",
-            (
-                "--- Pytest Assertion/Execution Errors (HIGHEST PRIORITY) ---\n"
-                f"{pytest_errors}\n\n"
-                "You MUST fix these assertion or execution failures first."
-            ),
-            (
-                "--- Programmatic Branch & Coverage Analysis ---\n"
-                f"{hints_summary}\n\n"
-                "--- Uncovered Code Blocks Summary ---\n"
-                "The following code blocks are not or only partly covered:\n"
-                f"{uncovered_summary}\n\n"
-                "--- Coverage report (! marks uncovered lines) ---\n"
-                f"{coverage_content}"
-            ),
-            (
-                "--- Pytest Warnings Summary ---\n"
-                f"{pytest_warnings}\n\n"
-                "Address these specific warnings if possible."
-            ),
-            f"--- Pytest output ---\n{pytest_output}",
-            (
-                "Analyze these, fix any failures, warnings, or collection/import "
-                "errors, and ensure tests pass with 100% coverage."
-            ),
-        ],
-    )
-    return contents_list

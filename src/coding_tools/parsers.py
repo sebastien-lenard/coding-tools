@@ -341,29 +341,6 @@ def filter_ruff_output(output_text: str) -> str:
     return "\n".join(filtered_lines)
 
 
-def extract_uncovered_blocks(coverage_text: str) -> list[str]:
-    """Get 1st line of each contiguous block of uncovered lines starting with !."""
-    lines = coverage_text.splitlines()
-    uncovered_snippets: list[str] = []
-    in_block = False
-    current_block_first_line = ""
-
-    for line in lines:
-        if line.lstrip().startswith("!"):
-            if not in_block:
-                in_block = True
-                current_block_first_line = line
-        elif in_block:
-            in_block = False
-            if current_block_first_line:
-                uncovered_snippets.append(current_block_first_line)
-
-    if in_block and current_block_first_line:
-        uncovered_snippets.append(current_block_first_line)
-
-    return uncovered_snippets
-
-
 def read_local_files(
     test_file_path: str,
     prefix: str,

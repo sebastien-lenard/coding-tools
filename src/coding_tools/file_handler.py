@@ -65,7 +65,7 @@ def files(path: Path | str, ext: str | None = ".py") -> list[Path]:
         return files
 
     if not ext:
-        files.extend(sorted(path.rglob("")))
+        files.extend(sorted(p for p in path.rglob("*") if p.is_file()))
     else:
         files.extend(sorted(path.rglob(ext)))
 
@@ -163,13 +163,21 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
     return base_dir / f"ruff-{stem}.txt"
 
 
-def pytest_cov_path(source_file_path: str | Path) -> Path:
+def pytest_cov_path(source_file_path: str | Path) -> Path | None:
     """Get coverage annotation path under project root.
 
-    Write to disk under .coverage_annotations.
+    Write to disk under .coverage_annotations. Matches hash-prefixed filenames,
+    yielding the most recent file.
     """
     base_dir = get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
-    return base_dir / Path(source_file_path).name
+    target_name = Path(source_file_path).name
+    matches = list(base_dir.glob(f"*_{target_name},cover"))
+    if matches:
+        cov_path = max(matches, key=lambda p: p.stat().st_mtime)
+        logger.progress(None, f"Found pytest cov path {cov_path}")
+        return cov_path
+    logger.warning(None, f"No pytest cov file at {base_dir}")
+    return None
 
 
 def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
