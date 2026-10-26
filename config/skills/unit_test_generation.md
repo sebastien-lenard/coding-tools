@@ -10,6 +10,15 @@ Rules:
    - Test all conditional branches (`if`/`elif`/`else`), edge cases, and failure modes.
    - Use `pytest.raises(<ExceptionClass>)` to explicitly test expected exceptions and error conditions.
    - **Uncovered lines (`!`)**: If a line inside an `if` block is marked with `!`, your tests never entered it. Inspect the preceding `if` condition, deduce what inputs/state make it evaluate to `True`, and add a test case providing them.
+   - **Active Exception Contexts & `logger.exception`**: 
+     - Methods like `logger.exception(...)` or functions inspecting active exception states (`sys.exc_info()`) require an active exception handler to capture tracebacks.
+     - Always wrap such calls inside a `try...except` block during tests to ensure complete statement coverage and valid traceback logging:
+       ```python
+       try:
+           raise ValueError("Error")
+       except ValueError:
+           logger.exception(target, "Message")
+       ```
 
 2. Parametrization:
    - Use `@pytest.mark.parametrize` whenever testing multiple inputs, variations, or edge cases for a function. 
@@ -37,7 +46,6 @@ Rules:
      - `MockServerError(message=..., code=...)`
    - **Example Usage in Tests**:
      ```python
-     # Inside your unit test:
      mock_client.files.upload.side_effect = MockAPIError(message="Upload failed", code=400)
      ```
    - Ensure production source code safely extracts attributes using `getattr(e, "message", None) or str(e)` to remain compatible with these mocks.

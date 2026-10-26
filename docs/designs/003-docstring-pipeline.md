@@ -6,10 +6,10 @@ date: 2026-10-19
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# 003: Docstring Enhancement and Correction Tool (`docstring-enhancer`) v0.1
+# 003: Docstring Enhancement and Correction Tool (`pen-docstrings`) v0.1
 
 ## 1. Overview & Objectives
-The `docstring-enhancer` utility is an asynchronous, concurrent AI-powered engine designed to audit, improve, and correct Python docstrings across project source files (`.py`). 
+The `pen-docstrings` utility is an asynchronous, concurrent AI-powered engine designed to audit, improve, and correct Python docstrings across project source files (`.py`). 
 
 By enforcing concise, high-value docstrings (maximum 5 lines, omitting redundant type/exception annotations, and focusing on edge cases, state requirements, and usage subtleties), it allows Large Language Models (LLMs) to perform accurate code analysis and functionality assessments without reading full implementation bodies.
 
@@ -21,7 +21,7 @@ The workflow coordinates target resolution, two-pass LLM remediation, AST struct
 
 ```mermaid
 graph TD
-    A[CLI Entrypoint: docstring-enhancer] --> B[Collect Target .py Files]
+    A[CLI Entrypoint: pen-docstrings] --> B[Collect Target .py Files]
     B --> C[Async Semaphore Pool]
     C --> D[Process File Workflow]
     D --> E[Pass 1: AI Docstring Enhancement]

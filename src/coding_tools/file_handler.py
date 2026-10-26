@@ -52,12 +52,38 @@ class LLMOutputPathParameters:
     project_root: Path | None = None
 
 
-def get_project_root(target_path: str | Path) -> Path:
+def files(path: Path | str, ext: str | None = ".py") -> list[Path]:
+    func = f"{__name__}"
+    path = Path(path).resolve()
+    if not path.exists():
+        msg = f"No {path}"
+        raise FileNotFoundError(msg)
+
+    files: list[Path] = []
+    if path.is_file() and ext in (path.suffix, None):
+        files.append(path)
+        return files
+
+    if not ext:
+        files.extend(sorted(path.rglob("")))
+    else:
+        files.extend(sorted(path.rglob(ext)))
+
+    this_ext = "" if not ext else f".{ext} "
+    if not files:
+        logger.warning(func, f"No file at {path}")
+    else:
+        logger.progress(func, f"Got {len(files)} {this_ext}at: {path}")
+
+    return files
+
+
+def get_project_root(path: str | Path) -> Path:
     """Deduct project root dir from path.
 
     Scan parents for workspace root markers (config, docs, src, tests).
     """
-    path = Path(target_path).resolve()
+    path = Path(path).resolve()
     current = path if path.is_dir() else path.parent
 
     while current != current.parent:
@@ -68,14 +94,14 @@ def get_project_root(target_path: str | Path) -> Path:
     return path if path.is_dir() else path.parent.parent
 
 
-def get_pyproject_path(target_path: str | Path) -> Path:
+def get_pyproject_path(path: str | Path) -> Path:
     """Get absolute path to pyproject.toml for project."""
-    return get_project_root(target_path) / "pyproject.toml"
+    return get_project_root(path) / "pyproject.toml"
 
 
-def get_conftest_path(target_path: str | Path) -> Path:
+def get_conftest_path(path: str | Path) -> Path:
     """Get absolute path to tests/conftest.py for project."""
-    return get_project_root(target_path) / "tests/conftest.py"
+    return get_project_root(path) / "tests/conftest.py"
 
 
 def ensure_directory(dir_path: str | Path) -> Path:

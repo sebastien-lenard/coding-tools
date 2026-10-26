@@ -8,11 +8,22 @@ from __future__ import annotations
 
 import logging
 import sys
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
+
+
+class RunState(Enum):
+    """Stage of the run of a function or method."""
+
+    START = auto()
+    LIVE = auto()
+    DONE = auto()
+    FAIL = auto()
+    SUCCESS = auto()
 
 
 def _clean(text: str) -> str:
@@ -61,7 +72,7 @@ class MyLogger:
         """Log process end."""
         step = self._format_target(target)
         clean_process = _clean(process_name)
-        self.logger.info("%sEnd %s.", step, clean_process)
+        self.logger.info("%sEnd %s", step, clean_process)
 
     def progress(
         self,

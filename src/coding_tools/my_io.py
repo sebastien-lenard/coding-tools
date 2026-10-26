@@ -1,3 +1,6 @@
+# src/coding_tools/my_io.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,3 +23,14 @@ def read_lines(path: Path | str) -> list[str]:
         logger.exception(None, f"Failed to read {path}")
         return []
     return lines
+
+
+def read_txt(path: Path | str) -> str:
+    """Raises OSError, UnicodeEncodeError"""
+    return Path(path).read_text(encoding="utf-8")
+
+
+def write_txt(txt: str, path: Path | str) -> None:
+    """Raises OSError, UnicodeEncodeError"""
+    Path(path).write_text(txt, encoding="utf-8")
+    logger.end(f"Txt saved to {path}")
