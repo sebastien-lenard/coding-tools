@@ -23,17 +23,17 @@ BANNED_WORDS = {}
 
 
 class RunState(Enum):
-    """Stage of the run of a function or method."""
+    """Run state for process or block."""
 
     START = auto()
     LIVE = auto()
     DONE = auto()
     FAIL = auto()
-    SUCCESS = auto()
+    PASS = auto()
 
 
 def _clean(text: str) -> str:
-    """Strip out fluff words from logs."""
+    """Strip banned words from log text."""
     if not BANNED_WORDS:
         return text
     words = text.split()
@@ -42,14 +42,15 @@ def _clean(text: str) -> str:
 
 
 class MyLogger:
-    """Applies uniform logging patterns, target contexts, and form."""
+    """Wrap standard logging with target path formatting and anti-fluff."""
 
     def __init__(self, name: str) -> None:
+        """Get logger instance by name."""
         self.logger = logging.getLogger(name)
 
     @staticmethod
     def _format_target(target: str | Path | None, *, full_path: bool = False) -> str:
-        """Get filename or full path for target-specific log lines."""
+        """Get filename or path for target log lines."""
         if not target:
             return ""
         path = Path(target)
@@ -108,7 +109,7 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log non-fatal unexpected warnings."""
+        """Log non-fatal warning."""
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.warning("%s%s", step, clean_msg)
@@ -120,7 +121,7 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log fatal errors that halt processes."""
+        """Log fatal error."""
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.error("%s%s", step, clean_msg)
@@ -132,7 +133,7 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log fatal error with exception traceback."""
+        """Log fatal error with traceback."""
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.exception("%s%s", step, clean_msg)  # noqa: LOG004
@@ -141,7 +142,7 @@ class MyLogger:
     def run_spin(self, message: str, prefix: str = "") -> Generator[None, None, None]:
         """Print inline dots in console during API wait.
 
-        Writes to sys.stdout.
+        Writes to sys.stdout. Spawns daemon thread.
         """
         self.progress(prefix, message, "(waiting)")
         stop_event = threading.Event()
@@ -197,7 +198,7 @@ class MyLogger:
 
 
 def setup() -> None:
-    """Set up root logger to target sys.stderr with HH:MM:SS LEVEL layout."""
+    """Set root logger to target sys.stderr with HH:MM:SS LEVEL layout."""
     handler = logging.StreamHandler(sys.stderr)
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)s: %(message)s",
@@ -212,5 +213,5 @@ def setup() -> None:
 
 
 def logger(name: str) -> MyLogger:
-    """Create and return a MyLogger object for a module."""
+    """Get MyLogger object for module."""
     return MyLogger(name)
