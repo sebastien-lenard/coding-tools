@@ -9,6 +9,7 @@ Reads root LICENSE and NOTICE files.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from difflib import unified_diff
 from enum import Enum, auto
@@ -393,6 +394,11 @@ class WorkspaceStamper(BaseModel):
 def validate_license_id(license_id: str) -> bool:
     """Check if license ID has only valid alphanumeric and symbol characters."""
     return all(c.isalnum() or c in "-.+" for c in license_id)
+
+
+def strip_header(txt: str) -> str:
+    """Strip HTML comment headers."""
+    return re.sub(r"^(?:[ \t]*<!--.*?-->[ \t]*\s*)+", "", txt, flags=re.DOTALL).strip()
 
 
 def main() -> None:

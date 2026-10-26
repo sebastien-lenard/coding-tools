@@ -1,8 +1,13 @@
-# config/templates/docstring.md
-# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-# SPDX-License-Identifier: Apache-2.0
+<!-- config/templates/docstring.md -->
+<!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 --- To do ---
 {skill}
---- Target File ---
+--- Target Files ---
+Content for each file starts with a comment giving the path relative to the project.
 {code}
---- Give a message and the fully updated file (code) ---
+--- Response expected ---
+Give:
+- a message
+- the fully updated file if only one file (code)
+- or the concatenation of fully updated files if several files (code).

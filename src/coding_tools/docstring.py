@@ -17,7 +17,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from coding_tools import file_handler, llm_router, my_ast, my_io, my_logger
+from coding_tools import (
+    file_handler,
+    llm_router,
+    my_ast,
+    my_io,
+    my_logger,
+    workspace_stamper,
+)
 from coding_tools.llm_protocol import LLMResponse, StructuredGenerationOptions
 from coding_tools.my_logger import RunState
 
@@ -59,8 +66,8 @@ def _init(path: Path | str) -> Context:
         msg = f"No file at {path}"
         raise FileNotFoundError(msg)
     return Context(
-        skill=my_io.read_txt(SKILL_PATH),
-        template=my_io.read_txt(TEMPLATE_PATH),
+        skill=workspace_stamper.strip_header(my_io.read_txt(SKILL_PATH)),
+        template=workspace_stamper.strip_header(my_io.read_txt(TEMPLATE_PATH)),
         file_paths=file_paths,
         start_date=datetime.now().astimezone().strftime("%y-%m-%d"),
         semaphore=asyncio.Semaphore(PARALLEL_CALLS),

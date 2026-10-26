@@ -1,6 +1,6 @@
-# config/templates/cov_tips.md
-# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-# SPDX-License-Identifier: Apache-2.0
+<!-- config/templates/cov_tips.md -->
+<!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 --- Fix Unit Test Coverage Gaps  ---
 
