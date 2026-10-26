@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 PARALLEL_CALLS = 2
 SKILL_PATH = Path("config/skills/docstring.md")
-TEMPLATE_PATH = Path("config/templates/docstring.md")
+TEMPLATE_PATH = Path("config/templates/improve.md")
 STEPS = 2
 SUMMARY_HEADERS = ("File", "Status")
 

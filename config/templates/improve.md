@@ -1,4 +1,4 @@
-<!-- config/templates/docstring.md -->
+<!-- config/templates/improve.md -->
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 --- To do ---
