@@ -87,17 +87,17 @@ async def _edit_docstrings(
     file_stem = file_path.stem
     status = RunState.START
     for step in range(STEPS):
-        step_msg = f"{file_stem} {step}/{STEPS}"
+        step_msg = f"{file_stem} {step + 1}/{STEPS}"
         try:
             logger.start(step_msg)
             contents: list[object] = [
-                ctx.template.format(path=file_path, code=current_code),
+                ctx.template.format(skill=ctx.skill, path=file_path, code=current_code),
             ]
             options = StructuredGenerationOptions(
                 response_schema=LLMResponse,
                 prefix=file_stem,
-                spinner_msg=f"Pen docstrings LLM call {step}",
-                system_instruction=ctx.skill,
+                spinner_msg=f"Pen docstrings LLM call {step + 1}",
+                system_instruction="",
                 tool_name="docstring",
                 process_step=f"{step}",
                 target_file=str(file_path),
@@ -112,7 +112,7 @@ async def _edit_docstrings(
 
             if my_ast.match_codes(current_code, candidate_code):
                 current_code = candidate_code
-                status = RunState.SUCCESS
+                status = RunState.PASS
                 my_io.write_txt(candidate_code, file_path)
                 logger.end(step_msg, "")
             else:
@@ -122,7 +122,7 @@ async def _edit_docstrings(
 
     return SummaryRow(
         file=file_path.name,
-        status=("Edited" if status == RunState.SUCCESS else "Failed"),
+        status=("Edited" if status == RunState.PASS else "Failed"),
     )
 
 

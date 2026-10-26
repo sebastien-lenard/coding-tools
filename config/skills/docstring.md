@@ -8,7 +8,6 @@
 2. If blocks have incomplete docstrings, fix docstrings. An incomplete docstring can lack (a) key info for debugging the bloc, (b) key info for projects that use the block, including (c) edge cases (e.g. when block skips part of its process), (d) state requirements, (e) files/db writing access, (f) internet/api access, (g) API keys, (h) commands with their options if any (e.g. pytest with coverage annotations), and (i) any other type of key info you find when scanning the blocks.
 3. If docstrings don't use telegraphic writing style, rewrite them in telegraphic style, but making sure all key info is in docstring (use more than 3-4 lines for complex blocks). Adverbs or adjectives only if they change meaning of sentence (e.g. don't write "direct/directly", "safe/safely", "modified", ). Function/method docstrings start with imperative verb. When a word has synonyms, favor the shorter synonym (e.g. "use" over "utilize", "check" over "verify" or "validate", "run" over "execute", "get" over "collect", "edit" over "modify" or "mutate", "yield" over "generate" or "compute", "lead" over "orchestrate", "to fix" over "to correct", "audit" or "scan" over "inspection").
 6. Don't change code or erase comments outside of docstrings.
-7. Output the full script.
 
 ## Examples (Functions & Methods):
 
