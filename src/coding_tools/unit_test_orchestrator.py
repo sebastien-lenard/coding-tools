@@ -103,7 +103,7 @@ def _run_stage_chain(
                     and "FAILED" not in out
                     and "error" not in out.lower()
                 ),
-                skill_filename="ruff_correction.md",
+                skill_filename="fix_lint.md",
             ),
         ),
     )
