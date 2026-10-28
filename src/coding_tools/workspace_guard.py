@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import argparse
 import ast
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, DirectoryPath
 
-from coding_tools import my_logger
-from coding_tools.file_handler import ALL_TOOL_OUTPUT_DIRS, get_pytest_log_path
+from coding_tools import my_logger, my_pytest
+from coding_tools.file_handler import ALL_TOOL_OUTPUT_DIRS
+from coding_tools.my_run import RunOutput, RunState
 
 logger = my_logger.logger(__name__)
 
@@ -164,8 +164,7 @@ class WorkspaceGuard(BaseModel):
         test_file_path: str | Path,
         prefix: str = "Guard",
         *,
-        run_coverage: bool = True,
-        source_file_path: str | Path | None = None,
+        source_file_path: str | Path,
     ) -> tuple[bool, list[str]]:
         """Run pytest on test file and check workspace pollution.
 
@@ -174,55 +173,18 @@ class WorkspaceGuard(BaseModel):
         baseline = self.snapshot_workspace(prefix)
         path = Path(test_file_path)
 
-        cmd_list = [
-            "uv",
-            "run",
-            "pytest",
-            "--import-mode=importlib",
-        ]
-        if run_coverage and source_file_path:
-            source_path = Path(source_file_path)
-            try:
-                relative_source = source_path.relative_to("src")
-            except ValueError:
-                relative_source = source_path
-            module_path = ".".join(relative_source.with_suffix("").parts)
-            cmd_list.extend(
-                [
-                    f"--cov={module_path}",
-                    "--cov-branch",
-                    "--cov-report=term-missing",
-                    "--cov-report=annotate:.coverage_annotations",
-                ],
-            )
-        cmd_list.append(str(path))
-        cmd_str = " ".join(cmd_list)
-
-        logger.progress(path, "run test_runner", cmd_str)
-
-        result = subprocess.run(  # noqa: S603
-            cmd_list,
-            capture_output=True,
-            text=True,
-            check=False,
+        run_output = RunOutput(
+            func="pytest",
+            status=RunState.LIVE,
+            input_path=source_file_path,
         )
-
-        output_path = get_pytest_log_path(test_file_path)
-        full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
-        output_path.write_text(full_content, encoding="utf-8")
-
-        logger.progress(
-            path,
-            "End Test runner",
-            f"return_code={result.returncode}",
-        )
-
+        run_output = my_pytest.run(source_file_path, run_output)
+        pytest_status = run_output.status
         is_clean, pollution_errors = self.check_runtime_pollution(baseline, prefix)
-        test_passed = result.returncode == 0
         overall_success = is_clean
 
         errors = []
-        if not test_passed:
+        if pytest_status == RunState.FAIL:
             errors.append(f"Test run failed for {path}")
         errors.extend(pollution_errors)
 
@@ -371,12 +333,17 @@ def main() -> None:
         all_results.extend(runtime_results)
 
     rows = [
-        [res["file"], res["check"], res["status"], res["details"]]
-        for res in all_results
+        [res["file"], res["file"], res["status"], res["details"]] for res in all_results
     ]
+    headers = {
+        "file": "Test File",
+        "file2": "Check Type",
+        "status": "Status",
+        "details": "Details",
+    }
     logger.summary_table(
         "Workspace Guard Summary:",
-        ["Test File", "Check Type", "Status", "Details"],
+        headers,
         rows,
     )
     sys.exit(0 if success else 1)
