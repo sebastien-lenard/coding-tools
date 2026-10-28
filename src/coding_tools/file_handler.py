@@ -133,14 +133,14 @@ def _get_stem_filename(test_file_path: str | Path) -> str:
     return path.stem if path.suffix == ".py" else path.name
 
 
-def get_pytest_log_path(test_file_path: str | Path) -> Path:
+def get_pytest_log_path(src_file_path: str | Path) -> Path:
     """Get pytest log path under project root.
 
     Write to disk under .pytest_output.
     """
-    base_dir = get_tool_output_dir(test_file_path, PYTEST_OUTPUT_DIR)
-    stem = _get_stem_filename(test_file_path)
-    return base_dir / f"unit-test-{stem}.txt"
+    base_dir = get_tool_output_dir(src_file_path, PYTEST_OUTPUT_DIR)
+    stem = _get_stem_filename(src_file_path)
+    return base_dir / f"unit-test-test-{stem}.txt"
 
 
 def get_basedpyright_log_path(test_file_path: str | Path) -> Path:
@@ -200,27 +200,32 @@ def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
     return dir_path / filename
 
 
-def module_path(src_file_path: Path | str) -> str:
-    src_file_path = Path(src_file_path)
+def module_path(src_file_path: Path | str | None) -> str | None:
+    src_file_path = Path(str(src_file_path))
     try:
-        relative_source = src_file_path.relative_to("src")
+        relative_src = src_file_path.relative_to("src")
     except ValueError:
         logger.exception(None, f"No src module at {src_file_path}")
         raise
 
-    return ".".join(relative_source.with_suffix("").parts)
+    return ".".join(relative_src.with_suffix("").parts)
 
 
-def unit_test_path(src_file_path: Path | str) -> Path:
+def unit_test_path(src_file_path: Path | str | None) -> Path:
     """Map a source file path to unit test path. Create test file stub if missing.
 
     E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'.
     """
-    src_file_path = Path(src_file_path)
-    relative_path = src_file_path.relative_to("src")
-    test_filename = f"test_{relative_path.name}"
+    src_file_path = Path(str(src_file_path))
+    try:
+        relative_src = src_file_path.relative_to("src")
+    except ValueError:
+        logger.exception(None, f"No src module at {src_file_path}")
+        raise
+    relative_src = relative_src.relative_to(relative_src.parts[0])
+    test_filename = f"test_{relative_src.name}"
 
-    test_path = Path("tests/unit") / relative_path.parent / test_filename
+    test_path = Path("tests/unit") / relative_src.parent / test_filename
     test_path.parent.mkdir(parents=True, exist_ok=True)
     if not test_path.exists() or test_path.stat().st_size == 0:
         test_path.write_text(
@@ -229,4 +234,4 @@ def unit_test_path(src_file_path: Path | str) -> Path:
         )
         logger.progress(None, f"Created test file {test_path}")
 
-    return Path("tests/unit") / relative_path.parent / test_filename
+    return Path("tests/unit") / relative_src.parent / test_filename
