@@ -146,8 +146,6 @@ class LLMRemediator:
         self,
         ctx: WorkflowContext,
         stage: StageConfig,
-        cache_name: str | None,
-        uploaded_files: list[Any],
         output: str,
     ) -> tuple[WorkflowStatus, str]:
         """Repeat with LLM to fix test failures and check code.
@@ -175,7 +173,6 @@ class LLMRemediator:
                     prefix=ctx.prefix,
                     spinner_msg=(f"Send {stage.name} fix request to LLM"),
                     system_instruction=system_instruction_text,
-                    cache_name=cache_name,
                     tool_name="unit-test-orchestrator",
                     process_step=stage.name.lower().replace("/", "-"),
                     target_file=ctx.test_file_path,
@@ -191,8 +188,6 @@ class LLMRemediator:
                     ctx.test_file_path,
                     f"Failed during structured LLM run for {stage.name}",
                 )
-                if self.client.supports_caching:
-                    self.client.cleanup_files(uploaded_files, ctx.prefix)
                 return WorkflowStatus.FAILED, "FAILED"
 
             is_valid, validation_reason = validate_llm_code(parsed_resp.code)
@@ -202,8 +197,6 @@ class LLMRemediator:
                     f"Bad LLM code output for {stage.name}. "
                     f"Cause: {validation_reason}. Skip update.",
                 )
-                if self.client.supports_caching:
-                    self.client.cleanup_files(uploaded_files, ctx.prefix)
                 return WorkflowStatus.FAILED, "FAILED"
 
             if parsed_resp.code.strip() == test_content.strip():
@@ -212,8 +205,6 @@ class LLMRemediator:
                         ctx.test_file_path,
                         f"End remediation stage '{stage.name}' due to same LLM outputs",
                     )
-                    if self.client.supports_caching:
-                        self.client.cleanup_files(uploaded_files, ctx.prefix)
                     return WorkflowStatus.FAILED, "No solution"
 
                 logger.warning(
@@ -225,17 +216,12 @@ class LLMRemediator:
 
             break
 
-        if self.client.supports_caching:
-            self.client.cleanup_files(uploaded_files, ctx.prefix)
-
         logger.progress(ctx.test_file_path, f"LLM response: {parsed_resp.message}")
         process_and_save_code(parsed_resp.code, ctx.test_file_path, ctx.prefix)
         return WorkflowStatus.FIXED, "FIXED"
 
     def run_workflow_stage(
         self,
-        cache_name: str | None,
-        uploaded_files: list[Any],
         ctx: WorkflowContext,
         stage: StageConfig,
     ) -> tuple[WorkflowStatus, str, str]:
@@ -265,24 +251,12 @@ class LLMRemediator:
         status_enum, status_msg = self._process_llm_remediation(
             ctx,
             stage,
-            cache_name,
-            uploaded_files,
             output,
         )
         return status_enum, stage.name, status_msg
 
-    def setup_cache(
-        self,
-        source_file_path: str,
-        prefix: str,
-    ) -> tuple[str | None, list[Any]]:
-        """Set up optional file caching using bound client adapter."""
-        return self.client.setup_cache(source_file_path, prefix)
-
     def _handle_preflight_failure(
         self,
-        cache_name: str | None,
-        uploaded_files: list[Any],
         ctx: WorkflowContext,
         preflight_errors: list[str],
     ) -> tuple[WorkflowStatus, str, str]:
@@ -312,8 +286,6 @@ class LLMRemediator:
                 is_success=lambda _: False,
                 skill_filename="fix_unit_test.md",
             ),
-            cache_name,
-            uploaded_files,
             error_output,
         )
         return status_enum, "Pytest/Coverage", status_msg
@@ -328,8 +300,10 @@ class LLMRemediator:
                 ctx.prefix,
                 source_file_path=ctx.source_file_path,
             )
-            py_out = my_io.read_txt(
-                file_handler.get_pytest_log_path(ctx.source_file_path),
+            py_out = str(
+                my_io.read_txt(
+                    file_handler.get_pytest_log_path(ctx.source_file_path),
+                ),
             )
             if not passed and guard_errors:
                 py_out += (
@@ -418,12 +392,10 @@ class LLMRemediator:
                     "Please fix and return complete script."
                 ),
             ]
-        return build_contents_list(t_path, s_path, t_content, "", py_out)
+        return build_contents_list(t_path, s_path, t_content, py_out)
 
     def run_pytest_stage(
         self,
-        cache_name: str | None,
-        uploaded_files: list[Any],
         ctx: WorkflowContext,
     ) -> tuple[WorkflowStatus, str, str]:
         """Run pre-pytest run check, pytest, coverage, and runtime guard."""
@@ -433,8 +405,6 @@ class LLMRemediator:
         )
         if not preflight_ok:
             return self._handle_preflight_failure(
-                cache_name,
-                uploaded_files,
                 ctx,
                 preflight_errors,
             )
@@ -443,8 +413,6 @@ class LLMRemediator:
         check_func = self._evaluate_pytest_success(ctx)
 
         return self.run_workflow_stage(
-            cache_name,
-            uploaded_files,
             ctx,
             StageConfig(
                 name="Pytest/Coverage",

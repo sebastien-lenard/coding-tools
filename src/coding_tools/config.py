@@ -84,21 +84,6 @@ def get_provider_mapping() -> dict[str, dict[str, Any]]:
     return dict(config.get("providers", {}))
 
 
-def is_caching_allowed(provider_name: str) -> bool:
-    """Check if caching is supported by provider and enabled in config.
-
-    Return false if either disabled or unsupported.
-    """
-    config = load_llm_config()
-    user_enabled = bool(config.get("enable_caching", False))
-    if not user_enabled:
-        return False
-
-    providers = get_provider_mapping()
-    provider_info = providers.get(provider_name, {})
-    return bool(provider_info.get("supports_caching", False))
-
-
 def python_version(path: Path | str) -> str | None:
     """Get the minimal Python version from pyproject.toml."""
     data = cast(

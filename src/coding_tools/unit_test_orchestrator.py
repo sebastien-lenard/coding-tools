@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Any
 
 from coding_tools import my_logger
 from coding_tools.llm_protocol import LLMError
@@ -50,26 +49,15 @@ def _evaluate_stage_status(
 
 def _run_stage_chain(
     remediator: LLMRemediator,
-    cache_name: str | None,
-    uploaded_files: list[Any],
     ctx: WorkflowContext,
 ) -> tuple[bool, str, str]:
-    """Run pytest, basedpyright, and ruff stages.
+    """Run basedpyright, pytest, basedpyright, and ruff stages.
 
     Use LLMRemediator for fixes per stage. Return success tuple.
     """
-    # --- STAGE 1: Pytest / Coverage ---
-    res = _evaluate_stage_status(
-        *remediator.run_pytest_stage(cache_name, uploaded_files, ctx),
-    )
-    if res is not None:
-        return res
-
-    # --- STAGE 2: Basedpyright Type Checking ---
+    # --- STAGE 1: Basedpyright (Initial Syntax & Type Check) ---
     res = _evaluate_stage_status(
         *remediator.run_workflow_stage(
-            cache_name,
-            uploaded_files,
             ctx,
             StageConfig(
                 name="Basedpyright",
@@ -87,11 +75,36 @@ def _run_stage_chain(
     if res is not None:
         return res
 
-    # --- STAGE 3: Ruff Linting ---
+    # --- STAGE 2: Pytest / Coverage ---
+    res = _evaluate_stage_status(
+        *remediator.run_pytest_stage(ctx),
+    )
+    if res is not None:
+        return res
+
+    # --- STAGE 3: Basedpyright (Final Type Check) ---
     res = _evaluate_stage_status(
         *remediator.run_workflow_stage(
-            cache_name,
-            uploaded_files,
+            ctx,
+            StageConfig(
+                name="Basedpyright",
+                run_command=lambda: run_basedpyright_command(
+                    ctx.test_file_path,
+                    ctx.prefix,
+                ),
+                is_success=lambda out: (
+                    "0 errors, 0 warnings, 0 notes" in parse_basedpyright_summary(out)
+                ),
+                skill_filename="fix_static_type.md",
+            ),
+        ),
+    )
+    if res is not None:
+        return res
+
+    # --- STAGE 4: Ruff Linting ---
+    res = _evaluate_stage_status(
+        *remediator.run_workflow_stage(
             ctx,
             StageConfig(
                 name="Ruff",
@@ -121,7 +134,6 @@ def execute_workflow(
 ) -> tuple[bool, str, str]:
     """Run test, type check, and lint workflow.
 
-    Setup LLM cache, run stage chain, clean uploaded files if caching.
     Catch LLMError, OSError, ValueError, and SubprocessError.
     """
     prefix = Path(test_file_path).name
@@ -130,28 +142,19 @@ def execute_workflow(
     remediator = LLMRemediator()
 
     try:
-        cache_name, uploaded_files = remediator.setup_cache(
-            source_file_path,
-            prefix,
-        )
-
         success, stage_name, status = _run_stage_chain(
             remediator,
-            cache_name,
-            uploaded_files,
             ctx,
         )
         if not success:
             return False, stage_name, status
 
-        if remediator.client.supports_caching:
-            remediator.client.cleanup_files(uploaded_files, prefix)
     except LLMError:
         logger.exception(
             prefix,
             "Failed LLM API or Server Error",
         )
-        return False, "Pytest/Coverage", "API_ERROR"
+        return False, "Basedpyright", "API_ERROR"
     except (OSError, ValueError):
         logger.exception(prefix, "File I/O or Value Error")
         raise

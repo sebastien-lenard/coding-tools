@@ -62,7 +62,6 @@ class StructuredGenerationOptions:
     prefix: str
     spinner_msg: str
     system_instruction: str | None = None
-    cache_name: str | None = None
     tool_name: str = "generic-tool"
     process_step: str = "generation"
     target_file: str = "unknown.py"
@@ -73,27 +72,10 @@ class StructuredGenerationOptions:
 class LLMClientProtocol(Protocol):
     """High-level ops for any LLM client."""
 
-    @property
-    def supports_caching(self) -> bool:
-        """Check if client supports remote caching."""
-        ...
-
     def response(
         self,
         contents_list: list[object],
         options: StructuredGenerationOptions,
     ) -> BaseModel:
         """Get checked Pydantic model response from contents."""
-        ...
-
-    def setup_cache(
-        self,
-        source_file_path: str,
-        prefix: str,
-    ) -> tuple[str | None, list[object]]:
-        """Set up optional file caching and return cache name and uploaded files."""
-        ...
-
-    def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Remove remote uploaded files."""
         ...

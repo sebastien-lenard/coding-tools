@@ -42,7 +42,6 @@ class PersistOutputParameters:
     error_details: str | None
     contents_list: list[object]
     model_name: str
-    supports_caching: bool
 
 
 def persist_llm_output(params: PersistOutputParameters) -> None:
@@ -82,13 +81,12 @@ def persist_llm_output(params: PersistOutputParameters) -> None:
             instructions.append(item_str)
 
     transferred_files = [str(params.options.target_file)]
-    if not params.supports_caching:
-        transferred_files.extend(
-            [
-                str(proj_root / "pyproject.toml"),
-                str(proj_root / "tests/conftest.py"),
-            ],
-        )
+    transferred_files.extend(
+        [
+            str(proj_root / "pyproject.toml"),
+            str(proj_root / "tests/conftest.py"),
+        ],
+    )
 
     dump_data: dict[str, Any] = {
         "metadata": {

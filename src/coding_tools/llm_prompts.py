@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from coding_tools import my_logger, pytest_cov
-from coding_tools.config import is_caching_allowed
 from coding_tools.parsers import (
     extract_pytest_errors,
     extract_pytest_warnings,
@@ -35,7 +34,6 @@ def build_contents_list(
     test_file_path: str,
     source_file_path: str,
     test_content: str,
-    coverage_content: str,
     pytest_output: str,
 ) -> list[str]:
     """Build contents list with source, tests, coverage, and pytest logs.
@@ -44,25 +42,24 @@ def build_contents_list(
     """
     contents_list: list[str] = []
 
-    if not is_caching_allowed("gemini"):
-        try:
-            toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
-            conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
-            source_content = Path(source_file_path).read_text(encoding="utf-8")
-        except OSError:
-            logger.exception(
-                source_file_path,
-                "Failed to read project setup files for contents",
-            )
-            raise
-
-        contents_list.extend(
-            [
-                f"--- pyproject.toml ---\n{toml_content}",
-                f"--- tests/conftest.py ---\n{conftest_content}",
-                f"--- {source_file_path} ---\n{source_content}",
-            ],
+    try:
+        toml_content = Path("pyproject.toml").read_text(encoding="utf-8")
+        conftest_content = Path("tests/conftest.py").read_text(encoding="utf-8")
+        source_content = Path(source_file_path).read_text(encoding="utf-8")
+    except OSError:
+        logger.exception(
+            source_file_path,
+            "Failed to read project setup files for contents",
         )
+        raise
+
+    contents_list.extend(
+        [
+            f"--- pyproject.toml ---\n{toml_content}",
+            f"--- tests/conftest.py ---\n{conftest_content}",
+            f"--- {source_file_path} ---\n{source_content}",
+        ],
+    )
 
     analysis_section = pytest_cov.tips(source_file_path)
 
