@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
-from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,16 +19,6 @@ if TYPE_CHECKING:
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
-
-
-class RunState(Enum):
-    """Run state for process or block."""
-
-    START = auto()
-    LIVE = auto()
-    DONE = auto()
-    FAIL = auto()
-    PASS = auto()
 
 
 def _clean(text: str) -> str:
@@ -167,17 +156,32 @@ class MyLogger:
     def summary_table(
         self,
         title: str,
-        headers: list[str],
-        rows: list[list[str]],
+        columns: dict[str, str],
+        rows: list[Any],
+        formatters: dict[str, Any] | None = None,
     ) -> None:
-        """Print multi-line summary table."""
+        """Print multi-line summary table from objects using key map and formatters."""
+        headers = list(columns.values())
+        keys = list(columns.keys())
+        formatters = formatters or {}
+
+        formatted_rows = []
+        for row in rows:
+            row_cells = []
+            for key in keys:
+                val = getattr(row, key, "")
+                if key in formatters and val is not None:
+                    val = formatters[key](val)
+                row_cells.append(str(val) if val is not None else "")
+            formatted_rows.append(row_cells)
+
         lines = [
             title,
             "---",
             " | ".join(headers),
             "---",
         ]
-        lines.extend(" | ".join(str(cell) for cell in row) for row in rows)
+        lines.extend(" | ".join(cell) for cell in formatted_rows)
         self.logger.info("\n%s", "\n".join(lines))
 
     def summary_line(
