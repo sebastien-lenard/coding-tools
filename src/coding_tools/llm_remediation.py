@@ -310,7 +310,7 @@ class LLMRemediator:
                 name="Pytest/Coverage",
                 run_command=lambda: error_output,
                 is_success=lambda _: False,
-                skill_filename="unit_test_generation.md",
+                skill_filename="fix_unit_test.md",
             ),
             cache_name,
             uploaded_files,
@@ -329,7 +329,7 @@ class LLMRemediator:
                 source_file_path=ctx.source_file_path,
             )
             py_out = my_io.read_txt(
-                file_handler.get_pytest_log_path(ctx.source_file_path)
+                file_handler.get_pytest_log_path(ctx.source_file_path),
             )
             if not passed and guard_errors:
                 py_out += (
@@ -450,7 +450,7 @@ class LLMRemediator:
                 name="Pytest/Coverage",
                 run_command=run_cmd,
                 is_success=check_func,
-                skill_filename="unit_test_generation.md",
+                skill_filename="fix_unit_test.md",
                 build_custom_contents=self._build_pytest_custom_contents,
             ),
         )

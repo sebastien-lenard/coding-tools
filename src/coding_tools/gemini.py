@@ -365,7 +365,7 @@ class Gemini:
                             ],
                         ),
                     ],
-                    system_instruction=load_skill("unit_test_generation.md"),
+                    system_instruction=load_skill("fix_unit_test.md"),
                 ),
             )
         except (errors.APIError, Exception) as e:

@@ -80,7 +80,7 @@ def _run_stage_chain(
                 is_success=lambda out: (
                     "0 errors, 0 warnings, 0 notes" in parse_basedpyright_summary(out)
                 ),
-                skill_filename="basedpyright_correction.md",
+                skill_filename="fix_static_type.md",
             ),
         ),
     )
