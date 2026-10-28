@@ -2,12 +2,12 @@
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-1. If the .py file doesn't have a module header docstring, write the module docstring.
-2. If code blocks (classes, functions, methods) don't have docstrings, write docstrings.
+1. If the .py file doesn't have a module header docstring, pen the module docstring.
+2. If code blocks (classes, functions, methods) don't have docstrings, pen docstrings.
 3. If blocks have mismatched or outdated docstrings, fix docstrings.
-4. If blocks have incomplete docstrings, fix docstrings. An incomplete docstring can lack (a) key info for debugging the bloc, (b) key info for projects that use the block, including (c) edge cases (e.g. when block skips part of its process), (d) state requirements, (e) files/db writing access, (f) internet/api access, (g) API keys, (h) commands with their options if any (e.g. pytest with coverage annotations), and (i) any other type of key info you find when scanning the blocks.
-5. If docstrings don't use telegraphic writing style, rewrite them in telegraphic style, but making sure all key info is in docstring (use more than 3-4 lines for complex blocks). Adverbs or adjectives only if they change meaning of sentence (e.g. don't write "direct/directly", "safe/safely", "modified", ). Function/method docstrings start with imperative verb. When a word has synonyms, favor the shorter synonym (e.g. "use" over "utilize", "check" over "verify" or "validate", "run" over "execute", "get" over "collect", "edit" over "modify" or "mutate", "yield" over "generate" or "compute", "lead" over "orchestrate", "to fix" over "to correct", "audit" or "scan" over "inspection").
-6. Don't change code or erase comments outside of docstrings.
+4. If blocks have incomplete docstrings, fix docstrings. An incomplete docstring can lack (a) key info for debugging the bloc, (b) key info for projects that use the block, (c) edge cases (e.g. when block skips part of its process), (d) needed states, (e) files/db writing access, (f) internet/api access, (g) API keys, (h) commands with their options if any (e.g. pytest with coverage annotations), and (i) any other type of key info you find when scanning the blocks.
+5. If docstrings don't use telegraphic writing style, rewrite them in telegraphic style, but making sure all key info is in docstring (use more than 3-4 lines for complex blocks). Opt for words with 1 or 2 syllables, e.g. use, read, cross, run, get, catch, done, audit, scan, clear, yield, check, tip, fill, match, fit, print, pen, bad, input, output, lead, base, fix, apply, system, rules, plug, chain, bridge, mark, start, end, set up, assess, save, store, state, sync, change, edit, summary, param, stats, data, list, repo, tag, item, step-by-step, format, rank, wrap, clean, spread, merge. Use no or few adverbs and adjectives, only when they make the meaning more clear.
+6. Don't edit code or clear comments outside of docstrings.
 
 ## Examples (Functions & Methods):
 

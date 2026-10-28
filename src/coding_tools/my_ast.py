@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 
 from coding_tools import my_logger
+from coding_tools.my_run import RunOutput, RunState
 
 logger = my_logger.logger(__name__)
 
@@ -153,10 +155,11 @@ def del_docstrings(tree: ast.AST) -> None:
 def match_codes(
     prev_code: str,
     new_code: str,
-) -> bool:
+    run_output: RunOutput,
+) -> RunOutput:
     """Check if non-docstring code matches between two strings.
 
-    False if syntax error, or if unparsed code trees differ.
+    FAIL if syntax error, or if unparsed code trees differ.
     """
     func = f"{__name__}"
     logger.start(func)
@@ -166,7 +169,7 @@ def match_codes(
     except SyntaxError:
         msg = "Bad code syntax (failed scan)"
         logger.exception(None, msg)
-        return False
+        return replace(run_output, status=RunState.FAIL, sub_func=func, msg=msg)
 
     del_docstrings(orig_tree)
     del_docstrings(new_tree)
@@ -177,10 +180,10 @@ def match_codes(
     if orig_normalized != new_normalized:
         msg = "Spotted code edits"
         logger.warning(None, msg)
-        return False
+        return replace(run_output, status=RunState.FAIL, sub_func=func, msg=msg)
 
     logger.end(func)
-    return True
+    return replace(run_output, status=RunState.PASS, sub_func=func, msg="")
 
 
 def uncov_map(

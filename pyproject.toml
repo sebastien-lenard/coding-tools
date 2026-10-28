@@ -32,7 +32,9 @@ backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
 function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
 workspace-guard = "coding_tools.workspace_guard:main"
-pen-docstrings = "coding_tools.docstring:main"
+fix-lint = "coding_tools.entry:fix_lint"
+pen-docstring = "coding_tools.entry:pen_docstring"
+
 
 [project.optional-dependencies]
 gemini = [
