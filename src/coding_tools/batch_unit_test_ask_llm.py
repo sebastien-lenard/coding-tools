@@ -11,63 +11,19 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from coding_tools import my_logger
+from coding_tools import file_handler, my_logger
 from coding_tools.unit_test_orchestrator import execute_workflow
 
 logger = my_logger.logger(__name__)
 
 
-def get_test_file_path(source_file: str | Path) -> str:
-    """Get unit test path matching source path under tests/unit.
-
-    Strips src prefix if present, adds tests/unit.
-    """
-    path = Path(source_file)
-    parts = path.parts
-    if "src" in parts:
-        idx = parts.index("src")
-        rel_parts = parts[idx + 1 :]
-    else:
-        rel_parts = (
-            path.relative_to(path.anchor).parts[1:]
-            if len(path.parts) > 1
-            else path.parts
-        )
-
-    if len(rel_parts) > 1:
-        sub_path = Path(*rel_parts[1:-1]) / f"test_{rel_parts[-1]}"
-    else:
-        sub_path = f"test_{path.name}"
-
-    return str(Path("tests/unit") / sub_path)
-
-
-def ensure_test_file_exists(test_file: str) -> None:
-    """Create test file and parent dirs if missing with min header stub.
-
-    Writes UTF-8 text with SPDX headers if file is absent or empty.
-    """
-    test_path = Path(test_file)
-    test_path.parent.mkdir(parents=True, exist_ok=True)
-    if not test_path.exists() or test_path.stat().st_size == 0:
-        header = (
-            f"# SPDX-FileCopyrightText: 2026 Sebastien Lenard "
-            f"<sebastien.lenard@gmail.com> and Contributors\n"
-            f"# SPDX-License-Identifier: Apache-2.0\n\n"
-            f'"""Unit tests for {test_path.name}."""\n\n'
-            f"from __init__ import *\n\n"
-        )
-        test_path.write_text(header, encoding="utf-8")
-        logger.progress(test_file, "Created test file")
-
-
-async def run_workflow_with_iterations(
+async def pen_unit_test(
     test_file: str,
     source_file: str,
     max_iterations: int = 5,
     semaphore: asyncio.Semaphore | None = None,
 ) -> dict[str, Any]:
-    """Run execute_workflow loop up to max iterations with parallel run limit.
+    """Pen and check unit tests through a loop up to max steps with parallel run cap.
 
     No call to LLM on final step. Ends on success or when llm not able to fix issues.
     """
@@ -81,12 +37,12 @@ async def run_workflow_with_iterations(
         try:
             for iteration in range(1, max_iterations + 1):
                 iterations_run = iteration
-                allow_gemini = iteration < max_iterations
+                call_llm = iteration < max_iterations
 
                 logger.progress(
                     prefix,
                     f"Start step {iteration}/{max_iterations}"
-                    f" using llm call: {allow_gemini}",
+                    f" using llm call: {call_llm}",
                 )
 
                 # Run the synchronous workflow in a thread pool executor
@@ -94,7 +50,7 @@ async def run_workflow_with_iterations(
                     execute_workflow,
                     test_file,
                     source_file,
-                    allow_llm=allow_gemini,
+                    allow_llm=call_llm,
                 )
 
                 final_stage = stage
@@ -128,7 +84,7 @@ async def run_workflow_with_iterations(
                     f"End step {iteration}. Stage: {final_stage}. "
                     f"Status: {final_status}",
                 )
-                if not allow_gemini:
+                if not call_llm:
                     break
 
         except Exception:
@@ -199,9 +155,8 @@ async def async_main() -> None:
     if target_path.is_file():
         if target_path.suffix == ".py":
             source_file = str(target_path)
-            test_file = get_test_file_path(source_file)
-            ensure_test_file_exists(test_file)
-            targets.append((test_file, source_file))
+            test_file = file_handler.unit_test_path(source_file)
+            targets.append((str(test_file), source_file))
         else:
             logger.error(None, "Bad file extension (Needed .py)")
             return
@@ -212,9 +167,8 @@ async def async_main() -> None:
             if py_file.name == "__init__.py":
                 continue
             source_file = str(py_file)
-            test_file = get_test_file_path(source_file)
-            ensure_test_file_exists(test_file)
-            targets.append((test_file, source_file))
+            test_file = file_handler.unit_test_path(source_file)
+            targets.append((str(test_file), source_file))
     else:
         logger.error(None, f"Missing target file or dir {target_path}")
         return
@@ -233,7 +187,7 @@ async def async_main() -> None:
 
     results = await asyncio.gather(
         *[
-            run_workflow_with_iterations(
+            pen_unit_test(
                 test_file,
                 source_file,
                 max_iterations=max_iterations,

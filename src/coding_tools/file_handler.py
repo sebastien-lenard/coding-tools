@@ -198,3 +198,35 @@ def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
     dir_path = proj_root / LLM_OUTPUT_DIR / sanitized_llm_name / params.start_date
     ensure_directory(dir_path)
     return dir_path / filename
+
+
+def module_path(src_file_path: Path | str) -> str:
+    src_file_path = Path(src_file_path)
+    try:
+        relative_source = src_file_path.relative_to("src")
+    except ValueError:
+        logger.exception(None, f"No src module at {src_file_path}")
+        raise
+
+    return ".".join(relative_source.with_suffix("").parts)
+
+
+def unit_test_path(src_file_path: Path | str) -> Path:
+    """Map a source file path to unit test path. Create test file stub if missing.
+
+    E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'.
+    """
+    src_file_path = Path(src_file_path)
+    relative_path = src_file_path.relative_to("src")
+    test_filename = f"test_{relative_path.name}"
+
+    test_path = Path("tests/unit") / relative_path.parent / test_filename
+    test_path.parent.mkdir(parents=True, exist_ok=True)
+    if not test_path.exists() or test_path.stat().st_size == 0:
+        test_path.write_text(
+            f'"""Unit tests for {test_path.name}."""',
+            encoding="utf-8",
+        )
+        logger.progress(None, f"Created test file {test_path}")
+
+    return Path("tests/unit") / relative_path.parent / test_filename
