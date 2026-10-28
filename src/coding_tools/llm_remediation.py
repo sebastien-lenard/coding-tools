@@ -16,6 +16,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from coding_tools import file_handler, my_io
 from coding_tools.llm_prompts import build_contents_list, load_skill
 from coding_tools.llm_protocol import (
     LLMResponse,
@@ -25,7 +26,6 @@ from coding_tools.llm_router import get_llm_client
 from coding_tools.parsers import (
     parse_pytest_results,
     process_and_save_code,
-    read_local_files,
     run_preflight_compliance_and_validation,
     validate_llm_code,
 )
@@ -326,12 +326,10 @@ class LLMRemediator:
             passed, guard_errors = guard.execute_test_and_guard(
                 ctx.test_file_path,
                 ctx.prefix,
-                run_coverage=True,
                 source_file_path=ctx.source_file_path,
             )
-            py_out = read_local_files(
-                ctx.test_file_path,
-                ctx.prefix,
+            py_out = my_io.read_txt(
+                file_handler.get_pytest_log_path(ctx.source_file_path)
             )
             if not passed and guard_errors:
                 py_out += (

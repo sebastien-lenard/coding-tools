@@ -14,7 +14,6 @@ from pathlib import Path
 from coding_tools import my_logger
 from coding_tools.file_handler import (
     get_basedpyright_log_path,
-    get_pytest_log_path,
     get_ruff_log_path,
 )
 from coding_tools.workspace_guard import WorkspaceGuard
@@ -26,48 +25,6 @@ MIN_PARTS_FOR_COVERAGE = 3
 MIN_PARTS_WITH_MISSING = 4
 MAX_BACKWARD_LOOKUP = 5
 MIN_LINES_FOR_LLM_CODE = 5
-
-
-def run_pytest_command(
-    test_file_path: str,
-    source_file_path: str,
-    prefix: str,
-) -> None:
-    """Run pytest with branch coverage and save output to pytest log.
-
-    Uses uv, pytest, cov-branch, term-missing, and annotate.
-    """
-    source_path = Path(source_file_path)
-    try:
-        relative_source = source_path.relative_to("src")
-    except ValueError:
-        relative_source = source_path
-    module_path = ".".join(relative_source.with_suffix("").parts)
-
-    cmd_list = [
-        "uv",
-        "run",
-        "pytest",
-        "--import-mode=importlib",
-        f"--cov={module_path}",
-        "--cov-branch",
-        "--cov-report=term-missing",
-        "--cov-report=annotate:.coverage_annotations",
-        test_file_path,
-    ]
-    cmd_str = " ".join(cmd_list)
-    logger.progress(prefix, f"Run `{cmd_str}`")
-
-    result = subprocess.run(  # noqa: S603
-        cmd_list,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    output_path = get_pytest_log_path(test_file_path)
-    full_content = f"$ {cmd_str}\n\n{result.stdout}\n{result.stderr}"
-    output_path.write_text(full_content, encoding="utf-8")
 
 
 def run_basedpyright_command(test_file_path: str, prefix: str) -> str:
@@ -339,22 +296,6 @@ def filter_ruff_output(output_text: str) -> str:
         if not line.strip().lower().startswith("warning:")
     ]
     return "\n".join(filtered_lines)
-
-
-def read_local_files(
-    test_file_path: str,
-    prefix: str,
-) -> str:
-    """Read test content, coverage report, and pytest log.
-
-    Handles missing coverage annotation file.
-    """
-    logger.progress(
-        prefix,
-        "Read local dynamic test, coverage, and log files",
-    )
-
-    return get_pytest_log_path(test_file_path).read_text(encoding="utf-8")
 
 
 def run_preflight_compliance_and_validation(
