@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from coding_tools import my_logger
+from coding_tools import file_handler, my_io, my_logger
 
 logger = my_logger.logger(__name__)
+
+PYPROJECT_TOML = "pyproject.toml"
 
 
 def _strip_jsonc_comments(content: str) -> str:
@@ -95,3 +97,18 @@ def is_caching_allowed(provider_name: str) -> bool:
     providers = get_provider_mapping()
     provider_info = providers.get(provider_name, {})
     return bool(provider_info.get("supports_caching", False))
+
+
+def python_version(path: Path | str) -> str | None:
+    """Get the minimal Python version from pyproject.toml."""
+    data = cast(
+        "dict[str, Any]",
+        my_io.read_toml(file_handler.get_project_root(path) / PYPROJECT_TOML),
+    )
+    if (
+        not data
+        or not data.get("project", {})
+        or not data.get("project", {}).get("requires-python")
+    ):
+        return None
+    return data.get("project", {}).get("requires-python")

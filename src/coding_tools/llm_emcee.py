@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from coding_tools import (
+    config,
     file_handler,
     llm_router,
     my_io,
@@ -104,10 +105,10 @@ def init(
     return Context(
         func_name=func,
         file_paths=file_paths,
-        skill=workspace_stamper.strip_header(my_io.read_txt(skill_path)),
+        skill=workspace_stamper.strip_header(str(my_io.read_txt(skill_path))),
         check_func=check_func,
         precheck_func=precheck_func,
-        template=workspace_stamper.strip_header(my_io.read_txt(template_path)),
+        template=workspace_stamper.strip_header(str(my_io.read_txt(template_path))),
         max_steps=max_steps,
         min_steps=min_steps,
         start_date=datetime.now().astimezone().strftime("%y-%m-%d"),
@@ -139,6 +140,12 @@ async def chat(
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
     file_stem = file_path.stem
+    python_version = config.python_version(file_path)
+    python_version = (
+        f"Python: {config.python_version(file_path)}\n"
+        if file_path.suffix == ".py" and python_version
+        else ""
+    )
     check_params = CheckParams(prev_txt=current_txt, new_txt="", file_path=file_path)
     run_output = ctx.precheck_func(check_params, run_output)
     if run_output.status == RunState.PASS:
@@ -156,7 +163,12 @@ async def chat(
         try:
             logger.start(step_msg)
             contents: list[object] = [
-                ctx.template.format(skill=ctx.skill, path=file_path, code=current_txt),
+                ctx.template.format(
+                    python_version=python_version,
+                    skill=ctx.skill,
+                    path=file_path,
+                    code=current_txt,
+                ),
             ]
             options = StructuredGenerationOptions(
                 response_schema=LLMResponse,
