@@ -118,12 +118,14 @@ def print_summary_table(
         if processed_multiple
         else "Unit test writing (file) Summary"
     )
-    headers = ["Test File", "Stage", "Status", "Steps"]
-    rows = [
-        [res["test_file"], res["stage"], res["status"], str(res["iterations"])]
-        for res in results
-    ]
-    logger.summary_table(title, headers, rows)
+    headers = {
+        "test_file": "Test File",
+        "stage": "Stage",
+        "status": "Status",
+        "iterations": "Steps",
+    }
+
+    logger.summary_table(title, headers, results)
 
 
 async def async_main() -> None:
@@ -184,7 +186,6 @@ async def async_main() -> None:
         logger.progress(None, f"Test: {test_f}. Src: {src_f}")
 
     semaphore = asyncio.Semaphore(2)
-
     results = await asyncio.gather(
         *[
             pen_unit_test(
