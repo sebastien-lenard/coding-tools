@@ -160,7 +160,7 @@ class MyLogger:
         rows: list[Any],
         formatters: dict[str, Any] | None = None,
     ) -> None:
-        """Print multi-line summary table from objects using key map and formatters."""
+        """Print multi-line summary table from objects or dicts using key map and formatters."""
         headers = list(columns.values())
         keys = list(columns.keys())
         formatters = formatters or {}
@@ -169,7 +169,10 @@ class MyLogger:
         for row in rows:
             row_cells = []
             for key in keys:
-                val = getattr(row, key, "")
+                if isinstance(row, dict):
+                    val = row.get(key, "")
+                else:
+                    val = getattr(row, key, "")
                 if key in formatters and val is not None:
                     val = formatters[key](val)
                 row_cells.append(str(val) if val is not None else "")
