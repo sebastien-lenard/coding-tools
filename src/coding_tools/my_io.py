@@ -13,18 +13,8 @@ logger = my_logger.logger(__name__)
 
 
 def read_lines(path: Path | str) -> list[str]:
-    path = Path(path)
-
-    if not path.exists() or not path.exists():
-        logger.warning(None, f"No {path}")
-        return []
-
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        logger.exception(None, f"Failed to read {path}")
-        return []
-    return lines
+    """Get lines from txt file."""
+    return str(read_txt(path)).splitlines()
 
 
 def read_toml(
@@ -36,16 +26,22 @@ def read_toml(
     ]
     | None
 ):
-    path = Path(path)
-    if not path.exists() or not path.exists():
-        logger.warning(None, f"No {path}")
+    """Get dictionary from toml file."""
+    txt = read_txt(path)
+    try:
+        return tomllib.loads(str(txt))
+    except tomllib.TOMLDecodeError:
+        logger.exception(None, f"Failed TOML decoding of {path}")
         return None
-    return tomllib.loads(Path(path).read_bytes().decode("utf-8"))
 
 
-def read_txt(path: Path | str) -> str:
+def read_txt(path: Path | str) -> str | None:
     """Raises OSError, UnicodeEncodeError."""
-    return Path(path).read_text(encoding="utf-8")
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        logger.exception(None, f"Failed to read or decode file {path}")
+        return None
 
 
 def write_txt(txt: str, path: Path | str) -> None:
