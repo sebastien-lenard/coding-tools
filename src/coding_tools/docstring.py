@@ -20,7 +20,7 @@ from coding_tools import (
 from coding_tools.my_run import RunOutput, RunState
 
 if TYPE_CHECKING:
-    from coding_tools.llm_emcee import CheckParams
+    from coding_tools.check import CheckParams
 
 
 MAX_STEPS = 2
@@ -32,7 +32,7 @@ logger = my_logger.logger(__name__)
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
     """Don't use file_path in params."""
     func = __name__
-    if not params.prev_txt:
+    if not params.old_txt:
         msg = "Empty original text"
         logger.warning(func, msg)
         return replace(run_output, status=RunState.FAIL, msg=f"{func} - {msg}")
@@ -41,7 +41,7 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
         logger.warning(func, msg)
         return replace(run_output, status=RunState.FAIL, msg=f"{func} - {msg}")
     run_output = my_ast.match_codes(
-        str(params.prev_txt),
+        str(params.old_txt),
         str(params.new_txt),
         run_output,
     )
