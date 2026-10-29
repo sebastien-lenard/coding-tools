@@ -10,10 +10,11 @@ Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from coding_tools import my_logger
+from coding_tools import my_io, my_logger, my_time
 
 logger = my_logger.logger(__name__)
 
@@ -21,14 +22,14 @@ COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
 PYTEST_OUTPUT_DIR = ".pytest_output"
 PYRIGHT_OUTPUT_DIR = ".pyright_output"
 RUFF_OUTPUT_DIR = ".ruff_output"
-LLM_OUTPUT_DIR = ".llm_output"
+LLM_LOG_DIR = ".llm_logs"
 
 ALL_TOOL_OUTPUT_DIRS = {
     COVERAGE_ANNOTATIONS_DIR,
     PYTEST_OUTPUT_DIR,
     PYRIGHT_OUTPUT_DIR,
     RUFF_OUTPUT_DIR,
-    LLM_OUTPUT_DIR,
+    LLM_LOG_DIR,
 }
 
 WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
@@ -52,30 +53,42 @@ class LLMOutputPathParameters:
     project_root: Path | None = None
 
 
-def files(path: Path | str, ext: str | None = ".py") -> list[Path]:
+def clean(txt: str) -> str:
+    """Clean text to be part of a file or folder name."""
+    txt = re.sub(r"[^\w\s\.-]", "", Path(txt).stem)
+    return re.sub(r"[-\s_]+", "-", txt).strip("-.").lower()
+
+
+def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[Path]:
     func = f"{__name__}"
-    path = Path(path).resolve()
-    if not path.exists():
-        msg = f"No {path}"
-        raise FileNotFoundError(msg)
 
-    files: list[Path] = []
-    if path.is_file() and ext in (path.suffix, None):
-        files.append(path)
-        return files
+    path_list = (
+        [Path(path)] if isinstance(path, (Path, str)) else [Path(p) for p in path]
+    )
+    out_files: list[Path] = []
 
-    if not ext:
-        files.extend(sorted(p for p in path.rglob("*") if p.is_file()))
-    else:
-        files.extend(sorted(path.rglob(ext)))
+    for item in path_list:
+        res_path = item.resolve()
+        if not res_path.exists():
+            msg = f"No {res_path}"
+            raise FileNotFoundError(msg)
+
+        if res_path.is_file() and ext in (res_path.suffix, None):
+            out_files.append(res_path)
+            continue
+
+        if not ext:
+            out_files.extend(sorted(p for p in res_path.rglob("*") if p.is_file()))
+        else:
+            out_files.extend(sorted(res_path.rglob(ext)))
 
     this_ext = "" if not ext else f".{ext} "
-    if not files:
+    if not out_files:
         logger.warning(func, f"No file at {path}")
     else:
-        logger.progress(func, f"Got {len(files)} {this_ext}at: {path}")
+        logger.progress(func, f"Got {len(out_files)} {this_ext}at: {path}")
 
-    return files
+    return sorted(set(out_files))
 
 
 def get_project_root(path: str | Path) -> Path:
@@ -180,22 +193,28 @@ def pytest_cov_path(source_file_path: str | Path) -> Path | None:
     return None
 
 
-def get_llm_output_path(params: LLMOutputPathParameters) -> Path:
-    """Get nested path for LLM outputs.
+def llm_log_path(
+    func: str,
+    llm: str,
+    input_path: Path | str | None = None,
+    root: Path | str | None = None,
+) -> Path:
+    """Get nested path for LLM request/response contents.
 
-    Write to disk under .llm_output.
+    Write to disk under .llm_logs.
     """
-    proj_root = params.project_root or get_project_root(params.target_file)
-    sanitized_llm_name = (
-        params.llm_name.replace("/", "-").replace("\\", "-").replace(":", "-")
-    )
-    target_filename = Path(params.target_file).name
+    func = "llm_log_path"
+    root = root or (get_project_root(input_path) if input_path else None)
+    if root is None:
+        msg = f"No target root given ({func})"
+        raise ValueError(msg)
+    timestamp, day, time = my_time.now()
     filename = (
-        f"{params.hhmiss}-{params.tool_name}-{params.process_step}-"
-        f"{target_filename}-{params.status_label}-{params.timestamp}.json"
+        f"{time}_{func}"
+        f"{'_' + (Path(input_path).name if input_path else '') + '_'}{timestamp}.md"
     )
 
-    dir_path = proj_root / LLM_OUTPUT_DIR / sanitized_llm_name / params.start_date
+    dir_path = Path(root) / LLM_LOG_DIR / clean(llm) / day
     ensure_directory(dir_path)
     return dir_path / filename
 
@@ -209,6 +228,34 @@ def module_path(src_file_path: Path | str | None) -> str | None:
         raise
 
     return ".".join(relative_src.with_suffix("").parts)
+
+
+def src_path(test_file_path: Path | str) -> Path:
+    """Map a unit test path to source file path.
+
+    E.g. 'tests/unit/xx/test_yy.py' to 'src/xx/yy.py'.
+    """
+    path = Path(str(test_file_path))
+    try:
+        relative_test = path.relative_to(Path("tests/unit"))
+    except ValueError:
+        logger.exception(None, f"No tests/unit base at {path}")
+        raise
+
+    src_filename = relative_test.name.removeprefix("test_")
+    src_path = Path("src") / relative_test.parent / src_filename
+    logger.progress(None, f"Mapped {path} to {src_path}")
+    return src_path
+
+
+def to_path_list(
+    paths: list[Path] | list[str] | Path | str | None,
+) -> list[Path]:
+    if paths is None:
+        return []
+    if isinstance(paths, (Path, str)):
+        return [Path(paths)]
+    return [Path(p) for p in paths]
 
 
 def unit_test_path(src_file_path: Path | str | None) -> Path:
@@ -228,9 +275,9 @@ def unit_test_path(src_file_path: Path | str | None) -> Path:
     test_path = Path("tests/unit") / relative_src.parent / test_filename
     test_path.parent.mkdir(parents=True, exist_ok=True)
     if not test_path.exists() or test_path.stat().st_size == 0:
-        test_path.write_text(
-            f'"""Unit tests for {test_path.name}."""',
-            encoding="utf-8",
+        my_io.write_txt(
+            ("test_dummy() -> None:\n    assert 1 == 1\n"),
+            test_path,
         )
         logger.progress(None, f"Created test file {test_path}")
 
