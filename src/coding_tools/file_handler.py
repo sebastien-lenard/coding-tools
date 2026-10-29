@@ -176,6 +176,17 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
     return base_dir / f"ruff-{stem}.txt"
 
 
+def latest_path(dir: Path, txt: str) -> Path | None:
+    if not dir.is_dir():
+        msg = f"No dir {dir}"
+        raise FileNotFoundError(msg)
+    matches = list(dir.glob(txt))
+    if matches:
+        return max(matches, key=lambda p: p.stat().st_mtime)
+    msg = f"No file with {txt} at {dir}"
+    raise FileNotFoundError(msg)
+
+
 def pytest_cov_path(source_file_path: str | Path) -> Path | None:
     """Get coverage annotation path under project root.
 
@@ -183,14 +194,12 @@ def pytest_cov_path(source_file_path: str | Path) -> Path | None:
     yielding the most recent file.
     """
     base_dir = get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
-    target_name = Path(source_file_path).name
-    matches = list(base_dir.glob(f"*_{target_name},cover"))
-    if matches:
-        cov_path = max(matches, key=lambda p: p.stat().st_mtime)
-        logger.progress(None, f"Found pytest cov path {cov_path}")
-        return cov_path
-    logger.warning(None, f"No pytest cov file at {base_dir}")
-    return None
+    pattern = f"*_{Path(source_file_path).name},cover"
+    try:
+        return latest_path(base_dir, pattern)
+    except FileNotFoundError:
+        logger.warning(None, f"No pytest cov {pattern} file at {base_dir}")
+        return None
 
 
 def llm_log_path(
@@ -220,9 +229,11 @@ def llm_log_path(
 
 
 def module_path(src_file_path: Path | str | None) -> str | None:
-    src_file_path = Path(str(src_file_path))
+    src_file_path = Path(str(src_file_path)).resolve()
     try:
-        relative_src = src_file_path.relative_to("src")
+        relative_src = src_file_path.relative_to(
+            get_project_root(src_file_path) / "src",
+        )
     except ValueError:
         logger.exception(None, f"No src module at {src_file_path}")
         raise
@@ -263,11 +274,13 @@ def unit_test_path(src_file_path: Path | str | None) -> Path:
 
     E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'.
     """
-    src_file_path = Path(str(src_file_path))
+    src_file_path = Path(str(src_file_path)).resolve()
     try:
-        relative_src = src_file_path.relative_to("src")
+        relative_src = src_file_path.relative_to(
+            get_project_root(src_file_path) / "src",
+        )
     except ValueError:
-        logger.exception(None, f"No src module at {src_file_path}")
+        logger.exception(None, f"No src folder in {src_file_path}")
         raise
     relative_src = relative_src.relative_to(relative_src.parts[0])
     test_filename = f"test_{relative_src.name}"
