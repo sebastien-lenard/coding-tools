@@ -30,12 +30,12 @@ class RunOutput:
 
     func: str
     status: RunState
-    input_path: Path | str | None = None
-    output_path: Path | str | None = None
-    log_path: Path | str | None = None
+    input_path: Path | None = None
+    output_path: Path | None = None
+    log_path: Path | None = None
     step: str | int | None = None
     max_steps: int | None = None
-    sub_func: str | None = None
-    msg: str | None = None
-    brief: str | None = None
+    sub_func: str = ""
+    msg: str = ""
+    brief: str = ""
     edited: EditState = EditState.KEPT
