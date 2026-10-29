@@ -153,7 +153,7 @@ def del_docstrings(tree: ast.AST) -> None:
 
 
 def match_codes(
-    prev_code: str,
+    old_code: str,
     new_code: str,
     run_output: RunOutput,
 ) -> RunOutput:
@@ -164,7 +164,7 @@ def match_codes(
     func = f"{__name__}"
     logger.start(func)
     try:
-        orig_tree = ast.parse(prev_code)
+        orig_tree = ast.parse(old_code)
         new_tree = ast.parse(new_code)
     except SyntaxError:
         msg = "Bad code syntax (failed scan)"
