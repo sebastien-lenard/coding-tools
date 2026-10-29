@@ -1,24 +1,72 @@
-<!-- config/skills/ruff_correction.md -->
+<!-- config/skills/fix_lint.md -->
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-You are an expert Python 3.12 developer and static code analysis specialist. Fix all Ruff linting errors and warnings for the provided script, respecting the pyproject.toml configuration. Generate the entire script updated. Check that you didn't forget anything, any logic in this updated script, any docstring, any preexisting logs (info or debug) that can be still useful in this updated script. Provide the full script back.
+1. Fix lint warnings.
+2. Don't edit code or clear comments or clear docstrings outside of your edits to address the lint warnings.
 
-- Use PEP 695 `type` syntax, `X | Y` union types, `list[T]` / `dict[K, V]` built-in generics.
-- Line length: Max 88 characters.
-- Ensure the top of the file includes:
-# [file relative location, e.g. src/coding_tools/unit_test_ask_llm.py]
-# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
-# SPDX-License-Identifier: Apache-2.0
+## Examples of accepted fixes:
+```python
+from pathlib import Path
 
-- Never catch blind `Exception` or `BaseException` unless catching at an outer application CLI/entry boundary.
-- Replace generic `except Exception as e:` blocks with specific exception types relevant to the code inside the `try` block (e.g., `FileNotFoundError`, `KeyError`, `ValueError`, `requests.RequestException`).
-- When re-raising exceptions, use `raise NewException(...) from err` (`B904`).
+from coding_tools import my_logger
 
-- Inside `except` blocks, replace `logger.error(...)` with `logger.exception(...)` so exception tracebacks are recorded automatically.
+logger = my_logger.logger(__name__)
 
-- Add type hints for all function arguments and return values (`def func(param: int) -> str:`).
-- Use `Path` from `pathlib` for file system paths instead of `os.path` (`PTH`).
+def read_txt(path: Path | str) -> str | None:
+    """Get text from utf8 file."""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        logger.exception(None, f"Failed to read or decode file {path}")
+        return None
+```
 
-- Convert manual list/dict building loops into comprehensions or standard functions where appropriate.
-- Fix all unused arguments (`ARG`), unused loop variables (`B007`), and shadowed built-ins (`A`).
+```python
+cleaned_users = [process_user(u) for u in raw_users if u.strip() != "admin"]
+```
+
+```python
+class BadResponseError(Exception):
+    """Raised when a webhook or API response is badly formatted."""
+
+def extract_user_id(data: dict) -> int:
+    try:
+        return data["user_id"]
+    except KeyError as err:
+        raise InvalidPayloadError("Missing 'user_id' in API response") from err
+```
+
+```python
+def index[T](items: list[T], key: str) -> dict[str, T]:
+    """Indexes a list of objects into a dictionary."""
+    result: dict[str, T] = {}
+
+    for item in items:
+        if hasattr(item, key):
+            k = str(getattr(item, key))
+            result[k] = item
+
+    return result
+
+
+class User:
+    """Is a system user."""
+    def __init__(self, user_id: str, name: str) -> None:
+        """Init user profile."""
+        self.user_id = user_id
+        self.name = name
+
+    def __repr__(self) -> str:
+        """Get user's string."""
+        return f"User({self.name})"
+
+
+users: list[User] = [
+    User("u1", "Alice"),
+    User("u2", "Bob"),
+    User("u3", "Charlie"),
+]
+
+user_book: dict[str, User] = index(users, "user_id")
+```
