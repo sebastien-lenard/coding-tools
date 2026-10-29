@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +20,13 @@ if TYPE_CHECKING:
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
+
+
+class Verbose(Enum):
+    """Verbosity of logs."""
+
+    V = "Log warnings and main progress"
+    VV = "Log details"
 
 
 def _clean(text: str) -> str:

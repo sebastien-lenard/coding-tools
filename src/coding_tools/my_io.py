@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 from coding_tools import file_handler, my_logger
+from coding_tools.my_logger import Verbose
 
 logger = my_logger.logger(__name__)
 
@@ -77,12 +78,13 @@ def save_llm_req_resp(
         )
 
 
-def write_txt(txt: str, path: Path | str) -> None:
+def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
     """Raises OSError, UnicodeEncodeError."""
     try:
         old_txt = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        logger.progress(None, f"No previous file (or previous corrupted) {path}")
+        if verbose == Verbose.VV:
+            logger.progress(None, f"No previous file (or previous corrupted) {path}")
     else:
         old_lines = old_txt.splitlines(keepends=True)
         new_lines = txt.splitlines(keepends=True)
@@ -95,19 +97,10 @@ def write_txt(txt: str, path: Path | str) -> None:
             ),
         )
         if diff:
-            logger.progress(None, f"Diff:\n{''.join(diff)}")
+            if verbose == Verbose.VV:
+                logger.progress(None, f"Diff:\n{''.join(diff)}")
+            Path(path).write_text(txt, encoding="utf-8")
+            logger.end(f"Txt saved to {path}")
 
     Path(path).write_text(txt, encoding="utf-8")
     logger.end(f"Txt saved to {path}")
-
-
-def process_and_save_code(new_code: str, test_file_path: str, prefix: str) -> None:
-    """Yield diff statistics, log diff, and write new test code.
-
-    Uses unified diff and overwrites test file.
-    """
-    test_path = Path(test_file_path)
-    old_code = test_path.read_text(encoding="utf-8")
-
-    test_path.write_text(new_code, encoding="utf-8")
-    logger.progress(prefix, f"Done. Saved script to {test_path}")
