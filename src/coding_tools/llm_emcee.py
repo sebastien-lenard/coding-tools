@@ -26,6 +26,7 @@ from coding_tools import (
     my_logger,
 )
 from coding_tools.check import CheckParams, default_check_func
+from coding_tools.my_logger import Verbose
 from coding_tools.my_run import EditState, RunOutput, RunState
 
 if TYPE_CHECKING:
@@ -107,7 +108,7 @@ async def chat(
                 msg="",
                 python_version=python_version,
                 skill=ctx.skill,
-                tips="",
+                tips=run_output.brief,
                 files_to_edit=current_txt,
                 context_files="",
             )
@@ -130,7 +131,11 @@ async def chat(
                     old_txt=check_params.new_txt,
                     new_txt="",
                 )
-                my_io.write_txt(str(check_params.old_txt), file_path)
+                my_io.write_txt(
+                    str(check_params.old_txt),
+                    file_path,
+                    verbose=Verbose.VV,
+                )
                 run_output = replace(run_output, edited=EditState.EDITED)
                 if step + 1 >= ctx.min_steps:
                     logger.end(file_path.name, f"Passed after {step + 1} steps")
