@@ -4,6 +4,6 @@
 from datetime import datetime
 
 
-def now():
+def now() -> tuple[int, str, str]:
     now = datetime.now().astimezone()
     return int(now.timestamp()), now.strftime("%Y%m%d"), now.strftime("%H%M%S")
