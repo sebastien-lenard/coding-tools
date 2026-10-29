@@ -10,44 +10,34 @@ Audit of edits. Parallel runs with cap. File write access.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
 from coding_tools import (
     config,
-    file_handler,
+    llm_protocol,
     llm_router,
     my_io,
     my_logger,
-    workspace_stamper,
 )
-from coding_tools.llm_protocol import LLMResponse, StructuredGenerationOptions
+from coding_tools.check import CheckParams, default_check_func
 from coding_tools.my_run import EditState, RunOutput, RunState
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
-PARALLEL_CALLS = 2
-TEMPLATE_PATH = Path("config/templates/improve.md")
+
 MAX_STEPS = 2
 MIN_STEPS = 1
-SUMMARY_HEADERS = ("File", "Pass", "Edited")
+PARALLEL_CALLS = 2
+
 
 logger = my_logger.logger(__name__)
-
-
-@dataclass
-class CheckParams:
-    """Params used by check function."""
-
-    prev_txt: str | None
-    new_txt: str | None
-    file_path: Path
 
 
 @dataclass
@@ -58,70 +48,21 @@ class Context:
     """
 
     func_name: str
-    file_paths: list[Path]
-    skill: str
-    check_func: Callable[[CheckParams, RunOutput], RunOutput]
-    precheck_func: Callable[[CheckParams, RunOutput], RunOutput]
-    template: str
-    max_steps: int
-    min_steps: int
-    start_date: str
-    semaphore: asyncio.Semaphore
-    llm: LLMClientProtocol
-
-
-@dataclass
-class SummaryRow:
-    """Run summary per file.
-
-    Maps file name to status string.
-    """
-
-    file: str
-    passed: str
-    edited: str
-
-
-def init(
-    func: str,
-    path: Path | str,
-    skill_path: Path | str,
-    check_func: Callable[[CheckParams, RunOutput], RunOutput],
-    precheck_func: Callable[[CheckParams, RunOutput], RunOutput],
-    template_path: Path | str = TEMPLATE_PATH,
-    max_steps: int = MAX_STEPS,
-    min_steps: int = MIN_STEPS,
-    parallel_calls: int = PARALLEL_CALLS,
-) -> tuple[Context, RunOutput]:
-    """Build and return Context for task.
-
-    Read skill and template files. Raise OSError, UnicodeEncodeError, FileNotFoundError.
-    """
-    sub_func = "mc.init"
-    file_paths = file_handler.files(path)
-    if not file_paths:
-        msg = f"No file at {path}"
-        raise FileNotFoundError(msg)
-    return Context(
-        func_name=func,
-        file_paths=file_paths,
-        skill=workspace_stamper.strip_header(str(my_io.read_txt(skill_path))),
-        check_func=check_func,
-        precheck_func=precheck_func,
-        template=workspace_stamper.strip_header(str(my_io.read_txt(template_path))),
-        max_steps=max_steps,
-        min_steps=min_steps,
-        start_date=datetime.now().astimezone().strftime("%y-%m-%d"),
-        semaphore=asyncio.Semaphore(parallel_calls),
-        llm=llm_router.get_llm_client(),
-    ), RunOutput(
-        func=func,
-        sub_func=sub_func,
-        status=RunState.START,
-        input_path=path,
-        step=0,
-        max_steps=max_steps,
+    file_paths_to_edit: list[Path] = field(default_factory=list)
+    context_file_paths: list[Path] = field(default_factory=list)
+    msg: str = ""
+    skill: str = ""
+    tips: str = ""
+    check_func: Callable[[CheckParams, RunOutput], RunOutput] = default_check_func
+    precheck_func: Callable[[CheckParams, RunOutput], RunOutput] = default_check_func
+    template: str = ""
+    max_steps: int = MAX_STEPS
+    min_steps: int = MIN_STEPS
+    start_date: str = datetime.now().astimezone().strftime("%y-%m-%d")
+    semaphore: asyncio.Semaphore = field(
+        default_factory=lambda: asyncio.Semaphore(PARALLEL_CALLS),
     )
+    llm: LLMClientProtocol = field(default=llm_router.get_llm_client())
 
 
 async def chat(
@@ -146,7 +87,7 @@ async def chat(
         if file_path.suffix == ".py" and python_version
         else ""
     )
-    check_params = CheckParams(prev_txt=current_txt, new_txt="", file_path=file_path)
+    check_params = CheckParams(old_txt=current_txt, new_txt="", file_path=file_path)
     run_output = ctx.precheck_func(check_params, run_output)
     if run_output.status == RunState.PASS:
         msg = ", saved fixes." if run_output.edited == EditState.EDITED else "."
@@ -162,38 +103,34 @@ async def chat(
         step_msg = f"{file_stem} {step + 1}/{ctx.max_steps}"
         try:
             logger.start(step_msg)
-            contents: list[object] = [
-                ctx.template.format(
-                    python_version=python_version,
-                    skill=ctx.skill,
-                    path=file_path,
-                    code=current_txt,
-                ),
-            ]
-            options = StructuredGenerationOptions(
-                response_schema=LLMResponse,
+            req: str = ctx.template.format(
+                msg="",
+                python_version=python_version,
+                skill=ctx.skill,
+                tips="",
+                files_to_edit=current_txt,
+                context_files="",
+            )
+            params = llm_protocol.LLMCallParams(
+                response_schema=llm_protocol.LLMResponse,
                 prefix=file_stem,
-                spinner_msg=f"{ctx.func_name} LLM call {step + 1}",
-                system_instruction="",
                 tool_name=f"{ctx.func_name}",
                 process_step=f"{step}",
                 target_file=str(file_path),
-                start_date=ctx.start_date,
             )
-            response = ctx.llm.response(
-                contents,
-                options,
+            resp = ctx.llm.call(
+                req,
+                params,
             )
-            resp_typed = cast("LLMResponse", response)
-            check_params = replace(check_params, new_txt=resp_typed.code)
+            check_params = replace(check_params, new_txt=resp.edited_files)
             run_output = ctx.check_func(check_params, run_output)
             if run_output.status == RunState.PASS:
                 check_params = replace(
                     check_params,
-                    prev_txt=check_params.new_txt,
+                    old_txt=check_params.new_txt,
                     new_txt="",
                 )
-                my_io.write_txt(str(check_params.prev_txt), file_path)
+                my_io.write_txt(str(check_params.old_txt), file_path)
                 run_output = replace(run_output, edited=EditState.EDITED)
                 if step + 1 >= ctx.min_steps:
                     logger.end(file_path.name, f"Passed after {step + 1} steps")

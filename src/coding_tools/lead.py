@@ -11,22 +11,61 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib
-from typing import Final
+import typing
+from pathlib import Path
 
-from coding_tools import file_handler, llm_emcee, my_logger
+from coding_tools import (
+    file_handler,
+    llm_emcee,
+    my_import,
+    my_io,
+    my_logger,
+    workspace_stamper,
+)
+from coding_tools.llm_emcee import Context
+from coding_tools.my_run import RunOutput, RunState
 
 SKILL_PATH = "config/skills/TOOL.md"
-MAX_STEPS = 2
-MIN_STEPS = 2
 SUMMARY_HEADERS = ("File", "Status", "Edited")
-
-TOOL_SCRIPTS: Final = {
+TEMPLATE_PATH = Path("config/templates/improve.md")
+TOOL_SCRIPTS: typing.Final = {
     "pen-docstring": "coding_tools.docstring",
     "fix-lint": "coding_tools.lint",
 }
 
 logger = my_logger.logger(__name__)
+
+
+def files(args: argparse.Namespace) -> list[Path]:
+    """Raise ValueError."""
+    return file_handler.files(args.path)
+
+
+def module_name(args: argparse.Namespace) -> str:
+    mod_name = TOOL_SCRIPTS.get(str(args.tool))
+    if not mod_name:
+        msg = f"Bad tool: {args.tool}"
+        logger.error(None, msg)
+        raise ValueError(msg)
+    return mod_name
+
+
+def read(path: Path) -> str:
+    try:
+        txt = workspace_stamper.strip_header(str(my_io.read_txt(path)))
+    except (OSError, UnicodeDecodeError) as e:
+        msg = f"No template {path}"
+        logger.exception(None, msg)
+        raise RuntimeError(msg) from e
+    if not txt:
+        msg = f"Empty template {path}"
+        logger.error(None, msg)
+        raise ValueError(msg)
+    return txt
+
+
+def skill_path(args: argparse.Namespace) -> Path:
+    return Path(SKILL_PATH.replace("TOOL", args.tool).replace("-", "_"))
 
 
 async def run() -> None:
@@ -53,35 +92,51 @@ async def run() -> None:
     )
     args = parser.parse_args()
 
-    module_name = TOOL_SCRIPTS.get(args.tool)
-    if not module_name:
-        logger.error(func, f"Bad tool: {args.tool}")
-        logger.end(func)
+    try:
+        mod_name = module_name(args)
+    except ValueError as e:
+        raise SystemExit(1) from e
+
+    try:
+        mod = my_import.import_module(mod_name)
+    except (ImportError, OSError) as e:
+        raise SystemExit(1) from e
+
+    try:
+        files: list[Path] = file_handler.files(args.path)
+    except FileNotFoundError as e:
+        raise SystemExit(1) from e
+    if not files:
+        msg = f"No file at {args.path}"
+        logger.error(None, msg)
         raise SystemExit(1)
 
     try:
-        mod = importlib.import_module(module_name)
-    except (ImportError, OSError) as e:
-        logger.exception(func, f"Import fail: {module_name}")
-        logger.end(func)
+        skill = read(skill_path(args))
+        templ = read(TEMPLATE_PATH)
+    except (RuntimeError, ValueError) as e:
         raise SystemExit(1) from e
 
-    try:
-        ctx, run_output = llm_emcee.init(
-            func=args.tool,
-            path=args.path,
-            skill_path=SKILL_PATH.replace("TOOL", args.tool).replace("-", "_"),
-            check_func=mod.check,
-            precheck_func=mod.precheck,
-            max_steps=mod.MAX_STEPS,
-            min_steps=mod.MIN_STEPS,
-        )
-    except (OSError, UnicodeEncodeError) as e:
-        logger.exception(None, "")
-        logger.end(func)
-        raise SystemExit(1) from e
+    ctx = Context(
+        func_name=func,
+        file_paths_to_edit=files,
+        skill=skill,
+        check_func=mod.check,
+        precheck_func=mod.precheck,
+        template=templ,
+        min_steps=mod.MIN_STEPS,
+        max_steps=mod.MAX_STEPS,
+    )
+    run_output = RunOutput(
+        func=func,
+        sub_func="mc.init",
+        status=RunState.START,
+        input_path=args.path,
+        step=0,
+        max_steps=mod.MAX_STEPS,
+    )
 
-    tasks = [llm_emcee.run(f, ctx, run_output) for f in ctx.file_paths]
+    tasks = [llm_emcee.run(f, ctx, run_output) for f in ctx.file_paths_to_edit]
     run_outputs = await asyncio.gather(*tasks)
 
     logger.summary_table(
@@ -92,7 +147,11 @@ async def run() -> None:
             "edited": SUMMARY_HEADERS[2],
         },
         run_outputs,
-        formatters={"input_path": file_handler.module_path},
+        formatters={
+            "input_path": file_handler.module_path,
+            "status": lambda s: s.value,
+            "edited": lambda e: e.value,
+        },
     )
     logger.end(func)
 
