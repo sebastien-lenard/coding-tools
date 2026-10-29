@@ -11,23 +11,19 @@ Handles formatted writing and context caching.
 
 from __future__ import annotations
 
-import json
 import time
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import Any, TypeVar, cast
 
-from google.genai import Client, errors, types
-from google.genai.errors import ServerError
+from google import genai
+from google.genai import errors, types
 from pydantic import BaseModel
 
-from coding_tools import config, my_logger
-from coding_tools.llm_persistence import PersistOutputParameters, persist_llm_output
+from coding_tools import config, llm_protocol, my_io, my_logger
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 
-if TYPE_CHECKING:
-    from coding_tools.llm_protocol import StructuredGenerationOptions
-
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 HTTP_SERVICE_UNAVAILABLE = 503
+MAX_RETRIES = 3
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -35,28 +31,14 @@ T = TypeVar("T", bound=BaseModel)
 logger = my_logger.logger(__name__)
 
 
-@dataclass
-class RetryRequestParameters:
-    """Store params for Gemini API runs.
-
-    Holds client, model name, contents list, config kwargs, prefix, and spinner msg.
-    """
-
-    client: Client
-    model_name: str
-    contents_list: list[types.ContentUnion]
-    config_kwargs: dict[str, object]
-    prefix: str
-    spinner_msg: str
-
-
-def build_config(
+def set_config(
     response_schema: type[BaseModel],
-    system_instruction: str | None = None,
 ) -> dict[str, object]:
     """Build config dict for structured GenAI execution.
 
     Sets response mime type to application/json and blocks function calling.
+    config_kwargs will contain the model name, thinking level,
+    the pydantic validation schema for the LLM response (message / code).
     """
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
@@ -70,73 +52,107 @@ def build_config(
         ),
     }
 
-    if system_instruction is not None:
-        config_kwargs["system_instruction"] = system_instruction
-
     return config_kwargs
 
 
-def call_gemini_with_retry(
-    params: RetryRequestParameters,
-) -> types.GenerateContentResponse:
-    """Run Gemini generate_content call with ServerError retry logic.
+def llm_call(
+    client: genai.Client,
+    req: str,
+    model: str,
+    config: dict[str, object],
+    prefix: str | None = None,
+) -> object:
+    """Call Gemini with request (prompt) and get Gemini response.
+
+    Handles Gemini errors by re-raising llm-neutral LLMServerError or others.
+    """
+    resp: genai.types.GenerateContentResponse | None = None
+    try:
+        with logger.run_spin("Call LLM", str(prefix)):
+            resp = client.models.generate_content(
+                model=model,
+                contents=req,
+                config=types.GenerateContentConfig(
+                    **dict[str, Any](config),
+                ),
+            )
+    except genai.ServerError as e:
+        if e.code == HTTP_SERVICE_UNAVAILABLE:
+            this_msg = "Failed. HTTP 503"
+            logger.exception(
+                prefix,
+                this_msg,
+            )
+        msg = getattr(e, "message", None) or str(e)
+        raise LLMServerError(
+            message=msg,
+            status_code=getattr(e, "code", None),
+            retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
+        ) from e
+    except (errors.APIError, Exception) as e:
+        this_msg = "Failed Gemini API exchanges"
+        msg = getattr(e, "message", None) or str(e) or this_msg
+        logger.exception(prefix, this_msg)
+        raise LLMAPIError(
+            message=msg,
+            status_code=getattr(e, "code", None),
+            error_code=getattr(e, "status", None),
+        ) from e
+
+    return resp.parsed
+
+
+def retry_llm_call(
+    client: genai.Client,
+    req: str,
+    model: str,
+    config: dict[str, object],
+    prefix: str | None = None,
+) -> object:
+    """Call llm with retry logic.
 
     503 retry up to 3 times with exponential backoff. Raise LLMServerError if persist.
     """
-    max_retries = 3
-    response: types.GenerateContentResponse | None = None
-    for attempt in range(max_retries):
+    resp: Any | None = None
+    for _try in range(MAX_RETRIES):
         try:
-            with logger.run_spin(params.spinner_msg, params.prefix):
-                response = params.client.models.generate_content(
-                    model=params.model_name,
-                    contents=params.contents_list,
-                    config=types.GenerateContentConfig(
-                        **dict[str, Any](params.config_kwargs),
-                    ),
-                )
-        except ServerError as e:
-            if e.code == HTTP_SERVICE_UNAVAILABLE and attempt < max_retries - 1:
-                sleep_time = (2**attempt) * 2
+            resp = llm_call(client, req, model, config, prefix)
+        except LLMServerError as e:
+            if e.status_code == HTTP_SERVICE_UNAVAILABLE and _try < MAX_RETRIES - 1:
+                sleep_time = (2**_try) * 2
                 logger.warning(
-                    params.prefix,
+                    prefix,
                     f"Bad reply http 503. Retry in {sleep_time}s "
-                    f"(Try {attempt + 1}/{max_retries})...",
+                    f"(Try {_try + 1}/{MAX_RETRIES})...",
                 )
                 time.sleep(sleep_time)
                 continue
             this_msg = "Failed tries to bypass http 503"
             logger.exception(
-                params.prefix,
+                prefix,
                 this_msg,
             )
+            raise
+        except (LLMAPIError, Exception) as e:
+            this_msg = "Failed LLM API exchanges"
             msg = getattr(e, "message", None) or str(e) or this_msg
-            raise LLMServerError(
-                message=msg,
-                status_code=getattr(e, "code", None),
-                retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
-            ) from e
-        except (errors.APIError, Exception) as e:
-            this_msg = "Failed Gemini API exchanges"
-            msg = getattr(e, "message", None) or str(e) or this_msg
-            logger.exception(params.prefix, this_msg)
-            raise LLMAPIError(
-                message=msg,
-                status_code=getattr(e, "code", None),
-                error_code=getattr(e, "status", None),
-            ) from e
+            logger.exception(prefix, this_msg)
+            raise
         else:
             break
 
-    if response is None:
-        msg = "Failed to generate content after max retries due to server errors."
-        logger.error(params.prefix, msg)
+    if not resp:
+        msg = (
+            f"Failed to get llm edits content after {MAX_RETRIES} retries "
+            f"due to server or API errors."
+        )
+        logger.error(prefix, msg)
         raise LLMServerError(
             message=msg,
             status_code=HTTP_SERVICE_UNAVAILABLE,
             retryable=False,
         )
-    return response
+    return resp
 
 
 def _raise_schema_error(schema_name: str) -> None:
@@ -153,103 +169,62 @@ class Gemini:
 
     def __init__(self, model_name: str | None = None) -> None:
         """Init client with model name or default provider config."""
-        self.client = Client()
+        self.client = genai.Client()
         if model_name is not None:
             self.model_name = model_name
         else:
             gemini_config = config.get_provider_mapping().get("gemini", {})
             self.model_name = str(
-                gemini_config.get("default_model", "gemini-3.5-flash-lite"),
+                gemini_config.get("default_model", DEFAULT_MODEL),
             )
 
-    def response(
+    def call(
         self,
-        contents_list: list[object],
-        options: StructuredGenerationOptions,
-    ) -> BaseModel:
+        req: str,
+        params: llm_protocol.LLMCallParams,
+    ) -> llm_protocol.LLMResponse:
         """Get validated Pydantic model response from GenAI API.
 
         Raise ValueError if response does not conform to schema.
         """
-        config_kwargs = build_config(
-            response_schema=options.response_schema,
-            system_instruction=options.system_instruction,
+        config_kwargs = set_config(
+            response_schema=params.response_schema,
         )
 
-        gemini_contents: list[types.ContentUnion] = [
-            types.Part.from_text(text=str(item)) for item in contents_list
-        ]
-
-        params = RetryRequestParameters(
-            client=self.client,
-            model_name=self.model_name,
-            contents_list=gemini_contents,
-            config_kwargs=config_kwargs,
-            prefix=options.prefix,
-            spinner_msg=options.spinner_msg,
-        )
-
-        status_label = "ok"
-        error_details: str | None = None
-        raw_text: str | None = None
-        parsed_json: Any | None = None
-        parsed_model: BaseModel | None = None
         exception_to_raise: Exception | None = None
-        validated_obj: BaseModel = options.response_schema(message="", code="")
-
+        checked_obj: BaseModel = params.response_schema(message="", edited_files="")
+        resp = None
         try:
-            response = call_gemini_with_retry(params)
-            raw_text = response.text
-            if raw_text:
-                try:
-                    parsed_json = json.loads(raw_text)
-                except json.JSONDecodeError:
-                    parsed_json = None
-
-            parsed = response.parsed
-            if parsed is None:
-                status_label = "ko"
-                schema_name = options.response_schema.__name__
-                error_details = (
-                    f"GenAI response did not conform to {schema_name} schema."
-                )
-                _raise_schema_error(schema_name)
-
-            parsed_model = cast("BaseModel", parsed)
-            validated_obj = options.response_schema.model_validate(parsed)
-        except (LLMServerError, LLMAPIError) as e:
-            status_label = (
-                "503"
-                if getattr(e, "status_code", None) == HTTP_SERVICE_UNAVAILABLE
-                else "ko"
+            resp = retry_llm_call(
+                client=self.client,
+                req=req,
+                model=self.model_name,
+                config=config_kwargs,
+                prefix=params.prefix,
             )
-            error_details = str(e)
+
+            if resp is None:
+                schema_name = params.response_schema.__name__
+                _raise_schema_error(schema_name)
+            checked_obj = params.response_schema.model_validate(resp)
+        except (LLMServerError, LLMAPIError) as e:
             exception_to_raise = e
         except ValueError as e:
-            status_label = "ko"
-            error_details = str(e)
             exception_to_raise = e
         except (TypeError, AttributeError, RuntimeError) as e:
-            status_label = "ko"
-            error_details = str(e)
             exception_to_raise = e
         else:
             exception_to_raise = None
-
-        persist_llm_output(
-            PersistOutputParameters(
-                options=options,
-                status_label=status_label,
-                raw_text=raw_text,
-                parsed_json=parsed_json,
-                parsed_model=parsed_model,
-                error_details=error_details,
-                contents_list=contents_list,
-                model_name=self.model_name,
-            ),
-        )
+        if resp:
+            my_io.save_llm_req_resp(
+                func=params.tool_name,
+                llm=self.model_name,
+                request=req,
+                response=str(resp),
+                target_file=params.target_file,
+            )
 
         if exception_to_raise is not None:
             raise exception_to_raise
 
-        return validated_obj
+        return cast("llm_protocol.LLMResponse", checked_obj)

@@ -19,7 +19,7 @@ class LLMError(Exception):
 
 
 class LLMAPIError(LLMError):
-    """Agnostic API error mirroring provider failure details."""
+    """Neutral API error mirroring provider failure details."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class LLMAPIError(LLMError):
 
 
 class LLMServerError(LLMError):
-    """Agnostic server error mirroring server failure and retries."""
+    """Neutral server error mirroring server failure and retries."""
 
     def __init__(
         self,
@@ -51,31 +51,27 @@ class LLMResponse(BaseModel):
     """Expected JSON structure for LLMs."""
 
     message: str
-    code: str
+    edited_files: str
 
 
 @dataclass
-class StructuredGenerationOptions:
-    """Params for structured text writing."""
+class LLMCallParams:
+    """Params for formatted text writing."""
 
     response_schema: type[BaseModel]
     prefix: str
-    spinner_msg: str
-    system_instruction: str | None = None
     tool_name: str = "generic-tool"
     process_step: str = "generation"
     target_file: str = "unknown.py"
-    start_date: str = "26-01-01"
-    llm_name: str = "generic-model"
 
 
 class LLMClientProtocol(Protocol):
     """High-level ops for any LLM client."""
 
-    def response(
+    def call(
         self,
-        contents_list: list[object],
-        options: StructuredGenerationOptions,
-    ) -> BaseModel:
+        req: str,
+        params: LLMCallParams,
+    ) -> LLMResponse:
         """Get checked Pydantic model response from contents."""
         ...
