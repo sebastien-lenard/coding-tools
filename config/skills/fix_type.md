@@ -2,42 +2,93 @@
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-You are an expert Python 3.12 developer and strict typing specialist skilled in modern static type analysis with Basedpyright. Resolve all Basedpyright type-checking errors, warnings, and type hints for the provided script. Adhere to Python 3.12 typing standards. Generate the entire script updated. Check that you didn't forget anything, any logic in this updated script, any docstring, any preexisting logs (info or debug) that can be still useful in this updated script. Provide the full script back.
+1. Fix static type warnings.
+2. Don't edit code or clear comments or clear docstrings outside of your edits to address the static type warnings.
 
----
+## Examples of accepted fixes:
+```python
+y: int = 0
+if False:
+    y = 10
+z = y + 1
+```
 
-### CONFIGURATION & CONSTRAINTS
-1. Target Version: Python 3.12.
-2. Standard Built-in Types: Use PEP 585 & PEP 604 syntax:
-   - Use standard collections for generics: `list[T]`, `dict[K, V]`, `set[T]`, `tuple[T, ...]`.
-   - Use union syntax: `X | Y` instead of `Union[X, Y]`.
-   - Use `X | None` instead of `Optional[X]`.
-   - Avoid imports from `typing` that have built-in equivalents (`List`, `Dict`, `Tuple`, `Set`, `Union`, `Optional`).
-3. PEP 695 Generics & Type Aliases:
-   - Use the `type` statement for type aliases (`type Matrix = list[list[float]]`).
-   - Use standard generics syntax for functions/classes (e.g., `def get_first[T](items: list[T]) -> T:`).
+```python
+from typing import Protocol
 
----
+class Renderable(Protocol):
+    def render(self, data: list[int]) -> str:
+        ...
 
-### STRICT TYPE-CHECKING RULES
+class Widget:
+    def render(self, data: list[int]) -> str:
+        return str(data[0]
+```
 
-#### 1. Avoid Unsafe Type Suppressions & Dynamic Types
-- Do NOT use `Any` or `Unknown` unless strictly interacting with untyped 3rd-party boundaries.
-- Do NOT use `# type: ignore` or `# pyright: ignore` comments to hide warnings unless an underlying library lacks stubs and it is explicitly justified.
-- Prefer explicit type guards (`isinstance()`, `is not None`, `hasattr()`) over aggressive casting.
+```python
+from typing import Sequence
 
-#### 2. Narrowing & Optional Handling (`reportOptionalMemberAccess`, `reportOptionalSubscript`)
-- Explicitly narrow `None` values using standard control flow checks (`if val is not None:`) before accessing attributes or subscripting.
-- If a value cannot logically be `None`, use an explicit assertion (`assert val is not None, "Context message"`) to narrow the type for Basedpyright safely.
+class Animal:
+    pass
 
-#### 3. Strict Function Signatures (`reportMissingParameterType`, `reportUnknownReturnType`)
-- Annotate every function parameter, explicit keyword argument, `*args`, `**kwargs`, and return type.
-- For functions that do not return a value, explicitly annotate `-> None`.
-- For functions that never return (e.g., infinite loops or unconditional raises), use `NoReturn` from `typing`.
+class Dog(Animal):
+    pass
 
-#### 4. Type Narrowing & Unions (`reportGeneralTypeIssues`, `reportArgumentType`)
-- Use `isinstance()` checks or pattern matching (`match/case`) to narrow union types (`str | Path`) into concrete types before calling type-specific methods.
-- Use `typing.cast()` only as a last resort when the type system cannot infer a invariant guaranteed by business logic.
+dogs: list[Dog] = []
+animals: Sequence[Animal] = dogs
+```
 
-#### 5. Implicit Re-exports & Attribute Access (`reportAttributeAccessIssue`, `reportPrivateImportUsage`)
-- Ensure all imported types/symbols are properly exposed or imported from their canonical public modules.
+```python
+from collections.abc import Callable
+
+def my_decorator[F: Callable[..., int]](func: F) -> F:
+    return func
+
+@my_decorator
+def add(a: int, b: int) -> int:
+    return a + b
+```
+
+```python
+from typing import TypedDict
+
+class DataDict(TypedDict):
+    id: int
+
+def get_data() -> DataDict:
+    return {"id": 1}
+```
+
+```python
+from typing import TypeVar
+
+T = TypeVar("T")
+
+def process(val: T) -> T:
+    return val
+
+x: int = process(123)
+```
+
+```python
+def get_value(data: object) -> str:
+    val = getattr(data, "value", None)
+    error = getattr(data, "error", None)
+    if isinstance(val, str) and not error:
+        return val
+    return ""
+```
+
+```python
+from pathlib import Path
+import my_io
+def write(txt: str, path: Path | str) -> None:
+    my_io.write_txt(txt, path)
+```    
+
+```python
+from collections.abc import Callable
+
+def wrap_func(func: Callable[..., int], *args: object, **kwargs: object) -> int:
+    return func(*args, **kwargs)
+```
