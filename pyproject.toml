@@ -26,12 +26,10 @@ dependencies = [
 ]
 
 [project.scripts]
-batch-unit-test = "coding_tools.batch_unit_test_ask_llm:main"
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
 function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
-workspace-guard = "coding_tools.workspace_guard:main"
 fix-lint = "coding_tools.entry:fix_lint"
 fix-type = "coding_tools.entry:fix_type"
 pen-docstring = "coding_tools.entry:pen_docstring"
