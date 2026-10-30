@@ -11,7 +11,7 @@ from dataclasses import replace
 from enum import Enum
 from pathlib import Path
 
-from coding_tools import file_handler, my_ast, my_io, my_logger
+from coding_tools import my_ast, my_io, my_logger, my_path
 from coding_tools.my_run import RunOutput, RunState
 
 logger = my_logger.logger(__name__)
@@ -40,11 +40,11 @@ def issues(
     uncov_lines: list[int] = []
     branch_notes: list[tuple[int, str]] = []
     try:
-        ann_lines = my_io.read_lines(file_handler.pytest_cov_path(src_file_path))
+        ann_lines = my_io.read_lines(my_path.pytest_cov_path(src_file_path))
     except (FileNotFoundError, RuntimeError, ValueError):
         msg = (
             f"No cov file (or corrupted) for {src_file_path} in "
-            f"{file_handler.pytest_cov_dir(src_file_path)}"
+            f"{my_path.pytest_cov_dir(src_file_path)}"
         )
         logger.warning(None, msg)
         return uncov_lines, branch_notes, CovState.MISSING, RunState.FAIL

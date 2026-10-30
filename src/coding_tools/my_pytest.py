@@ -5,7 +5,7 @@
 from dataclasses import replace
 from pathlib import Path
 
-from coding_tools import file_handler, my_logger, my_subprocess
+from coding_tools import my_logger, my_path, my_subprocess
 from coding_tools.my_run import EditState, RunOutput, RunState
 from coding_tools.my_subprocess import CmdParams
 
@@ -81,7 +81,7 @@ def run(file_path: Path | str, run_output: RunOutput) -> RunOutput:
         check_result=check_result,
         clean_log=None,
         func_name=FUNC_NAME,
-        log_path=file_handler.get_pytest_log_path(file_path),
+        log_path=my_path.get_pytest_log_path(file_path),
         input_path=file_path,
     )
     return my_subprocess.run(cmd=CMD, params=params, run_output=run_output)

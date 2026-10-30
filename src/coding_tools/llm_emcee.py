@@ -18,14 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-from coding_tools import (
-    config,
-    file_handler,
-    llm_protocol,
-    llm_router,
-    my_io,
-    my_logger,
-)
+from coding_tools import config, llm_protocol, llm_router, my_io, my_logger, my_path
 from coding_tools.check import CheckParams, default_check_func
 from coding_tools.my_logger import Verbose
 from coding_tools.my_run import EditState, RunOutput, RunState
@@ -79,8 +72,8 @@ async def chat(
     """
     try:
         current_txt = my_io.read_txt(file_path)
-        if file_handler.is_unit_test(file_path):
-            context_txt = my_io.read_txt(file_handler.src_path(file_path))
+        if my_path.is_unit_test(file_path):
+            context_txt = my_io.read_txt(my_path.src_path(file_path))
         else:
             context_txt = ""
     except (OSError, UnicodeEncodeError):

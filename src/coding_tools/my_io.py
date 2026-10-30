@@ -8,7 +8,7 @@ import difflib
 import tomllib
 from pathlib import Path
 
-from coding_tools import file_handler, my_logger, workspace_stamper
+from coding_tools import my_logger, my_path, workspace_stamper
 from coding_tools.my_logger import Verbose
 
 logger = my_logger.logger(__name__)
@@ -72,7 +72,7 @@ def save_llm_req_resp(
     Saves to .llm_logs/ path.
     """
     try:
-        log_path = file_handler.llm_log_path(
+        log_path = my_path.llm_log_path(
             input_path=target_file,
             func=func,
             llm=llm,

@@ -7,7 +7,7 @@ Exposes UntrackedBackupManager, WorkspaceStamper, and tool log path helpers.
 """
 
 from .backup_untracked import UntrackedBackupManager
-from .file_handler import (
+from .my_path import (
     ALL_TOOL_OUTPUT_DIRS,
     get_basedpyright_log_path,
     get_pytest_log_path,

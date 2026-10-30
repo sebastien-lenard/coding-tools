@@ -168,7 +168,7 @@ class MyLogger:
         rows: list[Any],
         formatters: dict[str, Any] | None = None,
     ) -> None:
-        """Print multi-line summary table from objects or dicts using key map and formatters."""
+        """Log formatter multi-line summary table from objects or dicts."""
         headers = list(columns.values())
         keys = list(columns.keys())
         formatters = formatters or {}

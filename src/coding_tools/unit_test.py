@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from coding_tools import file_handler, my_io, my_logger, my_pytest, pytest_cov
+from coding_tools import my_io, my_logger, my_path, my_pytest, pytest_cov
 from coding_tools.my_logger import Verbose
 from coding_tools.my_run import EditState, RunOutput, RunState
 
@@ -40,13 +40,13 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
         )
         run_output = replace(run_output, edited=EditState.EDITED)
     run_output = my_pytest.run(
-        file_path=file_handler.src_path(params.file_path),
+        file_path=my_path.src_path(params.file_path),
         run_output=run_output,
     )
 
     if run_output.status == RunState.PASS:
         run_output = pytest_cov.run(
-            src_file_path=file_handler.src_path(params.file_path),
+            src_file_path=my_path.src_path(params.file_path),
             run_output=run_output,
         )
     return run_output

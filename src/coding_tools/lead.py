@@ -14,13 +14,7 @@ import asyncio
 import typing
 from pathlib import Path
 
-from coding_tools import (
-    file_handler,
-    llm_emcee,
-    my_import,
-    my_io,
-    my_logger,
-)
+from coding_tools import llm_emcee, my_import, my_io, my_logger, my_path
 from coding_tools.llm_emcee import Context
 from coding_tools.my_run import RunOutput, RunState
 
@@ -39,7 +33,7 @@ logger = my_logger.logger(__name__)
 
 def files(args: argparse.Namespace) -> list[Path]:
     """Raise ValueError."""
-    return file_handler.files(args.path)
+    return my_path.files(args.path)
 
 
 def module_name(args: argparse.Namespace) -> str:
@@ -95,7 +89,7 @@ async def run() -> None:
         raise SystemExit(1) from e
 
     try:
-        files: list[Path] = file_handler.files(args.path)
+        files: list[Path] = my_path.files(args.path)
     except FileNotFoundError as e:
         raise SystemExit(1) from e
     if not files:
@@ -103,9 +97,9 @@ async def run() -> None:
         logger.error(None, msg)
         raise SystemExit(1)
     if args.test:
-        file_paths_to_edit = file_handler.unit_test_path(files)
+        file_paths_to_edit = my_path.unit_test_path(files)
         try:
-            conftest = my_io.read_txt(file_handler.conftest_path(args.path))
+            conftest = my_io.read_txt(my_path.conftest_path(args.path))
         except (RuntimeError, ValueError) as e:
             raise SystemExit(1) from e
     else:
@@ -151,7 +145,7 @@ async def run() -> None:
         },
         run_outputs,
         formatters={
-            "input_path": file_handler.module_path,
+            "input_path": my_path.module_path,
             "status": lambda s: s.value,
             "edited": lambda e: e.value,
         },

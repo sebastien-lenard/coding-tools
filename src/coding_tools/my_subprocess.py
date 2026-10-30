@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from coding_tools import file_handler, my_io, my_logger, my_string
+from coding_tools import my_io, my_logger, my_path, my_string
 from coding_tools.my_run import EditState, RunOutput
 
 logger = my_logger.logger(__name__)
@@ -27,11 +27,11 @@ class CmdParams:
 
 def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
     try:
-        module_path = file_handler.module_path(params.input_path)
+        module_path = my_path.module_path(params.input_path)
     except ValueError:
         module_path = ""
     try:
-        unit_test_path = file_handler.unit_test_path(params.input_path)[0]
+        unit_test_path = my_path.unit_test_path(params.input_path)[0]
     except ValueError:
         unit_test_path = ""
     swaps = {

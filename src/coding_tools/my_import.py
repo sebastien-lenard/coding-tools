@@ -1,3 +1,6 @@
+# src/coding_tools/llm_router.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
 import importlib
 import types
 

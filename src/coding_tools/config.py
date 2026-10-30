@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from coding_tools import file_handler, my_io, my_logger
+from coding_tools import my_io, my_logger, my_path
 
 logger = my_logger.logger(__name__)
 
@@ -88,7 +88,7 @@ def python_version(path: Path | str) -> str | None:
     """Get the minimal Python version from pyproject.toml."""
     data = cast(
         "dict[str, Any]",
-        my_io.read_toml(file_handler.prj_root(path) / PYPROJECT_TOML),
+        my_io.read_toml(my_path.prj_root(path) / PYPROJECT_TOML),
     )
     if (
         not data
