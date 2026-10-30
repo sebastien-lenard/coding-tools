@@ -22,6 +22,7 @@ class RunState(Enum):
     FAIL = "Failed"
     PASS = "Passed"  # noqa: S105
     SKIP = "Skipped"
+    PRESTART = "Not started"
 
 
 @dataclass
