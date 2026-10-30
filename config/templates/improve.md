@@ -11,6 +11,7 @@
 --- End of Tips ---
 --- Files for tip context, don't edit ---
 {context_files}
+{conftest}
 --- End of Files for context ---
 --- Files to edit ---
 Content for each file starts with a comment giving the path relative to the project.

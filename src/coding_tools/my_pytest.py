@@ -11,12 +11,47 @@ from coding_tools.my_subprocess import CmdParams
 
 logger = my_logger.logger(__name__)
 
-FUNC_NAME = "Pytest"
+HEADER_ERRORS = (
+    "=========================================================== "
+    "ERRORS ==========================================================="
+)
+HEADER_FAILURES = (
+    "=========================================================== "
+    "FAILURES ==========================================================="
+)
+HEADER_WARNINGS = (
+    "====================================================== "
+    "warnings summary ======================================================="
+)
+FOOT_START = "\n========================================================"
 CMD = (
     "uv run pytest --import-mode=importlib --cov=MODULE_PATH --cov-branch "
     "--cov-report=term-missing --cov-report=annotate:.coverage_annotations "
     "UNIT_TEST_PATH"
 )
+FUNC_NAME = "Pytest"
+MIN_PARTS_BAD_LOG = 2
+
+
+def clean_log(txt: str) -> str:
+    """Clear running info that don't give tips on pytest errors, fail, warnings."""
+    if HEADER_ERRORS in txt:
+        header = HEADER_ERRORS
+    elif HEADER_FAILURES in txt:
+        header = HEADER_FAILURES
+    elif HEADER_WARNINGS in txt:
+        header = HEADER_WARNINGS
+    else:
+        return ""
+
+    parts = txt.split(header)
+    if len(parts) < MIN_PARTS_BAD_LOG:
+        return ""
+
+    sub_txt = parts[1]
+    end_parts = sub_txt.split(FOOT_START)
+
+    return f"{header}\n{end_parts[0].strip()}"
 
 
 def check_edited(out: str, err: str) -> EditState:  # noqa: ARG001

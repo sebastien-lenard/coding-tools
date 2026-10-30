@@ -5,56 +5,130 @@
 1. Create or fix unit tests using pytest. Handle issues in this order: (1) errors, (2) fails, (3) warnings, (4) source coverage.
 2. Don't edit code or clear comments or clear docstrings outside of your edits to address the issues.
 
-Rules:
+## Examples of accepted pens and fixes:
+```python
+def test_live_path_errors(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        my_file.live_path(tmp_path / "missing", "*.txt")
 
-1. High Coverage & Edge Cases:
-   - Test all conditional branches (`if`/`elif`/`else`), edge cases, and failure modes.
-   - Use `pytest.raises(<ExceptionClass>)` to explicitly test expected exceptions and error conditions.
-   - **Uncovered lines (`!`)**: If a line inside an `if` block is marked with `!`, your tests never entered it. Inspect the preceding `if` condition, deduce what inputs/state make it evaluate to `True`, and add a test case providing them.
-   - **Active Exception Contexts & `logger.exception`**: 
-     - Methods like `logger.exception(...)` or functions inspecting active exception states (`sys.exc_info()`) require an active exception handler to capture tracebacks.
-     - Always wrap such calls inside a `try...except` block during tests to ensure complete statement coverage and valid traceback logging:
-       ```python
-       try:
-           raise ValueError("Error")
-       except ValueError:
-           logger.exception(target, "Message")
-       ```
+    sub = tmp_path / "empty"
+    sub.mkdir()
+    with pytest.raises(FileNotFoundError):
+        my_file.live_path(sub, "*.txt")
+```
 
-2. Parametrization:
-   - Use `@pytest.mark.parametrize` whenever testing multiple inputs, variations, or edge cases for a function. 
-   - Avoid duplicate test function boilerplate.
+```python
+try:
+   raise ValueError("Error")
+except ValueError:
+   logger.exception(target, "Message")
+```
 
-3. File System Isolation (`tmp_path`):
-   - Never write to or create actual files to relative paths or hardcoded directories in the local workspace (e.g., no Path("test_output.txt")).
-   - Always use the built-in `tmp_path` fixture (`pathlib.Path`) for any file or directory creation, reading, writing, or path manipulation.
-   - Use monkeypatch.chdir(tmp_path) if the code under test relies on relative paths from the project root.
+```python
+def test_main_entry_run_failure() -> None:
+    """Test failure run via the main CLI."""
+    test_args = ["bundle_sources.py", "missing_dir"]
+    with patch("sys.argv", test_args), pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+```
 
-4. Clean Pytest Idioms:
-   - Use plain Python `assert` statements (e.g., `assert result == expected`).
-   - Do NOT use legacy `unittest.TestCase` structures or raw `tempfile` modules.
-   - Keep test functions modular, isolated, and readable.
+```python
+@pytest.mark.parametrize(
+    ("target", "full_path", "expected"),
+    [
+        (None, False, ""),
+        (None, True, ""),
+        ("", False, ""),
+        ("", True, ""),
+        (Path("file.py"), False, "file: "),
+        (Path("file.py"), True, "file.py: "),
+        (Path("folder") / "file.py", False, "file: "),
+        (Path("folder") / "file.py", True, f"{Path('folder') / 'file.py'}: "),
+        (Path("other.txt"), False, "other.txt: "),
+        (Path("other.txt"), True, "other.txt: "),
+    ],
+)
+def test_fmt(
+    target: str | Path | None,
+    full: bool,
+    expected: str,
+) -> None:
+    """Test target formatting handles paths and extensions."""
+    assert MyFormatter.fmt(target, full=full) == expected
+```
 
-5. Specials:
-   - if you see a warning similar to: "RuntimeWarning: 'coding_tools.workspace_stamper' found in sys.modules after import of package 'coding_tools', but prior to execution of 'coding_tools.workspace_stamper';", you need to correct using syntax similar to `target_file_path = str(Path(ws_module.__file__).resolve())` rather than using explicitly the name of the module.
-   - Favor "runpy.run_module(target_file_path, run_name="__main__")" and don't use subprocess.run for unit tests
+```python
+def test_read_config_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test good reading of config."""
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True)
+    config_file = config_dir / "config.jsonc"
+    config_file.write_text('{"default": "model-a"}', encoding="utf-8")
 
-6. Mocking Third-Party SDK Exceptions (`google.genai.errors`):
-   - **Never** instantiate third-party SDK exception classes directly (e.g., `errors.APIError(...)` or `ServerError(...)`) because their constructors require mandatory internal parameters like `response_json`.
-   - **Never** subclass third-party exceptions directly.
-   - **Use Global Test Mocks**: For testing API failures and server errors, always use the pre-defined mock exception classes available globally via `tests/conftest.py`:
-     - `MockAPIError(message=..., code=..., status=...)`
-     - `MockServerError(message=..., code=...)`
-   - **Example Usage in Tests**:
-     ```python
-     mock_client.files.upload.side_effect = MockAPIError(message="Upload failed", code=400)
-     ```
-   - Ensure production source code safely extracts attributes using `getattr(e, "message", None) or str(e)` to remain compatible with these mocks.
+    cfg = read_config()
+    assert cfg["default"] == "model-a"
+```
 
-7. Accurate Imports:
-   - **Never guess or hallucinate module or class names** that do not exist in the source file under test.
-   - Always inspect the imports and definitions of the target source file (e.g., `src/coding_tools/llm_persistence.py`) and only import classes or functions that are actually defined and exported there or in valid dependencies.
+```python
+def test_run_mod_as_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Checks module run using runpy path loading."""
+    script = tmp_path / "main.py"
+    script.write_text("pass", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["show_license", str(script), "--no-license"],
+    )
 
-8. Testing Exception & Error Handling Blocks:
-   - To achieve 100% coverage when an `except Exception:` or error-logging block is marked as uncovered (`!`), you must write a specific test case that forces that exception to be raised.
-   - Use `monkeypatch`, `unittest.mock.patch`, or invalid inputs to trigger disk write failures, permission errors, or serialization exceptions so the `except` block is executed and covered.
+    target_path = str(Path(ws_module.__file__).resolve())
+
+    with pytest.raises(SystemExit) as sysexit:
+        runpy.run_path(target_path, run_name="__main__")
+    assert sysexit.value.code == 0
+```
+
+```python
+class MockAPIError(Exception):
+    """Global mock replacement for APIError."""
+
+    def __init__(
+        self,
+        message: str | None = None,
+        code: int = 400,
+        status: str = "INVALID",
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.status = status
+
+@patch("this_project.this_client.Client")
+    def test_cleanup_files(self, mock_client_cls: MagicMock) -> None:
+        """Test cleanup_files handles APIError."""
+        adapter = ClientAdapter()
+        file_mock = MagicMock()
+        file_mock.name = "file_name"
+        api_err = MockAPIError(message="Del Fail", code=400)
+        mock_client_cls.return_value.files.delete.side_effect = api_err
+        with patch("this_project.this_client.errors.APIError", MockAPIError):
+            adapter.cleanup_files([file_mock], "TEST")
+        mock_client_cls.return_value.files.delete.assert_called_once_with(
+            name="file_name",
+        )
+```
+
+```python
+except ServerError as e:
+    if e.code == HTTP_SERVICE_UNAVAILABLE:
+       this_msg = "Failed. HTTP 503"
+       logger.exception(None, this_msg)
+    msg = getattr(e, "message", None) or str(e)
+```
