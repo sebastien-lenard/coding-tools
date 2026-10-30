@@ -18,7 +18,7 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel
 
-from coding_tools import config, llm_protocol, my_io, my_logger
+from coding_tools import config, llm_protocol, my_io, my_logger, my_string
 from coding_tools.llm_protocol import LLMAPIError, LLMServerError
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
@@ -68,7 +68,7 @@ def llm_call(
     """
     resp: genai.types.GenerateContentResponse | None = None
     try:
-        with logger.run_spin("Call LLM", str(prefix)):
+        with logger.run_spin("Call LLM", my_string.my_str(prefix)):
             resp = client.models.generate_content(
                 model=model,
                 contents=req,
