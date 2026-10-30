@@ -20,7 +20,6 @@ from coding_tools import (
     my_import,
     my_io,
     my_logger,
-    workspace_stamper,
 )
 from coding_tools.llm_emcee import Context
 from coding_tools.my_run import RunOutput, RunState
@@ -32,6 +31,7 @@ TOOL_SCRIPTS: typing.Final = {
     "pen-docstring": "coding_tools.docstring",
     "fix-lint": "coding_tools.lint",
     "fix-type": "coding_tools.static_type",
+    "pen-test": "coding_tools.unit_test",
 }
 
 logger = my_logger.logger(__name__)
@@ -49,20 +49,6 @@ def module_name(args: argparse.Namespace) -> str:
         logger.error(None, msg)
         raise ValueError(msg)
     return mod_name
-
-
-def read(path: Path) -> str:
-    try:
-        txt = workspace_stamper.strip_header(str(my_io.read_txt(path)))
-    except (OSError, UnicodeDecodeError) as e:
-        msg = f"No template {path}"
-        logger.exception(None, msg)
-        raise RuntimeError(msg) from e
-    if not txt:
-        msg = f"Empty template {path}"
-        logger.error(None, msg)
-        raise ValueError(msg)
-    return txt
 
 
 def skill_path(args: argparse.Namespace) -> Path:
@@ -91,6 +77,11 @@ async def run() -> None:
         type=str,
         help="Target Python file or directory (needed).",
     )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Target unit test files.",
+    )
     args = parser.parse_args()
 
     try:
@@ -111,16 +102,27 @@ async def run() -> None:
         msg = f"No file at {args.path}"
         logger.error(None, msg)
         raise SystemExit(1)
+    if args.test:
+        file_paths_to_edit = file_handler.unit_test_path(files)
+        try:
+            conftest = my_io.read_txt(file_handler.conftest_path(args.path))
+        except (RuntimeError, ValueError) as e:
+            raise SystemExit(1) from e
+    else:
+        file_paths_to_edit = files
+        conftest = ""
 
     try:
-        skill = read(skill_path(args))
-        templ = read(TEMPLATE_PATH)
+        skill = my_io.read_txt(skill_path(args), header=False)
+        templ = my_io.read_txt(TEMPLATE_PATH, header=False)
     except (RuntimeError, ValueError) as e:
         raise SystemExit(1) from e
 
     ctx = Context(
         func_name=func,
-        file_paths_to_edit=files,
+        file_paths_to_edit=file_paths_to_edit,
+        context_file_paths=[],
+        conftest=conftest,
         skill=skill,
         check_func=mod.check,
         precheck_func=mod.precheck,

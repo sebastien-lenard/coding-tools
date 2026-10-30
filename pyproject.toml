@@ -35,6 +35,7 @@ workspace-guard = "coding_tools.workspace_guard:main"
 fix-lint = "coding_tools.entry:fix_lint"
 fix-type = "coding_tools.entry:fix_type"
 pen-docstring = "coding_tools.entry:pen_docstring"
+pen-test = "coding_tools.entry:pen_test"
 
 
 [project.optional-dependencies]

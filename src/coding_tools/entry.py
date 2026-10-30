@@ -13,15 +13,6 @@ import sys
 from coding_tools import lead
 
 
-def pen_docstring() -> None:
-    """Run pen-docstring task via lead main.
-
-    Set up sys.argv, call lead.main(). Needs sys.argv access.
-    """
-    sys.argv.insert(1, "pen-docstring")
-    lead.main()
-
-
 def fix_lint() -> None:
     """Run fix-lint task via lead main.
 
@@ -33,4 +24,19 @@ def fix_lint() -> None:
 
 def fix_type() -> None:
     sys.argv.insert(1, "fix-type")
+    lead.main()
+
+
+def pen_docstring() -> None:
+    """Run pen-docstring task via lead main.
+
+    Set up sys.argv, call lead.main(). Needs sys.argv access.
+    """
+    sys.argv.insert(1, "pen-docstring")
+    lead.main()
+
+
+def pen_test() -> None:
+    sys.argv.insert(1, "pen-test")
+    sys.argv.insert(2, "--test")
     lead.main()
