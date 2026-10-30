@@ -11,18 +11,23 @@ Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
-from coding_tools import my_io, my_logger, my_time
+from coding_tools import my_io, my_logger, my_string, my_time
 
 logger = my_logger.logger(__name__)
 
+CONFTEST_FILE_PATH = "tests/conftest.py"
 COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
-PYTEST_OUTPUT_DIR = ".pytest_output"
 PYRIGHT_OUTPUT_DIR = ".pyright_output"
-RUFF_OUTPUT_DIR = ".ruff_output"
+PYTEST_OUTPUT_DIR = ".pytest_output"
 LLM_LOG_DIR = ".llm_logs"
+RUFF_OUTPUT_DIR = ".ruff_output"
+SRC_DIR = Path("src")
+TEST_FILENAME_PATTERN = "test_*.py"
+UNIT_TEST_DIR = Path("tests/unit")
+UNIT_TEST_DEFAULT_TXT = "def test_dummy() -> None:\n    assert 1 == 1\n"
+
 
 ALL_TOOL_OUTPUT_DIRS = {
     COVERAGE_ANNOTATIONS_DIR,
@@ -33,24 +38,6 @@ ALL_TOOL_OUTPUT_DIRS = {
 }
 
 WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
-
-
-@dataclass
-class LLMOutputPathParameters:
-    """Hold naming and timestamp fields for LLM output paths.
-
-    Build nested paths under .llm_output dir.
-    """
-
-    llm_name: str
-    start_date: str
-    tool_name: str
-    process_step: str
-    target_file: str | Path
-    status_label: str
-    timestamp: int
-    hhmiss: str
-    project_root: Path | None = None
 
 
 def clean(txt: str) -> str:
@@ -65,6 +52,12 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
     path_list = (
         [Path(path)] if isinstance(path, (Path, str)) else [Path(p) for p in path]
     )
+
+    pattern = my_string.my_str(ext)
+    pattern = (
+        f"*.{pattern}" if pattern and not pattern.startswith(".") else f"*{pattern}"
+    )
+
     out_files: list[Path] = []
 
     for item in path_list:
@@ -78,9 +71,9 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
             continue
 
         if not ext:
-            out_files.extend(sorted(p for p in res_path.rglob("*") if p.is_file()))
+            out_files.extend(sorted(p for p in res_path.rglob(pattern) if p.is_file()))
         else:
-            out_files.extend(sorted(res_path.rglob(ext)))
+            out_files.extend(sorted(res_path.rglob(pattern)))
 
     this_ext = "" if not ext else f".{ext} "
     if not out_files:
@@ -91,7 +84,7 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
     return sorted(set(out_files))
 
 
-def get_project_root(path: str | Path) -> Path:
+def prj_root(path: str | Path) -> Path:
     """Deduct project root dir from path.
 
     Scan parents for workspace root markers (config, docs, src, tests).
@@ -109,12 +102,12 @@ def get_project_root(path: str | Path) -> Path:
 
 def get_pyproject_path(path: str | Path) -> Path:
     """Get absolute path to pyproject.toml for project."""
-    return get_project_root(path) / "pyproject.toml"
+    return prj_root(path) / "pyproject.toml"
 
 
-def get_conftest_path(path: str | Path) -> Path:
+def conftest_path(path: Path | str) -> Path:
     """Get absolute path to tests/conftest.py for project."""
-    return get_project_root(path) / "tests/conftest.py"
+    return prj_root(path) / CONFTEST_FILE_PATH
 
 
 def ensure_directory(dir_path: str | Path) -> Path:
@@ -136,7 +129,7 @@ def get_tool_output_dir(target_file_path: str | Path, dir_name: str) -> Path:
 
     Write to disk.
     """
-    proj_root = get_project_root(target_file_path)
+    proj_root = prj_root(target_file_path)
     return ensure_directory(proj_root / dir_name)
 
 
@@ -176,7 +169,18 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
     return base_dir / f"ruff-{stem}.txt"
 
 
-def latest_path(dir: Path, txt: str) -> Path | None:
+def is_unit_test(path: Path | str) -> bool:
+    """Check if path is a unit test script."""
+    p = Path(path)
+    try:
+        p.relative_to(UNIT_TEST_DIR)
+    except ValueError:
+        return False
+    return p.match(TEST_FILENAME_PATTERN)
+
+
+def latest_path(dir: Path, txt: str) -> Path:
+    """Raise FileNotFoundError."""
     if not dir.is_dir():
         msg = f"No dir {dir}"
         raise FileNotFoundError(msg)
@@ -187,19 +191,19 @@ def latest_path(dir: Path, txt: str) -> Path | None:
     raise FileNotFoundError(msg)
 
 
-def pytest_cov_path(source_file_path: str | Path) -> Path | None:
+def pytest_cov_dir(source_file_path: str | Path) -> Path:
+    return get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
+
+
+def pytest_cov_path(source_file_path: str | Path) -> Path:
     """Get coverage annotation path under project root.
 
     Write to disk under .coverage_annotations. Matches hash-prefixed filenames,
-    yielding the most recent file.
+    yielding the most recent file. Raises FileNotFoundError.
     """
-    base_dir = get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
+    base_dir = pytest_cov_dir(source_file_path)
     pattern = f"*_{Path(source_file_path).name},cover"
-    try:
-        return latest_path(base_dir, pattern)
-    except FileNotFoundError:
-        logger.warning(None, f"No pytest cov {pattern} file at {base_dir}")
-        return None
+    return latest_path(base_dir, pattern)
 
 
 def llm_log_path(
@@ -213,7 +217,7 @@ def llm_log_path(
     Write to disk under .llm_logs.
     """
     func = "llm_log_path"
-    root = root or (get_project_root(input_path) if input_path else None)
+    root = root or (prj_root(input_path) if input_path else None)
     if root is None:
         msg = f"No target root given ({func})"
         raise ValueError(msg)
@@ -232,7 +236,7 @@ def module_path(src_file_path: Path | str | None) -> str | None:
     src_file_path = Path(str(src_file_path)).resolve()
     try:
         relative_src = src_file_path.relative_to(
-            get_project_root(src_file_path) / "src",
+            prj_root(src_file_path) / SRC_DIR,
         )
     except ValueError:
         logger.exception(None, f"No src module at {src_file_path}")
@@ -246,17 +250,17 @@ def src_path(test_file_path: Path | str) -> Path:
 
     E.g. 'tests/unit/xx/test_yy.py' to 'src/xx/yy.py'.
     """
-    path = Path(str(test_file_path))
-    try:
-        relative_test = path.relative_to(Path("tests/unit"))
-    except ValueError:
-        logger.exception(None, f"No tests/unit base at {path}")
-        raise
+    path = Path(test_file_path)
+    name = path.name.removeprefix("test_")
+    root = prj_root(path)
 
-    src_filename = relative_test.name.removeprefix("test_")
-    src_path = Path("src") / relative_test.parent / src_filename
-    logger.progress(None, f"Mapped {path} to {src_path}")
-    return src_path
+    match = next((p for p in (root / SRC_DIR).rglob(name) if p.is_file()), None)
+    if not match:
+        msg = f"No source file for {path}"
+        raise FileNotFoundError(msg)
+
+    logger.progress(None, f"Mapped {path} to {match}")
+    return match
 
 
 def to_path_list(
@@ -269,29 +273,38 @@ def to_path_list(
     return [Path(p) for p in paths]
 
 
-def unit_test_path(src_file_path: Path | str | None) -> Path:
-    """Map a source file path to unit test path. Create test file stub if missing.
+def unit_test_path(
+    src_file_path: list[Path] | list[str] | Path | str | None,
+) -> list[Path]:
+    """Map source file path(s) to unit test path(s). Create test file stub if missing.
 
     E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'.
     """
-    src_file_path = Path(str(src_file_path)).resolve()
-    try:
-        relative_src = src_file_path.relative_to(
-            get_project_root(src_file_path) / "src",
-        )
-    except ValueError:
-        logger.exception(None, f"No src folder in {src_file_path}")
-        raise
-    relative_src = relative_src.relative_to(relative_src.parts[0])
-    test_filename = f"test_{relative_src.name}"
+    path_list = to_path_list(src_file_path)
+    out_paths: list[Path] = []
 
-    test_path = Path("tests/unit") / relative_src.parent / test_filename
-    test_path.parent.mkdir(parents=True, exist_ok=True)
-    if not test_path.exists() or test_path.stat().st_size == 0:
-        my_io.write_txt(
-            ("test_dummy() -> None:\n    assert 1 == 1\n"),
-            test_path,
-        )
-        logger.progress(None, f"Created test file {test_path}")
+    for item in path_list:
+        res_item = item.resolve()
+        try:
+            rel_src = res_item.relative_to(
+                prj_root(res_item) / SRC_DIR,
+            )
+        except ValueError:
+            logger.exception(None, f"No src folder in {res_item}")
+            raise
+        rel_src = rel_src.relative_to(rel_src.parts[0])
+        test_filename = f"test_{rel_src.name}"
 
-    return Path("tests/unit") / relative_src.parent / test_filename
+        test_path = UNIT_TEST_DIR / rel_src.parent / test_filename
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        if not test_path.exists() or test_path.stat().st_size == 0:
+            my_io.write_txt(UNIT_TEST_DEFAULT_TXT, test_path)
+            logger.progress(None, f"Created test file {test_path}")
+
+        out_paths.append(test_path)
+
+    logger.progress(
+        None,
+        f"Mapped {len(out_paths)} source file(s) to unit test path(s)",
+    )
+    return sorted(out_paths)

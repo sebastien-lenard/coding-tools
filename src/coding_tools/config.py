@@ -88,7 +88,7 @@ def python_version(path: Path | str) -> str | None:
     """Get the minimal Python version from pyproject.toml."""
     data = cast(
         "dict[str, Any]",
-        my_io.read_toml(file_handler.get_project_root(path) / PYPROJECT_TOML),
+        my_io.read_toml(file_handler.prj_root(path) / PYPROJECT_TOML),
     )
     if (
         not data
