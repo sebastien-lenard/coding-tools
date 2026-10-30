@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Entry point wrapper for lead tool dispatch.
+"""Route CLI args to lead main.
 
-Routes CLI args to lead main. Needs sys.argv access.
+Needs sys.argv access.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from coding_tools import lead
 def pen_docstring() -> None:
     """Run pen-docstring task via lead main.
 
-    Inserts arg into sys.argv. Calls lead.main().
+    Set up sys.argv, call lead.main(). Needs sys.argv access.
     """
     sys.argv.insert(1, "pen-docstring")
     lead.main()
@@ -25,7 +25,12 @@ def pen_docstring() -> None:
 def fix_lint() -> None:
     """Run fix-lint task via lead main.
 
-    Inserts arg into sys.argv. Calls lead.main().
+    Set up sys.argv, call lead.main(). Needs sys.argv access.
     """
     sys.argv.insert(1, "fix-lint")
+    lead.main()
+
+
+def fix_type() -> None:
+    sys.argv.insert(1, "fix-type")
     lead.main()

@@ -31,6 +31,7 @@ TEMPLATE_PATH = Path("config/templates/improve.md")
 TOOL_SCRIPTS: typing.Final = {
     "pen-docstring": "coding_tools.docstring",
     "fix-lint": "coding_tools.lint",
+    "fix-type": "coding_tools.static_type",
 }
 
 logger = my_logger.logger(__name__)
