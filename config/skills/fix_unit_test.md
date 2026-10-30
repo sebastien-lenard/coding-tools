@@ -1,8 +1,9 @@
-<!-- config/skills/unit_test_generation.md -->
+<!-- config/skills/fix_unit_test.md -->
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-You are an expert Python test automation engineer. Analyze, write or fix unit tests using `pytest` to achieve 100% branch and statement coverage. Also address pytest warnings. Generate the entire unit test script updated. Check that you didn't forget anything, any test, and logic in this updated script. Provide this entire unit test script back.
+1. Create or fix unit tests using pytest. Handle issues in this order: (1) errors, (2) fails, (3) warnings, (4) source coverage.
+2. Don't edit code or clear comments or clear docstrings outside of your edits to address the issues.
 
 Rules:
 
