@@ -5,6 +5,8 @@
 
 import pytest
 
+from coding_tools.my_run import RunOutput, RunState
+
 
 class MockAPIError(Exception):
     """Global mock replacement for APIError."""
@@ -28,6 +30,10 @@ class MockServerError(Exception):
         super().__init__(message)
         self.message = message
         self.code = code
+
+
+def dummy_run_output() -> RunOutput:
+    return RunOutput(func="dummy", status=RunState.PRESTART)
 
 
 def pytest_collection_modifyitems(
