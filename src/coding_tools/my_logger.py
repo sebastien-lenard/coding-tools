@@ -183,7 +183,7 @@ class MyLogger:
                     val = getattr(row, key, "")
                 if key in formatters and val is not None:
                     val = formatters[key](val)
-                row_cells.append(str(val) if val is not None else "")
+                row_cells.append(str(val) if val else "")
             formatted_rows.append(row_cells)
 
         lines = [
