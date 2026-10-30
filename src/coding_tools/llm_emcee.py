@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from coding_tools import (
     config,
+    file_handler,
     llm_protocol,
     llm_router,
     my_io,
@@ -51,6 +52,7 @@ class Context:
     func_name: str
     file_paths_to_edit: list[Path] = field(default_factory=list)
     context_file_paths: list[Path] = field(default_factory=list)
+    conftest: str = ""
     msg: str = ""
     skill: str = ""
     tips: str = ""
@@ -77,6 +79,10 @@ async def chat(
     """
     try:
         current_txt = my_io.read_txt(file_path)
+        if file_handler.is_unit_test(file_path):
+            context_txt = my_io.read_txt(file_handler.src_path(file_path))
+        else:
+            context_txt = ""
     except (OSError, UnicodeEncodeError):
         logger.exception(None, "")
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
@@ -110,7 +116,8 @@ async def chat(
                 skill=ctx.skill,
                 tips=run_output.brief,
                 files_to_edit=current_txt,
-                context_files="",
+                context_files=context_txt,
+                conftest=ctx.conftest,
             )
             params = llm_protocol.LLMCallParams(
                 response_schema=llm_protocol.LLMResponse,
