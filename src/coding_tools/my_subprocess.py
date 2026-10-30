@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from coding_tools import file_handler, my_io, my_logger
+from coding_tools import file_handler, my_io, my_logger, my_string
 from coding_tools.my_run import EditState, RunOutput
 
 logger = my_logger.logger(__name__)
@@ -31,15 +31,15 @@ def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
     except ValueError:
         module_path = ""
     try:
-        unit_test_path = file_handler.unit_test_path(params.input_path)
+        unit_test_path = file_handler.unit_test_path(params.input_path)[0]
     except ValueError:
         unit_test_path = ""
     swaps = {
-        "INPUT_PATH": str(params.input_path),
-        "LOG_PATH": str(params.log_path),
-        "MODULE_PATH": str(module_path),
-        "OUTPUT_PATH": str(params.output_path),
-        "UNIT_TEST_PATH": str(unit_test_path),
+        "INPUT_PATH": my_string.my_str(params.input_path),
+        "LOG_PATH": my_string.my_str(params.log_path),
+        "MODULE_PATH": my_string.my_str(module_path),
+        "OUTPUT_PATH": my_string.my_str(params.output_path),
+        "UNIT_TEST_PATH": my_string.my_str(unit_test_path),
     }
     log_path_in_cmd = re.search("LOG_PATH", cmd)
     pattern = re.compile(r"\b(" + "|".join(map(re.escape, swaps.keys())) + r")\b")
@@ -66,8 +66,16 @@ def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
     msg_1 = f"{run_output.status.value}"
     msg_2 = ", fixes saved in" if run_output.edited == EditState.EDITED else ""
     msg = f"{msg_1}{msg_2}" if msg_1 and msg_2 else f"{msg_1}"
-    msg = f"{msg} {Path(str(params.input_path)).name}" if params.input_path else ""
-    msg = f"{msg} -> {Path(str(params.output_path)).name}" if params.output_path else ""
+    msg = (
+        f"{msg} {Path(my_string.my_str(params.input_path)).name}"
+        if params.input_path
+        else ""
+    )
+    msg = (
+        f"{msg} -> {Path(my_string.my_str(params.output_path)).name}"
+        if params.output_path
+        else ""
+    )
 
     logger.end(params.func_name, msg)
     return replace(
