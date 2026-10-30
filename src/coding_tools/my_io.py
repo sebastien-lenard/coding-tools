@@ -8,15 +8,18 @@ import difflib
 import tomllib
 from pathlib import Path
 
-from coding_tools import file_handler, my_logger
+from coding_tools import file_handler, my_logger, workspace_stamper
 from coding_tools.my_logger import Verbose
 
 logger = my_logger.logger(__name__)
 
 
-def read_lines(path: Path | str) -> list[str]:
-    """Get lines from txt file."""
-    return str(read_txt(path)).splitlines()
+def read_lines(path: Path | str, *, header: bool = True) -> list[str]:
+    """Get lines from txt file.
+
+    Raise RuntimeError, ValueError.
+    """
+    return str(read_txt(path, header=header)).splitlines()
 
 
 def read_toml(
@@ -37,13 +40,24 @@ def read_toml(
         return None
 
 
-def read_txt(path: Path | str) -> str | None:
-    """Raises OSError, UnicodeEncodeError."""
+def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -> str:
+    """Raise RuntimeError, ValueError."""
+    txt = ""
     try:
-        return Path(path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        logger.exception(None, f"Failed to read or decode file {path}")
-        return None
+        txt = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        msg = f"No file (or corrupted) {path}"
+        logger.exception(None, msg)
+        if raise_err:
+            raise RuntimeError(msg) from e
+    if not header:
+        txt = workspace_stamper.strip_header(txt)
+    if not txt:
+        msg = f"Empty file {path}"
+        logger.error(None, msg)
+        if raise_err:
+            raise ValueError(msg)
+    return txt
 
 
 def save_llm_req_resp(
