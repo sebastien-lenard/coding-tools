@@ -29,4 +29,6 @@ test_dummy_target.py
 .env
 
 # Config
-config/parameters/llm_config.jsonc
+config/**/*.jsonc
+config/**/*.json
+config/**/*.md
