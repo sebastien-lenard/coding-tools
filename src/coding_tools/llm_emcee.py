@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-from coding_tools import config, llm_protocol, llm_router, my_io, my_logger, my_path
+from coding_tools import conf, llm_protocol, llm_router, my_io, my_logger, my_path
 from coding_tools.check import CheckParams, default_check_func
 from coding_tools.my_logger import Verbose
 from coding_tools.my_run import EditState, RunOutput, RunState
@@ -81,9 +81,9 @@ async def chat(
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
     file_stem = file_path.stem
-    python_version = config.python_version(file_path)
+    python_version = conf.python_version(file_path)
     python_version = (
-        f"Python: {config.python_version(file_path)}\n"
+        f"Python: {conf.python_version(file_path)}\n"
         if file_path.suffix == ".py" and python_version
         else ""
     )

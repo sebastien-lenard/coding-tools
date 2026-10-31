@@ -19,7 +19,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from coding_tools import config, llm_protocol, my_io, my_logger, my_string
+from coding_tools import conf, llm_protocol, my_io, my_logger, my_string
 from coding_tools.llm_protocol import LLMAPIError, LLMClientError, LLMServerError
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
@@ -202,14 +202,14 @@ class Gemini:
     """
 
     def __init__(self, model_name: str | None = None) -> None:
-        """Set up client with model name or default config."""
+        """Set up client with model name or default conf."""
         self.client = genai.Client()
         if model_name is not None:
             self.model_name = model_name
         else:
-            gemini_config = config.get_provider_mapping().get("gemini", {})
+            gemini_conf = conf.get_provider_mapping().get("gemini", {})
             self.model_name = str(
-                gemini_config.get("default_model", DEFAULT_MODEL),
+                gemini_conf.get("default_model", DEFAULT_MODEL),
             )
 
     async def call(

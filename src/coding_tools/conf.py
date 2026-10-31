@@ -4,7 +4,7 @@
 
 """Load LLM config from JSONC files.
 
-File I/O on config/parameters/llm_config.jsonc.
+File I/O on conf/params/llm_config.jsonc.
 """
 
 from __future__ import annotations
@@ -22,7 +22,10 @@ PYPROJECT_TOML = "pyproject.toml"
 
 
 def _strip_jsonc_comments(content: str) -> str:
-    """Remove C-style block and line comments from JSONC string."""
+    """Strip C-style block and line tags from JSONC string.
+
+    RegEx pass on text. Yield clean JSON string.
+    """
     no_block = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
     lines = []
     for line in no_block.splitlines():
@@ -32,13 +35,14 @@ def _strip_jsonc_comments(content: str) -> str:
 
 
 def load_llm_config() -> dict[str, Any]:
-    """Load LLM config from config/parameters/llm_config.jsonc.
+    """Load LLM config from JSONC file.
 
-    Copy from example if missing. Raise FileNotFoundError if both absent. File I/O.
+    File I/O on conf/params/llms.jsonc. Copy from example if
+    missing. Raise FileNotFoundError if both absent. Parse JSON via stdlib json.
     """
-    config_path = Path("config/parameters/llm_config.jsonc")
+    config_path = Path("conf/params/llms.jsonc")
     if not config_path.exists():
-        example_path = Path("config/parameters/llm_config.jsonc.example")
+        example_path = Path("conf/params/llms.jsonc.example")
         if example_path.exists():
             logger.progress(config_path, "Missing conf, copying from example")
             config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,22 +74,29 @@ def load_llm_config() -> dict[str, Any]:
 
 
 def get_default_model() -> str:
-    """Get global default model name from config.
+    """Get global default model name from config dict.
 
-    Fallback to gemini-3.5-flash-lite if missing.
+    Fall back to gemini-3.5-flash-lite if key is not set.
     """
     config = load_llm_config()
     return str(config.get("default_model", "gemini-3.5-flash-lite"))
 
 
 def get_provider_mapping() -> dict[str, dict[str, Any]]:
-    """Get provider adapters and compatible models mapping from config dict."""
+    """Get provider adapters and map models from config dict.
+
+    Return dict of providers or empty dict.
+    """
     config = load_llm_config()
     return dict(config.get("providers", {}))
 
 
 def python_version(path: Path | str) -> str | None:
-    """Get the minimal Python version from pyproject.toml."""
+    """Get min Python version from pyproject.toml file.
+
+    Read TOML via my_io. Read requires-python key under project block.
+    Return None if key or file is absent.
+    """
     data = cast(
         "dict[str, Any]",
         my_io.read_toml(my_path.prj_root(path) / PYPROJECT_TOML),
