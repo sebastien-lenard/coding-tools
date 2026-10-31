@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Handle prompt writing, sending to LLM, and check response and write it.
+"""Send prompt to LLM, parse response, write edits.
 
-Audit of edits. Parallel runs with cap. File write access.
+Audit of edits. Run task in parallel with cap. File write access. Needs LLM API key.
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ async def chat(
                 process_step=f"{step}",
                 target_file=str(file_path),
             )
-            resp = ctx.llm.call(
+            resp = await ctx.llm.call(
                 req,
                 params,
             )
@@ -153,7 +153,10 @@ async def run(
     ctx: Context,
     run_output: RunOutput,
 ) -> RunOutput:
-    """Run chat task under semaphore limit and return SummaryRow."""
+    """Run chat task under semaphore limit and return RunOutput.
+
+    Calls chat async. Uses ctx.semaphore to cap tasks.
+    """
     async with ctx.semaphore:
         return await chat(
             file_path,

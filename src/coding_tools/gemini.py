@@ -5,25 +5,32 @@
 
 """Google GenAI wrapper meeting LLMClientProtocol.
 
-Ties into google-genai v2. Needs API key.
-Handles formatted writing and context caching.
+Ties into google-genai v2. Needs API key. Handles structured output and retry.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections import deque
 from typing import Any, TypeVar, cast
 
 from google import genai
-from google.genai import errors, types
+from google.genai import types
 from pydantic import BaseModel
 
 from coding_tools import config, llm_protocol, my_io, my_logger, my_string
-from coding_tools.llm_protocol import LLMAPIError, LLMServerError
+from coding_tools.llm_protocol import LLMAPIError, LLMClientError, LLMServerError
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
 HTTP_SERVICE_UNAVAILABLE = 503
+RESOURCE_EXHAUSTED = 429
 MAX_RETRIES = 3
+MAX_REQUESTS_PER_MINUTE = 14
+WINDOW_SECONDS = 60.0
+
+CALL_TIMESTAMPS: deque[float] = deque()
+RATE_LIMIT_LOCK = asyncio.Lock()
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -31,14 +38,28 @@ T = TypeVar("T", bound=BaseModel)
 logger = my_logger.logger(__name__)
 
 
+async def _rate_limit_throttle() -> None:
+    """Throttle calls to stay under free tier limits.
+
+    Check timestamp deque, sleep if limit hit, add now.
+    """
+    async with RATE_LIMIT_LOCK:
+        now = time.time()
+        while CALL_TIMESTAMPS and CALL_TIMESTAMPS[0] < now - WINDOW_SECONDS:
+            CALL_TIMESTAMPS.popleft()
+        if len(CALL_TIMESTAMPS) >= MAX_REQUESTS_PER_MINUTE:
+            sleep_time = CALL_TIMESTAMPS[0] + WINDOW_SECONDS - now
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        CALL_TIMESTAMPS.append(time.time())
+
+
 def set_config(
     response_schema: type[BaseModel],
 ) -> dict[str, object]:
-    """Build config dict for structured GenAI execution.
+    """Build config dict for GenAI run.
 
-    Sets response mime type to application/json and blocks function calling.
-    config_kwargs will contain the model name, thinking level,
-    the pydantic validation schema for the LLM response (message / code).
+    Set mime type to json, low think config, disable tool use.
     """
     config_kwargs: dict[str, object] = {
         "thinking_config": types.ThinkingConfig(
@@ -55,17 +76,18 @@ def set_config(
     return config_kwargs
 
 
-def llm_call(
+async def llm_call(
     client: genai.Client,
     req: str,
     model: str,
     config: dict[str, object],
     prefix: str | None = None,
 ) -> object:
-    """Call Gemini with request (prompt) and get Gemini response.
+    """Call LLM API and get parsed response.
 
-    Handles Gemini errors by re-raising llm-neutral LLMServerError or others.
+    Catch server, client, and API errors, map to custom types.
     """
+    await _rate_limit_throttle()
     resp: genai.types.GenerateContentResponse | None = None
     try:
         with logger.run_spin("Call LLM", my_string.my_str(prefix)):
@@ -76,7 +98,7 @@ def llm_call(
                     **dict[str, Any](config),
                 ),
             )
-    except genai.ServerError as e:
+    except genai.errors.ServerError as e:
         if e.code == HTTP_SERVICE_UNAVAILABLE:
             this_msg = "Failed. HTTP 503"
             logger.exception(
@@ -89,7 +111,19 @@ def llm_call(
             status_code=getattr(e, "code", None),
             retryable=(e.code == HTTP_SERVICE_UNAVAILABLE),
         ) from e
-    except (errors.APIError, Exception) as e:
+    except genai.errors.ClientError as e:
+        if e.code == RESOURCE_EXHAUSTED:
+            this_msg = "Failed. 429 RESOURCE_EXHAUSTED"
+            logger.exception(
+                prefix,
+                this_msg,
+            )
+        msg = getattr(e, "message", None) or str(e)
+        raise LLMClientError(
+            message=msg,
+            status_code=getattr(e, "code", None),
+        ) from e
+    except (genai.errors.APIError, Exception) as e:
         this_msg = "Failed Gemini API exchanges"
         msg = getattr(e, "message", None) or str(e) or this_msg
         logger.exception(prefix, this_msg)
@@ -102,21 +136,21 @@ def llm_call(
     return resp.parsed
 
 
-def retry_llm_call(
+async def retry_llm_call(
     client: genai.Client,
     req: str,
     model: str,
     config: dict[str, object],
     prefix: str | None = None,
 ) -> object:
-    """Call llm with retry logic.
+    """Call LLM with 503 retry logic.
 
-    503 retry up to 3 times with exponential backoff. Raise LLMServerError if persist.
+    Retry up to 3 times with exponential backoff. Raise LLMServerError if fail.
     """
     resp: Any | None = None
     for _try in range(MAX_RETRIES):
         try:
-            resp = llm_call(client, req, model, config, prefix)
+            resp = await llm_call(client, req, model, config, prefix)
         except LLMServerError as e:
             if e.status_code == HTTP_SERVICE_UNAVAILABLE and _try < MAX_RETRIES - 1:
                 sleep_time = (2**_try) * 2
@@ -125,7 +159,7 @@ def retry_llm_call(
                     f"Bad reply http 503. Retry in {sleep_time}s "
                     f"(Try {_try + 1}/{MAX_RETRIES})...",
                 )
-                time.sleep(sleep_time)
+                await asyncio.sleep(sleep_time)
                 continue
             this_msg = "Failed tries to bypass http 503"
             logger.exception(
@@ -133,7 +167,7 @@ def retry_llm_call(
                 this_msg,
             )
             raise
-        except (LLMAPIError, Exception) as e:
+        except (LLMAPIError, LLMClientError, Exception) as e:
             this_msg = "Failed LLM API exchanges"
             msg = getattr(e, "message", None) or str(e) or this_msg
             logger.exception(prefix, this_msg)
@@ -156,7 +190,7 @@ def retry_llm_call(
 
 
 def _raise_schema_error(schema_name: str) -> None:
-    """Raise ValueError for schema conformance failure."""
+    """Raise ValueError for schema check fail."""
     msg = f"GenAI response did not conform to {schema_name} schema."
     raise ValueError(msg)
 
@@ -164,11 +198,11 @@ def _raise_schema_error(schema_name: str) -> None:
 class Gemini:
     """Google GenAI wrapper meeting LLMClientProtocol.
 
-    Needs API key. Handles structured generation and context caching.
+    Needs API key. Handles structured gen and retry logic.
     """
 
     def __init__(self, model_name: str | None = None) -> None:
-        """Init client with model name or default provider config."""
+        """Set up client with model name or default config."""
         self.client = genai.Client()
         if model_name is not None:
             self.model_name = model_name
@@ -178,14 +212,14 @@ class Gemini:
                 gemini_config.get("default_model", DEFAULT_MODEL),
             )
 
-    def call(
+    async def call(
         self,
         req: str,
         params: llm_protocol.LLMCallParams,
     ) -> llm_protocol.LLMResponse:
-        """Get validated Pydantic model response from GenAI API.
+        """Get Pydantic model response from GenAI API.
 
-        Raise ValueError if response does not conform to schema.
+        Raise ValueError if schema check fail. Save request and response log.
         """
         config_kwargs = set_config(
             response_schema=params.response_schema,
@@ -195,7 +229,7 @@ class Gemini:
         checked_obj: BaseModel = params.response_schema(message="", edited_files="")
         resp = None
         try:
-            resp = retry_llm_call(
+            resp = await retry_llm_call(
                 client=self.client,
                 req=req,
                 model=self.model_name,
@@ -207,7 +241,7 @@ class Gemini:
                 schema_name = params.response_schema.__name__
                 _raise_schema_error(schema_name)
             checked_obj = params.response_schema.model_validate(resp)
-        except (LLMServerError, LLMAPIError) as e:
+        except (LLMServerError, LLMAPIError, LLMClientError) as e:
             exception_to_raise = e
         except ValueError as e:
             exception_to_raise = e
