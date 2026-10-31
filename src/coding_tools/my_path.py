@@ -1,11 +1,11 @@
-# src/coding_tools/file_handler.py
+# src/coding_tools/my_path.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Manage paths for tool outputs, logs, and coverage.
+"""Manage paths for tools, logs, and coverage.
 
 Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
-.ruff_output, .llm_output) relative to target project root.
+.ruff_output, .llm_output) under target project root. Path logic and checks.
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ logger = my_logger.logger(__name__)
 
 CONFTEST_FILE_PATH = "tests/conftest.py"
 COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
+INIT_FILE_PATH = "__init__.py"
+LLM_LOG_DIR = ".llm_logs"
 PYRIGHT_OUTPUT_DIR = ".pyright_output"
 PYTEST_OUTPUT_DIR = ".pytest_output"
-LLM_LOG_DIR = ".llm_logs"
 RUFF_OUTPUT_DIR = ".ruff_output"
 SRC_DIR = Path("src")
 TEST_FILENAME_PATTERN = "test_*.py"
@@ -41,22 +42,28 @@ WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
 
 
 def clean(txt: str) -> str:
-    """Clean text to be part of a file or folder name."""
+    """Clean text to fit file or folder name.
+
+    Strip bad symbols, slugify spaces, lowercase.
+    """
     txt = re.sub(r"[^\w\s\.-]", "", Path(txt).stem)
     return re.sub(r"[-\s_]+", "-", txt).strip("-.").lower()
 
 
 def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[Path]:
+    """Get list of match file paths.
+
+    Read disk, raise FileNotFoundError if no path. Log count or warning.
+    """
     func = f"{__name__}"
 
     path_list = (
         [Path(path)] if isinstance(path, (Path, str)) else [Path(p) for p in path]
     )
 
+    ext = f"*.{ext}" if ext and not ext.startswith(".") else ext
     pattern = my_string.my_str(ext)
-    pattern = (
-        f"*.{pattern}" if pattern and not pattern.startswith(".") else f"*{pattern}"
-    )
+    pattern = f"{pattern}" if pattern else f"*{pattern}"
 
     out_files: list[Path] = []
 
@@ -79,7 +86,7 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
     if not out_files:
         logger.warning(func, f"No file at {path}")
     else:
-        logger.progress(func, f"Got {len(out_files)} {this_ext}at: {path}")
+        logger.progress(func, f"Got {len(out_files)} {this_ext} at: {path}")
 
     return sorted(set(out_files))
 
@@ -113,7 +120,7 @@ def conftest_path(path: Path | str) -> Path:
 def ensure_directory(dir_path: str | Path) -> Path:
     """Create target dir if missing and return Path.
 
-    Write to disk with parent creation enabled.
+    Write to disk with parent creation enabled. Raise OSError on fail.
     """
     path = Path(dir_path)
     try:
@@ -170,7 +177,10 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
 
 
 def is_unit_test(path: Path | str) -> bool:
-    """Check if path is a unit test script."""
+    """Check if path is a unit test script.
+
+    Match UNIT_TEST_DIR and test pattern.
+    """
     p = Path(path)
     try:
         p.relative_to(UNIT_TEST_DIR)
@@ -179,27 +189,31 @@ def is_unit_test(path: Path | str) -> bool:
     return p.match(TEST_FILENAME_PATTERN)
 
 
-def latest_path(dir: Path, txt: str) -> Path:
-    """Raise FileNotFoundError."""
-    if not dir.is_dir():
-        msg = f"No dir {dir}"
+def latest_path(my_dir: Path, txt: str) -> Path:
+    """Get latest file match by mtime in dir.
+
+    Raise FileNotFoundError if dir missing or no match.
+    """
+    if not my_dir.is_dir():
+        msg = f"No dir {my_dir}"
         raise FileNotFoundError(msg)
-    matches = list(dir.glob(txt))
+    matches = list(my_dir.glob(txt))
     if matches:
         return max(matches, key=lambda p: p.stat().st_mtime)
-    msg = f"No file with {txt} at {dir}"
+    msg = f"No file with {txt} at {my_dir}"
     raise FileNotFoundError(msg)
 
 
 def pytest_cov_dir(source_file_path: str | Path) -> Path:
+    """Get coverage annotations directory for source file."""
     return get_tool_output_dir(source_file_path, COVERAGE_ANNOTATIONS_DIR)
 
 
 def pytest_cov_path(source_file_path: str | Path) -> Path:
     """Get coverage annotation path under project root.
 
-    Write to disk under .coverage_annotations. Matches hash-prefixed filenames,
-    yielding the most recent file. Raises FileNotFoundError.
+    Write to disk under .coverage_annotations. Match hash prefix, yield
+    most recent file. Raise FileNotFoundError.
     """
     base_dir = pytest_cov_dir(source_file_path)
     pattern = f"*_{Path(source_file_path).name},cover"
@@ -212,9 +226,9 @@ def llm_log_path(
     input_path: Path | str | None = None,
     root: Path | str | None = None,
 ) -> Path:
-    """Get nested path for LLM request/response contents.
+    """Get nested path for LLM request and response contents.
 
-    Write to disk under .llm_logs.
+    Write to disk under .llm_logs. Raise ValueError if root is none.
     """
     func = "llm_log_path"
     root = root or (prj_root(input_path) if input_path else None)
@@ -233,6 +247,10 @@ def llm_log_path(
 
 
 def module_path(src_file_path: Path | str | None) -> str | None:
+    """Get module dotted path from source file path.
+
+    Raise ValueError if src folder missing.
+    """
     src_file_path = Path(str(src_file_path)).resolve()
     try:
         relative_src = src_file_path.relative_to(
@@ -242,13 +260,19 @@ def module_path(src_file_path: Path | str | None) -> str | None:
         logger.exception(None, f"No src module at {src_file_path}")
         raise
 
+    if relative_src.name == INIT_FILE_PATH:
+        relative_src = relative_src.parent
+
+    if not relative_src.parts or relative_src == Path():
+        return prj_root(src_file_path).name
+
     return ".".join(relative_src.with_suffix("").parts)
 
 
 def src_path(test_file_path: Path | str) -> Path:
-    """Map a unit test path to source file path.
+    """Map unit test path to source file path.
 
-    E.g. 'tests/unit/xx/test_yy.py' to 'src/xx/yy.py'.
+    E.g. 'tests/unit/xx/test_yy.py' to 'src/xx/yy.py'. Raise FileNotFoundError.
     """
     path = Path(test_file_path)
     name = path.name.removeprefix("test_")
@@ -266,6 +290,7 @@ def src_path(test_file_path: Path | str) -> Path:
 def to_path_list(
     paths: list[Path] | list[str] | Path | str | None,
 ) -> list[Path]:
+    """Convert various path inputs to list of Path objects."""
     if paths is None:
         return []
     if isinstance(paths, (Path, str)):
@@ -276,9 +301,10 @@ def to_path_list(
 def unit_test_path(
     src_file_path: list[Path] | list[str] | Path | str | None,
 ) -> list[Path]:
-    """Map source file path(s) to unit test path(s). Create test file stub if missing.
+    """Map source file paths to unit test paths.
 
-    E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'.
+    E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'. Create test file stub
+    if missing. Raise ValueError if src folder missing.
     """
     path_list = to_path_list(src_file_path)
     out_paths: list[Path] = []
