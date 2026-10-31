@@ -9,27 +9,31 @@
 5. If docstrings don't use telegraphic writing style, rewrite them in telegraphic style, but making sure all key info is in docstring (use more than 3-4 lines for complex blocks). Opt for words with 1 or 2 syllables, e.g. use, read, cross, run, get, catch, done, audit, scan, clear, yield, check, tip, fill, match, fit, print, pen, bad, input, output, lead, base, fix, apply, system, rules, plug, chain, bridge, mark, start, end, set up, assess, save, store, state, sync, change, edit, summary, param, stats, data, list, repo, tag, item, step-by-step, format, rank, wrap, clean, spread, merge. Use no or few adverbs and adjectives, only when they make the meaning more clear.
 6. Don't edit code or clear comments outside of docstrings.
 
-## Examples (Functions & Methods):
+## Examples of accepted pens:
 
-### Rejected:
 ```python
-def check_temp_fixture(
-        self,
-        test_file_path: str | Path,
-    ) -> tuple[bool, list[str]]:
-    """Inspects the test file AST to ensure test functions use tmp_path for I/O.
-    
-    Args:
-        self: The WorkspaceGuard instance.
-        test_file_path (str | Path): The path to the test file.
-        prefix (str): Logging prefix string.
-        
-    Returns:
-        tuple[bool, list[str]]: A tuple containing a boolean success flag and list of violations.
-    """
+# File header comments (to keep). 1st line: relative file path
+# other lines: license comments and flags for automation
+
+"""String tools for text ops.
+
+Safe helpers for base text types.
+"""
+
+from enum import Enum
+
+
+class StringType(Enum):
+    """Type of string, EMPTY or NOT_EMPTY."""
+
+    EMPTY = "Empty"
+    NOT_EMPTY = "Not empty"
+
+def my_str(txt: object | None) -> str:
+    """Cast obj to str or give empty str if null."""
+    return str(txt) if txt else ""
 ```
 
-### Accepted:
 ```python
 def check_temp_fixture(
         self,
@@ -41,17 +45,6 @@ def check_temp_fixture(
     """
 ```
 
-### Rejected:
-```python
-def get_response(
-   self, contents_list: list[object]) -> BaseModel:
-    """Generates a structured response from the LLM client.
-
-    This method takes contents and options and queries Gemini.
-    """
-```
-
-### Accepted:
 ```python
 def get_response(
         self,
@@ -63,19 +56,6 @@ def get_response(
     """
 ```
 
-### Rejected:
-```python
-def run(
-    test_file_path: str = "tests/unit/test_dummy_target.py",
-    source_file_path: str = "src/coding_tools/dummy_target.py",
-) -> tuple[bool, str, str]:
-    """Execute complete test generation, type checking, and linting pipeline.
-    
-    Cleans up remote LLM cache files on completion unless an exception interrupts.
-    """
-```
-
-### Accepted:
 ```python
 def run(
     test_file_path: str = "tests/unit/test_dummy_target.py",
@@ -89,22 +69,6 @@ def run(
     """
 ```
 
-
-## Examples (Modules & Classes):
-
-### Rejected:
-```python
-class Work(BaseModel):
-    """Enforces test file isolation and prevents workspace file pollution by scanning AST nodes.
-    
-    Attributes:
-        project_path (Path): The root path of the project.
-    
-    Uses AST static inspection and snapshot comparison during live pytest runs.
-    """
-```
-
-### Accepted:
 ```python
 class Work(BaseModel):
     """Spot banned writing of files by unit tests and fix.
@@ -114,13 +78,6 @@ class Work(BaseModel):
     """
 ```
 
-### Rejected:
-```python
-class GemAdapter:
-    """Client class for gemini api calls satisfying LLMClientProtocol."""
-```
-
-### Accepted:
 ```python
 class GemAdapter:
     """Google GenAI wrapper meeting LLMClientProtocol.

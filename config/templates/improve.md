@@ -14,12 +14,12 @@
 {conftest}
 --- End of Files for context ---
 --- Files to edit ---
-Content for each file starts with a comment giving the path relative to the project.
+Each file contains header comments with the file path relative to the project.
 {files_to_edit}
 Entire file content given.
 --- End of Files to edit ---
 --- Response expected ---
 Give:
 - a message
-- the fully updated file if only one file (edited_files)
-- or the concatenation of fully updated files if several files (edited_files).
+- the fully updated file with header comments if only one file (edited_files)
+- or the concatenation of fully updated files with header comments if several files (edited_files).
