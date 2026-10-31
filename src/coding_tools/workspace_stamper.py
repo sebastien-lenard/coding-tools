@@ -1,15 +1,14 @@
 # src/coding_tools/workspace_stamper.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Inject SPDX license and path stamps into files.
+"""Pen SPDX license and path stamps in files.
 
-Reads root LICENSE and NOTICE files.
+Read root LICENSE and NOTICE files. Uses pathlib and re. Catch OS and perm errors.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from difflib import unified_diff
 from enum import Enum, auto
@@ -30,7 +29,10 @@ LICENSE_TAG = "SPDX-License-Identifier"
 
 
 class FileComplianceStatus(Enum):
-    """File compliance states for stamp injection."""
+    """File compliance states for stamp check.
+
+    States: COMPLIANT, MUTATED, BLOCKED_MUTATION, IO_ERROR.
+    """
 
     COMPLIANT = auto()  # File is already properly formatted; no-op.
     MUTATED = auto()  # File was out of compliance but safely updated.
@@ -39,14 +41,20 @@ class FileComplianceStatus(Enum):
 
 
 class FileProcessReport(NamedTuple):
-    """Result of file processing."""
+    """Result of file processing.
+
+    Store file path and compliance status state.
+    """
 
     file_path: Path
     status: FileComplianceStatus
 
 
 class TargetWorkspace(BaseModel):
-    """Workspace path configuration and feature flags."""
+    """Workspace path config and feature flags.
+
+    Check target path, resolve files, skip venv and cache dirs.
+    """
 
     project_dir: DirectoryPath
     target_path: Path
@@ -56,7 +64,10 @@ class TargetWorkspace(BaseModel):
     extracted_license_id: str | None = Field(default=None, exclude=True)
 
     def resolve_files(self) -> list[Path]:
-        """Get list of Python files. Skips virtual envs and caches."""
+        """Get list of Python files. Skip venv and cache dirs.
+
+        Use rglob on target path. Skip .venv, venv, __pycache__, .git dirs.
+        """
         if self.target_path.is_file():
             return [self.target_path] if self.target_path.suffix == ".py" else []
 
@@ -72,14 +83,17 @@ class TargetWorkspace(BaseModel):
 
 
 class WorkspaceStamper(BaseModel):
-    """Inject path stamp and SPDX license metadata into files. Check content changes."""
+    """Inject path stamp and SPDX license tags into files. Check edits.
+
+    Read root files, scan python files, write reports, check diffs.
+    """
 
     workspace: TargetWorkspace
 
     def run(self) -> bool:
         """Run header check and write file reports.
 
-        Fails if blocked changes or I/O errors occur.
+        Fail if blocked changes or I/O errors occur. Log summary stats.
         """
         func = f"{__name__}"
         logger.start(func, target=self.workspace.target_path)
@@ -132,7 +146,10 @@ class WorkspaceStamper(BaseModel):
         return not (blocked_count > 0 or io_errors_count > 0)
 
     def _evaluate_legal_infrastructure(self) -> None:
-        """Read root LICENSE and NOTICE files to extract copyright and license ID."""
+        """Read root LICENSE and NOTICE files to get copyright and license ID.
+
+        Read text, parse lines, catch OSError if read fail.
+        """
         license_file = self.workspace.project_dir / FILE_LICENSE
         notice_file = self.workspace.project_dir / FILE_NOTICE
 
@@ -179,7 +196,10 @@ class WorkspaceStamper(BaseModel):
                 logger.warning(FILE_NOTICE, f"Failed to read file: {e}")
 
     def _find_insertion_point(self, lines: list[str]) -> int:
-        """Find file insertion point past shebang and encoding lines."""
+        """Find file insertion point past shebang and encoding lines.
+
+        Scan lines for #! and coding declarations.
+        """
         idx = 0
         if idx < len(lines) and lines[idx].startswith("#!"):
             idx += 1
@@ -193,7 +213,10 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Add or clear top-of-file path comment."""
+        """Add or clear top-of-file path comment.
+
+        Check relative path, insert or update line if run_path_stamp set.
+        """
         is_modified = False
         new_lines = list(lines)
         if self.workspace.run_path_stamp:
@@ -229,7 +252,10 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Add or clear SPDX license and copyright tags."""
+        """Add or clear SPDX license and copyright tags.
+
+        Purge old tags, insert new copyright and license lines if run_license_stamp set.
+        """
         is_modified = False
         new_lines = list(lines)
         if self.workspace.run_license_stamp:
@@ -273,7 +299,10 @@ class WorkspaceStamper(BaseModel):
         lines: list[str],
         idx: int,
     ) -> tuple[list[str], bool]:
-        """Clear legacy copyright and license tags from file comments."""
+        """Clear legacy copyright and license tags from file comments.
+
+        Scan lookahead range, pop lines with tags.
+        """
         is_modified = False
         new_lines = list(lines)
         lookahead = min(len(new_lines), idx + 10)
@@ -293,7 +322,10 @@ class WorkspaceStamper(BaseModel):
         file_path: Path,
         content: str,
     ) -> tuple[str, bool]:
-        """Yield updated file content with path and license stamps."""
+        """Yield updated file content with path and license stamps.
+
+        Split lines, find index, apply path and license stamps, join text.
+        """
         lines = content.splitlines(keepends=True)
         is_modified = False
 
@@ -314,7 +346,7 @@ class WorkspaceStamper(BaseModel):
     def _process_file(self, file_path: Path) -> FileProcessReport:
         """Process file and return report. Write file if changed.
 
-        Catch OS and permission errors.
+        Catch OS and permission errors. Write text if mutation authorized.
         """
         try:
             content = file_path.read_text(encoding="utf-8")
@@ -352,7 +384,10 @@ class WorkspaceStamper(BaseModel):
         original_content: str,
         new_content: str,
     ) -> bool:
-        """Check if file edits involve only path or license comments."""
+        """Check if file edits involve only path or license comments.
+
+        Compute unified diff, scan diff lines, flag non-comment edits as banned.
+        """
         orig_normalized = original_content.replace("\r\n", "\n").splitlines()
         new_normalized = new_content.replace("\r\n", "\n").splitlines()
 
@@ -392,17 +427,18 @@ class WorkspaceStamper(BaseModel):
 
 
 def validate_license_id(license_id: str) -> bool:
-    """Check if license ID has only valid alphanumeric and symbol characters."""
+    """Check if license ID has valid alphanumeric and symbol characters.
+
+    Accepts alnum, dash, dot, plus sign.
+    """
     return all(c.isalnum() or c in "-.+" for c in license_id)
 
 
-def strip_header(txt: str) -> str:
-    """Strip HTML comment headers."""
-    return re.sub(r"^(?:[ \t]*<!--.*?-->[ \t]*\s*)+", "", txt, flags=re.DOTALL).strip()
-
-
 def main() -> None:
-    """Run CLI argument parser and execute workspace stamper."""
+    """Run CLI arg parser and execute workspace stamper.
+
+    Parse arguments, check license ID, resolve project dir, run stamper.
+    """
     parser = argparse.ArgumentParser(
         description="Applies workspace layouts, path stamps, and license header",
     )

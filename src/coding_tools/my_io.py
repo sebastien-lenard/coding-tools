@@ -1,23 +1,28 @@
 # src/coding_tools/my_io.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""IO tools to read and write files."""
+
 from __future__ import annotations
 
-import datetime as dt
 import difflib
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from coding_tools import my_logger, my_path, workspace_stamper
+if TYPE_CHECKING:
+    import datetime as dt
+
+from coding_tools import comment, my_logger, my_path
 from coding_tools.my_logger import Verbose
 
 logger = my_logger.logger(__name__)
 
 
 def read_lines(path: Path | str, *, header: bool = True) -> list[str]:
-    """Get lines from txt file.
+    """Get text lines from file.
 
-    Raise RuntimeError, ValueError.
+    Calls read_txt. Raise RuntimeError, ValueError if file bad.
     """
     return str(read_txt(path, header=header)).splitlines()
 
@@ -31,7 +36,10 @@ def read_toml(
     ]
     | None
 ):
-    """Get dictionary from toml file."""
+    """Get dict from TOML file.
+
+    Calls tomllib.loads. Catch TOMLDecodeError, log and return None.
+    """
     txt = read_txt(path)
     try:
         return tomllib.loads(str(txt))
@@ -41,7 +49,11 @@ def read_toml(
 
 
 def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -> str:
-    """Raise RuntimeError, ValueError."""
+    """Read text from file with UTF-8.
+
+    Catch OSError, UnicodeDecodeError. Raise RuntimeError if raise_err True. Strip
+    workspace header if header False. Raise ValueError if text empty.
+    """
     txt = ""
     try:
         txt = Path(path).read_text(encoding="utf-8")
@@ -51,7 +63,7 @@ def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -
         if raise_err:
             raise RuntimeError(msg) from e
     if not header:
-        txt = workspace_stamper.strip_header(txt)
+        txt = comment.strip_head(txt)
     if not txt:
         msg = f"Empty file {path}"
         logger.error(None, msg)
@@ -67,9 +79,9 @@ def save_llm_req_resp(
     response: str,
     target_file: Path | str | None = None,
 ) -> None:
-    """Save llm request/responses structured LLM outputs as JSON.
+    """Save LLM request and response pair to JSON log.
 
-    Saves to .llm_logs/ path.
+    Uses my_path.llm_log_path. Writes to .llm_logs/ path. Catch Exception and log.
     """
     try:
         log_path = my_path.llm_log_path(
@@ -93,7 +105,10 @@ def save_llm_req_resp(
 
 
 def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
-    """Raises OSError, UnicodeEncodeError."""
+    """Write text to file with UTF-8 and diff check.
+
+    Reads old file for unified diff if verbose VV. Saves to path and logs end.
+    """
     try:
         old_txt = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -115,6 +130,7 @@ def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
                 logger.progress(None, f"Diff:\n{''.join(diff)}")
             Path(path).write_text(txt, encoding="utf-8")
             logger.end(f"Txt saved to {path}")
+            return
 
     Path(path).write_text(txt, encoding="utf-8")
     logger.end(f"Txt saved to {path}")
