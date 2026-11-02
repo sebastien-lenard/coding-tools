@@ -8,10 +8,7 @@ from __future__ import annotations
 import difflib
 import tomllib
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import datetime as dt
+from typing import Any
 
 from coding_tools import comment, my_logger, my_path
 from coding_tools.my_logger import Verbose
@@ -29,23 +26,17 @@ def read_lines(path: Path | str, *, header: bool = True) -> list[str]:
 
 def read_toml(
     path: Path | str,
-) -> (
-    dict[
-        str,
-        str | int | float | bool | dict | list | dt.datetime | dt.date | dt.time,
-    ]
-    | None
-):
+) -> dict[str, Any]:
     """Get dict from TOML file.
 
-    Calls tomllib.loads. Catch TOMLDecodeError, log and return None.
+    Raises RunTimeError, ValueError. Catch TOMLDecodeError, log and return None.
     """
     txt = read_txt(path)
     try:
         return tomllib.loads(str(txt))
-    except tomllib.TOMLDecodeError:
-        logger.exception(None, f"Failed TOML decoding of {path}")
-        return None
+    except tomllib.TOMLDecodeError as e:
+        msg = f"Failed TOML decoding of {path}"
+        raise ValueError(msg) from e
 
 
 def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -> str:

@@ -33,6 +33,7 @@ function-signatures-dependencies = "coding_tools.function_signatures_dependencie
 fix-lint = "coding_tools.entry:fix_lint"
 fix-type = "coding_tools.entry:fix_type"
 pen-docstring = "coding_tools.entry:pen_docstring"
+pen-header = "coding_tools.entry:pen_header"
 pen-test = "coding_tools.entry:pen_test"
 
 
@@ -119,3 +120,24 @@ notice-rgx = '(?i)SPDX-FileCopyrightText:\s*2026\s*'
 
 [tool.ruff.format]
 quote-style = "double"
+
+# Project tools
+[tool.coding-tools.tools.fix-lint]
+mod = "coding_tools.lint"
+llm = "True"
+
+[tool.coding-tools.tools.fix-type]
+mod = "coding_tools.static_type"
+llm = "True"
+
+[tool.coding-tools.tools.pen-docstring]
+mod = "coding_tools.docstring"
+llm = "True"
+
+[tool.coding-tools.tools.pen-header]
+mod = "coding_tools.header"
+llm = "False"
+
+[tool.coding-tools.tools.pen-test]
+mod = "coding_tools.unit_test"
+llm = "True"

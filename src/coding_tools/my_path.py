@@ -1,7 +1,6 @@
 # src/coding_tools/my_path.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Manage paths for tools, logs, and coverage.
 
 Write files to disk (.coverage_annotations, .pytest_output, .pyright_output,
@@ -38,7 +37,7 @@ ALL_TOOL_OUTPUT_DIRS = {
     LLM_LOG_DIR,
 }
 
-WORKSPACE_ROOT_MARKERS = ["config", "docs", "src", "tests"]
+WORKSPACE_ROOT_MARKERS = ["conf", "docs", "src", "tests"]
 
 
 def clean(txt: str) -> str:
@@ -56,14 +55,13 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
     Read disk, raise FileNotFoundError if no path. Log count or warning.
     """
     func = f"{__name__}"
-
     path_list = (
         [Path(path)] if isinstance(path, (Path, str)) else [Path(p) for p in path]
     )
 
     ext = f"*.{ext}" if ext and not ext.startswith(".") else ext
     pattern = my_string.my_str(ext)
-    pattern = f"{pattern}" if pattern else f"*{pattern}"
+    pattern = f"*{pattern}"
 
     out_files: list[Path] = []
 
@@ -82,7 +80,7 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
         else:
             out_files.extend(sorted(res_path.rglob(pattern)))
 
-    this_ext = "" if not ext else f".{ext} "
+    this_ext = "file(s)" if not ext else f"{ext} "
     if not out_files:
         logger.warning(func, f"No file at {path}")
     else:
@@ -91,10 +89,12 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
     return sorted(set(out_files))
 
 
-def prj_root(path: str | Path) -> Path:
+def root_dir(path: str | Path) -> Path:
     """Deduct project root dir from path.
 
-    Scan parents for workspace root markers (config, docs, src, tests).
+    Scan parents for workspace root markers (conf, docs, src, tests).
+    If found, return that directory.
+    If not found, return the path itself if it's a dir, or its parent if it's a file.
     """
     path = Path(path).resolve()
     current = path if path.is_dir() else path.parent
@@ -104,17 +104,17 @@ def prj_root(path: str | Path) -> Path:
             return current
         current = current.parent
 
-    return path if path.is_dir() else path.parent.parent
+    return path if path.is_dir() else path.parent
 
 
 def get_pyproject_path(path: str | Path) -> Path:
     """Get absolute path to pyproject.toml for project."""
-    return prj_root(path) / "pyproject.toml"
+    return root_dir(path) / "pyproject.toml"
 
 
 def conftest_path(path: Path | str) -> Path:
     """Get absolute path to tests/conftest.py for project."""
-    return prj_root(path) / CONFTEST_FILE_PATH
+    return root_dir(path) / CONFTEST_FILE_PATH
 
 
 def ensure_directory(dir_path: str | Path) -> Path:
@@ -136,7 +136,7 @@ def get_tool_output_dir(target_file_path: str | Path, dir_name: str) -> Path:
 
     Write to disk.
     """
-    proj_root = prj_root(target_file_path)
+    proj_root = root_dir(target_file_path)
     return ensure_directory(proj_root / dir_name)
 
 
@@ -231,7 +231,7 @@ def llm_log_path(
     Write to disk under .llm_logs. Raise ValueError if root is none.
     """
     func = "llm_log_path"
-    root = root or (prj_root(input_path) if input_path else None)
+    root = root or (root_dir(input_path) if input_path else None)
     if root is None:
         msg = f"No target root given ({func})"
         raise ValueError(msg)
@@ -254,7 +254,7 @@ def module_path(src_file_path: Path | str | None) -> str | None:
     src_file_path = Path(str(src_file_path)).resolve()
     try:
         relative_src = src_file_path.relative_to(
-            prj_root(src_file_path) / SRC_DIR,
+            root_dir(src_file_path) / SRC_DIR,
         )
     except ValueError:
         logger.exception(None, f"No src module at {src_file_path}")
@@ -264,9 +264,26 @@ def module_path(src_file_path: Path | str | None) -> str | None:
         relative_src = relative_src.parent
 
     if not relative_src.parts or relative_src == Path():
-        return prj_root(src_file_path).name
+        return root_dir(src_file_path).name
 
     return ".".join(relative_src.with_suffix("").parts)
+
+
+def rel_path(path: Path | str, base_dir: Path | str | None = None) -> Path:
+    """Get relative path from base dir."""
+    if not base_dir:
+        base_dir = root_dir(path)
+    res_path, res_base = Path(path).resolve(), Path(base_dir).resolve()
+
+    if res_path == res_base:
+        msg = f"Path and base_dir are same: {res_path}"
+        raise ValueError(msg)
+
+    try:
+        return res_path.relative_to(res_base)
+    except ValueError as err:
+        msg = f"Bad fit between path {res_path} and base_dir {res_base}"
+        raise ValueError(msg) from err
 
 
 def src_path(test_file_path: Path | str) -> Path:
@@ -276,7 +293,7 @@ def src_path(test_file_path: Path | str) -> Path:
     """
     path = Path(test_file_path)
     name = path.name.removeprefix("test_")
-    root = prj_root(path)
+    root = root_dir(path)
 
     match = next((p for p in (root / SRC_DIR).rglob(name) if p.is_file()), None)
     if not match:
@@ -313,7 +330,7 @@ def unit_test_path(
         res_item = item.resolve()
         try:
             rel_src = res_item.relative_to(
-                prj_root(res_item) / SRC_DIR,
+                root_dir(res_item) / SRC_DIR,
             )
         except ValueError:
             logger.exception(None, f"No src folder in {res_item}")

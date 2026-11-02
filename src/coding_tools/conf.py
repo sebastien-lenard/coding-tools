@@ -1,10 +1,9 @@
-# src/coding_tools/config.py
+# src/coding_tools/conf.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Load LLM config from JSONC files.
 
-File I/O on conf/params/llm_config.jsonc.
+File I/O on conf/params/llms.jsonc.
 """
 
 from __future__ import annotations
@@ -12,13 +11,18 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict
 
 from coding_tools import my_io, my_logger, my_path
 
 logger = my_logger.logger(__name__)
 
 PYPROJECT_TOML = "pyproject.toml"
+
+
+class ToolConf(TypedDict):
+    mod: str
+    llm: str
 
 
 def _strip_jsonc_comments(content: str) -> str:
@@ -91,16 +95,19 @@ def get_provider_mapping() -> dict[str, dict[str, Any]]:
     return dict(config.get("providers", {}))
 
 
-def python_version(path: Path | str) -> str | None:
+def pyproject(path: Path | str | None = None) -> dict[str, Any]:
+    """Raise RuntimeError, ValueError"""
+    path = Path(PYPROJECT_TOML) if not path else my_path.root_dir(path) / PYPROJECT_TOML
+    return my_io.read_toml(my_path.root_dir(path) / PYPROJECT_TOML)
+
+
+def python_version(path: Path | str | None) -> str | None:
     """Get min Python version from pyproject.toml file.
 
     Read TOML via my_io. Read requires-python key under project block.
     Return None if key or file is absent.
     """
-    data = cast(
-        "dict[str, Any]",
-        my_io.read_toml(my_path.prj_root(path) / PYPROJECT_TOML),
-    )
+    data = pyproject(path)
     if (
         not data
         or not data.get("project", {})
@@ -108,3 +115,11 @@ def python_version(path: Path | str) -> str | None:
     ):
         return None
     return data.get("project", {}).get("requires-python")
+
+
+def tools() -> dict[str, ToolConf]:
+    try:
+        return pyproject()["tool"]["coding-tools"]["tools"]
+    except KeyError as e:
+        msg = "Missing tool.coding-tools.tools key in pyproject.toml"
+        raise ValueError(msg) from e

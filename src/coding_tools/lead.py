@@ -1,7 +1,6 @@
 # src/coding_tools/lead.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Launch and control code runs.
 
 Handles args, switch to asked script, handles high-level errors and run exits.
@@ -11,24 +10,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import typing
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, Final
 
-from coding_tools import llm_emcee, my_import, my_io, my_logger, my_path
+from coding_tools import conf, llm_emcee, my_import, my_io, my_logger, my_path
+from coding_tools.conf import ToolConf
 from coding_tools.llm_emcee import Context
 from coding_tools.llm_protocol import LLMAPIError, LLMClientError, LLMServerError
 from coding_tools.my_run import RunOutput, RunState
 
-SKILL_PATH = "config/skills/TOOL.md"
-SUMMARY_HEADERS = ("File", "Status", "Edited")
-TEMPLATE_PATH = Path("config/templates/improve.md")
-TOOL_SCRIPTS: typing.Final = {
-    "pen-docstring": "coding_tools.docstring",
-    "fix-lint": "coding_tools.lint",
-    "fix-type": "coding_tools.static_type",
-    "pen-test": "coding_tools.unit_test",
-}
+if TYPE_CHECKING:
+    from coding_tools.conf import ToolConf
+
+SKILL_PATH: Final[Path] = Path("conf/skills/TOOL.md")
+SUMMARY_HEADERS: Final[tuple[str, str, str]] = ("File", "Status", "Edited")
+TEMPLATE_PATH: Final[Path] = Path("conf/templates/improve.md")
+TOOLS: Final[dict[str, ToolConf]] = conf.tools()
+
 
 logger = my_logger.logger(__name__)
 
@@ -36,42 +34,49 @@ logger = my_logger.logger(__name__)
 def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
     func = "lead"
     try:
-        mod_name = module_name(args)
-    except ValueError as e:
-        raise SystemExit(1) from e
+        mod_name = TOOLS[str(args.tool)]["mod"]
+    except KeyError as e:
+        msg = f"Bad tool: {args.tool}"
+        raise ValueError(msg) from e
 
     try:
         mod = my_import.import_module(mod_name)
     except (ImportError, OSError) as e:
-        raise SystemExit(1) from e
+        msg = f"Failed import of {mod_name}"
+        raise RuntimeError(msg) from e
 
     try:
         files: list[Path] = my_path.files(args.path)
     except FileNotFoundError as e:
-        raise SystemExit(1) from e
-    if not files:
-        msg = f"No file at {args.path}"
-        logger.error(None, msg)
-        raise SystemExit(1)
+        msg = f"Missing input files at {args.path}"
+        raise FileNotFoundError(msg) from e
+    root_dir = my_path.root_dir(files[0])
+
     if args.test:
         file_paths_to_edit = my_path.unit_test_path(files)
         try:
             conftest = my_io.read_txt(my_path.conftest_path(args.path))
         except (RuntimeError, ValueError) as e:
-            raise SystemExit(1) from e
+            msg = rf"Missing tests\conftest.py in repo of {args.path}"
+            raise RuntimeError(msg) from e
     else:
         file_paths_to_edit = files
         conftest = ""
 
-    try:
-        skill = my_io.read_txt(skill_path(args), header=False)
-        templ = my_io.read_txt(TEMPLATE_PATH, header=False)
-    except (RuntimeError, ValueError) as e:
-        raise SystemExit(1) from e
+    skill = ""
+    templ = ""
+    if TOOLS[str(args.tool)]["llm"] == "True":
+        try:
+            skill = my_io.read_txt(skill_path(args), header=False)
+            templ = my_io.read_txt(TEMPLATE_PATH, header=False)
+        except (RuntimeError, ValueError) as e:
+            msg = f"Missing skill or template at {skill_path(args)} or {TEMPLATE_PATH}"
+            raise RuntimeError(msg) from e
 
     return (
         Context(
             func_name=func,
+            root_dir=root_dir,
             file_paths_to_edit=file_paths_to_edit,
             context_file_paths=[],
             conftest=conftest,
@@ -88,30 +93,13 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
                 sub_func="mc.init",
                 status=RunState.PRESTART,
                 input_path=f,
+                root_dir=root_dir,
                 step=0,
                 max_steps=mod.MAX_STEPS,
             )
             for f in file_paths_to_edit
         ],
     )
-
-
-def files(args: argparse.Namespace) -> list[Path]:
-    """List path files. Raise value error if path bad."""
-    return my_path.files(args.path)
-
-
-def module_name(args: argparse.Namespace) -> str:
-    """Map tool arg to script module name.
-
-    Raise value error if tool key not found in tool scripts map.
-    """
-    mod_name = TOOL_SCRIPTS.get(str(args.tool))
-    if not mod_name:
-        msg = f"Bad tool: {args.tool}"
-        logger.error(None, msg)
-        raise ValueError(msg)
-    return mod_name
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,7 +126,8 @@ def parse_args() -> argparse.Namespace:
 
 def skill_path(args: argparse.Namespace) -> Path:
     """Get skill path for tool arg."""
-    return Path(SKILL_PATH.replace("TOOL", args.tool).replace("-", "_"))
+    tool_name = str(args.tool).replace("-", "_")
+    return SKILL_PATH.parent / f"{tool_name}.md"
 
 
 async def run() -> None:
@@ -150,14 +139,15 @@ async def run() -> None:
     logger.start(func)
 
     args = parse_args()
-    ctx, run_outputs = context(args)
-
-    tasks = [
-        llm_emcee.run(cast("Path", run_outputs[i].input_path), ctx, run_outputs[i])
-        for i in range(len(ctx.file_paths_to_edit))
-    ]
     try:
-        run_outputs = await asyncio.gather(*tasks)
+        ctx, run_outputs = context(args)
+    except Exception as e:
+        msg = f"Failed context {func}"
+        logger.exception(None, msg)
+        raise SystemExit(1) from e
+
+    try:
+        run_outputs = await llm_emcee.run(ctx, run_outputs)
     except (LLMAPIError, LLMClientError, LLMServerError, Exception) as e:
         logger.summary_table(
             f"{args.tool.capitalize()} Summary",
@@ -168,11 +158,12 @@ async def run() -> None:
             },
             run_outputs,
             formatters={
-                "input_path": my_path.module_path,
+                "input_path": lambda p: my_path.rel_path(p) if p else "",
                 "status": lambda s: s.value,
                 "edited": lambda ed: ed.value,
             },
         )
+        logger.exception(None, "Failed run for lead()")
         raise SystemExit(1) from e
 
     for ro in run_outputs:
@@ -188,7 +179,7 @@ async def run() -> None:
         },
         run_outputs,
         formatters={
-            "input_path": my_path.module_path,
+            "input_path": lambda p: my_path.rel_path(p) if p else "",
             "status": lambda s: s.value,
             "edited": lambda e: e.value,
         },

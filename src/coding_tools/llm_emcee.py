@@ -1,7 +1,6 @@
 # src/coding_tools/llm_emcee.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Send prompt to LLM, parse response, write edits.
 
 Audit of edits. Run task in parallel with cap. File write access. Needs LLM API key.
@@ -12,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -43,6 +42,7 @@ class Context:
     """
 
     func_name: str
+    root_dir: Path
     file_paths_to_edit: list[Path] = field(default_factory=list)
     context_file_paths: list[Path] = field(default_factory=list)
     conftest: str = ""
@@ -61,6 +61,19 @@ class Context:
     llm: LLMClientProtocol = field(default=llm_router.get_llm_client())
 
 
+def _safe_call_func(
+    func: Callable[..., RunOutput],
+    *args: object,
+    **kwargs: object,
+) -> RunOutput | Exception:
+    """Run check/precheck functions, catching any signature or runtime errors."""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        logger.exception(None, f"Failed run failed {func.__name__}")
+        return e
+
+
 async def chat(
     file_path: Path,
     ctx: Context,
@@ -72,23 +85,16 @@ async def chat(
     """
     try:
         current_txt = my_io.read_txt(file_path)
-        if my_path.is_unit_test(file_path):
-            context_txt = my_io.read_txt(my_path.src_path(file_path))
-        else:
-            context_txt = ""
     except (OSError, UnicodeEncodeError):
         logger.exception(None, "")
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
-    file_stem = file_path.stem
-    python_version = conf.python_version(file_path)
-    python_version = (
-        f"Python: {conf.python_version(file_path)}\n"
-        if file_path.suffix == ".py" and python_version
-        else ""
-    )
     check_params = CheckParams(old_txt=current_txt, new_txt="", file_path=file_path)
-    run_output = ctx.precheck_func(check_params, run_output)
+    res = _safe_call_func(ctx.precheck_func, check_params, run_output)
+    if isinstance(res, Exception):
+        return replace(run_output, status=RunState.FAIL, msg=f"Precheck error: {res}")
+    run_output = res
+
     if run_output.status == RunState.PASS:
         msg = ", saved fixes." if run_output.edited == EditState.EDITED else "."
         msg = f"Passed precheck{msg} No call to LLM. File {file_path.name}"
@@ -97,6 +103,22 @@ async def chat(
             run_output,
             msg="Passed precheck, saved fixes",
         )
+
+    if my_path.is_unit_test(file_path):
+        try:
+            context_txt = my_io.read_txt(my_path.src_path(file_path))
+        except (OSError, UnicodeEncodeError):
+            logger.exception(None, "")
+            return replace(run_output, status=RunState.FAIL, msg="Bad file")
+    else:
+        context_txt = ""
+    file_stem = file_path.stem
+    python_version = conf.python_version(file_path)
+    python_version = (
+        f"Python: {conf.python_version(file_path)}\n"
+        if file_path.suffix == ".py" and python_version
+        else ""
+    )
 
     for step in range(ctx.max_steps):
         run_output = replace(run_output, step=(step + 1))
@@ -124,7 +146,14 @@ async def chat(
                 params,
             )
             check_params = replace(check_params, new_txt=resp.edited_files)
-            run_output = ctx.check_func(check_params, run_output)
+            res = _safe_call_func(ctx.check_func, check_params, run_output)
+            if isinstance(res, Exception):
+                return replace(
+                    run_output,
+                    status=RunState.FAIL,
+                    msg=f"Precheck error: {res}",
+                )
+            run_output = res
             if run_output.status == RunState.PASS:
                 check_params = replace(
                     check_params,
@@ -148,7 +177,7 @@ async def chat(
     return run_output
 
 
-async def run(
+async def run_chat(
     file_path: Path,
     ctx: Context,
     run_output: RunOutput,
@@ -163,3 +192,8 @@ async def run(
             ctx,
             run_output,
         )
+
+
+async def run(ctx: Context, run_outputs: list[RunOutput]) -> list[RunOutput]:
+    tasks = [run_chat(cast("Path", ro.input_path), ctx, ro) for ro in run_outputs]
+    return await asyncio.gather(*tasks)
