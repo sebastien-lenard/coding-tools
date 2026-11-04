@@ -61,12 +61,27 @@ class Context:
     llm: LLMClientProtocol = field(default=llm_router.get_llm_client())
 
 
+@dataclass
+class ChatStepParams:
+    """Parameters for executing a single chat step."""
+
+    file_path: Path
+    file_stem: str
+    ctx: Context
+    run_output: RunOutput
+    check_params: CheckParams
+    current_txt: str
+    context_txt: str
+    python_version: str
+    step: int
+
+
 def _safe_call_func(
     func: Callable[..., RunOutput],
     *args: object,
     **kwargs: object,
 ) -> RunOutput | Exception:
-    """Run check/precheck functions, catching any signature or runtime errors."""
+    """Run check or precheck function. Catch any error."""
     try:
         return func(*args, **kwargs)
     except Exception as e:
@@ -74,18 +89,112 @@ def _safe_call_func(
         return e
 
 
+async def _prepare_context_and_version(file_path: Path) -> tuple[str, str]:
+    """Get context text and python version for chat prompt."""
+    if my_path.is_unit_test(file_path):
+        try:
+            context_txt = my_io.read_txt(my_path.src_path(file_path))
+        except (OSError, UnicodeEncodeError):
+            logger.exception(None, "")
+            raise
+    else:
+        context_txt = ""
+
+    python_version = conf.python_version(file_path)
+    python_version_str = (
+        f"Python: {python_version}\n"
+        if file_path.suffix == ".py" and python_version
+        else ""
+    )
+    return context_txt, python_version_str
+
+
+async def _execute_chat_step(
+    params: ChatStepParams,
+) -> tuple[RunOutput, CheckParams, bool]:
+    """Run single chat step, call LLM, check and save if pass."""
+    file_path = params.file_path
+    file_stem = params.file_stem
+    ctx = params.ctx
+    run_output = params.run_output
+    check_params = params.check_params
+    current_txt = params.current_txt
+    context_txt = params.context_txt
+    python_version = params.python_version
+    step = params.step
+
+    run_output = replace(run_output, step=(step + 1))
+    step_msg = f"{file_stem} {step + 1}/{ctx.max_steps}"
+    try:
+        logger.start(step_msg)
+        req: str = ctx.template.format(
+            msg="",
+            python_version=python_version,
+            skill=ctx.skill,
+            tips=run_output.brief,
+            files_to_edit=current_txt,
+            context_files=context_txt,
+            conftest=ctx.conftest,
+        )
+        llm_params = llm_protocol.LLMCallParams(
+            response_schema=llm_protocol.LLMResponse,
+            prefix=file_stem,
+            tool_name=f"{ctx.func_name}",
+            process_step=f"{step}",
+            target_file=str(file_path),
+        )
+        resp = await ctx.llm.call(
+            req,
+            llm_params,
+        )
+        check_params = replace(check_params, new_txt=resp.edited_files)
+        res = _safe_call_func(ctx.check_func, check_params, run_output)
+        if isinstance(res, Exception):
+            return (
+                replace(
+                    run_output,
+                    status=RunState.FAIL,
+                    msg=f"Precheck error: {res}",
+                ),
+                check_params,
+                False,
+            )
+        run_output = res
+        if run_output.status == RunState.PASS:
+            check_params = replace(
+                check_params,
+                old_txt=check_params.new_txt,
+                new_txt="",
+            )
+            my_io.write_txt(
+                str(check_params.old_txt),
+                file_path,
+                verbose=Verbose.VV,
+            )
+            run_output = replace(run_output, edited=EditState.EDITED)
+            if step + 1 >= ctx.min_steps:
+                logger.end(file_path.name, f"Passed after {step + 1} steps")
+                return run_output, check_params, True
+
+    except Exception:
+        run_output = replace(run_output, status=RunState.FAIL, msg="Error")
+        logger.exception(step_msg, "Failed")
+
+    return run_output, check_params, False
+
+
 async def chat(
     file_path: Path,
     ctx: Context,
     run_output: RunOutput,
 ) -> RunOutput:
-    """Enhance file content via LLM in steps with checks.
+    """Run chat steps to edit file via LLM.
 
-    Read file text. Call LLM API, check result, and write file if pass.
+    Read file, call LLM API, check result, and write file if pass. File write access.
     """
     try:
         current_txt = my_io.read_txt(file_path)
-    except (OSError, UnicodeEncodeError):
+    except (RuntimeError, ValueError):
         logger.exception(None, "")
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
@@ -104,75 +213,30 @@ async def chat(
             msg="Passed precheck, saved fixes",
         )
 
-    if my_path.is_unit_test(file_path):
-        try:
-            context_txt = my_io.read_txt(my_path.src_path(file_path))
-        except (OSError, UnicodeEncodeError):
-            logger.exception(None, "")
-            return replace(run_output, status=RunState.FAIL, msg="Bad file")
-    else:
-        context_txt = ""
+    try:
+        context_txt, python_version = await _prepare_context_and_version(file_path)
+    except (OSError, UnicodeEncodeError):
+        return replace(run_output, status=RunState.FAIL, msg="Bad file")
+
     file_stem = file_path.stem
-    python_version = conf.python_version(file_path)
-    python_version = (
-        f"Python: {conf.python_version(file_path)}\n"
-        if file_path.suffix == ".py" and python_version
-        else ""
-    )
 
     for step in range(ctx.max_steps):
-        run_output = replace(run_output, step=(step + 1))
-        step_msg = f"{file_stem} {step + 1}/{ctx.max_steps}"
-        try:
-            logger.start(step_msg)
-            req: str = ctx.template.format(
-                msg="",
-                python_version=python_version,
-                skill=ctx.skill,
-                tips=run_output.brief,
-                files_to_edit=current_txt,
-                context_files=context_txt,
-                conftest=ctx.conftest,
-            )
-            params = llm_protocol.LLMCallParams(
-                response_schema=llm_protocol.LLMResponse,
-                prefix=file_stem,
-                tool_name=f"{ctx.func_name}",
-                process_step=f"{step}",
-                target_file=str(file_path),
-            )
-            resp = await ctx.llm.call(
-                req,
-                params,
-            )
-            check_params = replace(check_params, new_txt=resp.edited_files)
-            res = _safe_call_func(ctx.check_func, check_params, run_output)
-            if isinstance(res, Exception):
-                return replace(
-                    run_output,
-                    status=RunState.FAIL,
-                    msg=f"Precheck error: {res}",
-                )
-            run_output = res
-            if run_output.status == RunState.PASS:
-                check_params = replace(
-                    check_params,
-                    old_txt=check_params.new_txt,
-                    new_txt="",
-                )
-                my_io.write_txt(
-                    str(check_params.old_txt),
-                    file_path,
-                    verbose=Verbose.VV,
-                )
-                run_output = replace(run_output, edited=EditState.EDITED)
-                if step + 1 >= ctx.min_steps:
-                    logger.end(file_path.name, f"Passed after {step + 1} steps")
-                    break
-
-        except Exception:
-            run_output = replace(run_output, status=RunState.FAIL, msg="Error")
-            logger.exception(step_msg, "Failed")
+        step_params = ChatStepParams(
+            file_path=file_path,
+            file_stem=file_stem,
+            ctx=ctx,
+            run_output=run_output,
+            check_params=check_params,
+            current_txt=current_txt,
+            context_txt=context_txt,
+            python_version=python_version,
+            step=step,
+        )
+        run_output, check_params, should_break = await _execute_chat_step(
+            step_params,
+        )
+        if should_break:
+            break
 
     return run_output
 
@@ -182,7 +246,7 @@ async def run_chat(
     ctx: Context,
     run_output: RunOutput,
 ) -> RunOutput:
-    """Run chat task under semaphore limit and return RunOutput.
+    """Run chat task under semaphore limit.
 
     Calls chat async. Uses ctx.semaphore to cap tasks.
     """
@@ -195,5 +259,6 @@ async def run_chat(
 
 
 async def run(ctx: Context, run_outputs: list[RunOutput]) -> list[RunOutput]:
+    """Run chat tasks in parallel with semaphore cap."""
     tasks = [run_chat(cast("Path", ro.input_path), ctx, ro) for ro in run_outputs]
     return await asyncio.gather(*tasks)

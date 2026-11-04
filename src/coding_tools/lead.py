@@ -32,6 +32,11 @@ logger = my_logger.logger(__name__)
 
 
 def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
+    """Get context and init run data from parsed args.
+
+    Imports module, scans paths, reads conftest and skill files if tool needs LLM.
+    Raises KeyError, ImportError, FileNotFoundError, or RuntimeError on bad input.
+    """
     func = "lead"
     try:
         mod_name = TOOLS[str(args.tool)]["mod"]
@@ -68,9 +73,13 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
     if TOOLS[str(args.tool)]["llm"] == "True":
         try:
             skill = my_io.read_txt(skill_path(args), header=False)
+        except (RuntimeError, ValueError) as e:
+            msg = f"Missing skill at {skill_path(args)}"
+            raise RuntimeError(msg) from e
+        try:
             templ = my_io.read_txt(TEMPLATE_PATH, header=False)
         except (RuntimeError, ValueError) as e:
-            msg = f"Missing skill or template at {skill_path(args)} or {TEMPLATE_PATH}"
+            msg = f"Missing template at {TEMPLATE_PATH}"
             raise RuntimeError(msg) from e
 
     return (
@@ -103,6 +112,10 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse CLI args for tool and target path.
+
+    Takes tool name and path. Accepts --test flag for unit test files.
+    """
     parser = argparse.ArgumentParser(
         description="Switch run to asked script and control it",
     )
@@ -125,7 +138,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def skill_path(args: argparse.Namespace) -> Path:
-    """Get skill path for tool arg."""
+    """Get skill path for tool arg by name replacement.
+
+    Maps hyphens to underscores in tool name under SKILL_PATH parent dir.
+    """
     tool_name = str(args.tool).replace("-", "_")
     return SKILL_PATH.parent / f"{tool_name}.md"
 
@@ -133,7 +149,8 @@ def skill_path(args: argparse.Namespace) -> Path:
 async def run() -> None:
     """Run async main flow.
 
-    Parse args, get list of files, set up context, run tasks in loop, log summary.
+    Parse args, get file list, set up context, run tasks in loop, log summary.
+    Catches LLM and general errors, prints summary table, exits on failure.
     """
     func = __name__
     logger.start(func)
@@ -188,7 +205,10 @@ async def run() -> None:
 
 
 def main() -> None:
-    """Run async main loop via asyncio run."""
+    """Run async main loop via asyncio run.
+
+    Sets up logger and runs async run function.
+    """
     my_logger.setup()
     asyncio.run(run())
 
