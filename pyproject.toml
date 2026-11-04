@@ -46,6 +46,7 @@ gemini = [
 dev = [
     "basedpyright>=1.39.9",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.1.post1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.1",
 ]
@@ -83,6 +84,11 @@ reportUnusedVariable = "none"
 # Set to "warning" or "none" if it creates too much noise in existing code.
 reportAny = "none" 
 
+[tool.coverage.report]
+exclude_also = [
+    "if __name__ == .__main__.:",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
@@ -105,6 +111,7 @@ allowed-confusables = ["ℹ"]
     "BLE001",  # Allow broad exception catching (great for checking fallback paths)
     "FBT001", # Allow boolean positional arguments
     "FBT002", # Allow boolean default positional arguments
+    "INP001",
     "PLR2004", # Allow numerical values not being constant
     "PLW0120", # Allow loose control structures if an LLM generated messy loop edge-case tests
     "PLR0913", # Allow many arguments
