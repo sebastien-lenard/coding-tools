@@ -43,7 +43,7 @@ WORKSPACE_ROOT_MARKERS = ["conf", "docs", "src", "tests"]
 def clean(txt: str) -> str:
     """Clean text to fit file or folder name.
 
-    Strip bad symbols, slugify spaces, lowercase.
+    Strip bad symbols, slugify spaces, lowercase. Input str, output str.
     """
     txt = re.sub(r"[^\w\s\.-]", "", Path(txt).stem)
     return re.sub(r"[-\s_]+", "-", txt).strip("-.").lower()
@@ -179,7 +179,7 @@ def get_ruff_log_path(test_file_path: str | Path) -> Path:
 def is_unit_test(path: Path | str) -> bool:
     """Check if path is a unit test script.
 
-    Match UNIT_TEST_DIR and test pattern.
+    Match UNIT_TEST_DIR and test pattern. Return bool.
     """
     p = Path(path)
     try:
@@ -190,7 +190,7 @@ def is_unit_test(path: Path | str) -> bool:
 
 
 def latest_path(my_dir: Path, txt: str) -> Path:
-    """Get latest file match by mtime in dir.
+    """Get latest file match by mitive in dir.
 
     Raise FileNotFoundError if dir missing or no match.
     """
@@ -217,7 +217,12 @@ def pytest_cov_path(source_file_path: str | Path) -> Path:
     """
     base_dir = pytest_cov_dir(source_file_path)
     pattern = f"*_{Path(source_file_path).name},cover"
-    return latest_path(base_dir, pattern)
+    try:
+        path = latest_path(base_dir, pattern)
+    except FileNotFoundError as e:
+        msg = f"Missing cov file {pattern} at {base_dir}"
+        raise RuntimeError(msg) from e
+    return path
 
 
 def llm_log_path(
@@ -270,7 +275,7 @@ def module_path(src_file_path: Path | str | None) -> str | None:
 
 
 def rel_path(path: Path | str, base_dir: Path | str | None = None) -> Path:
-    """Get relative path from base dir."""
+    """Get relative path from base dir. Raise ValueError if bad fit or same path."""
     if not base_dir:
         base_dir = root_dir(path)
     res_path, res_base = Path(path).resolve(), Path(base_dir).resolve()
@@ -321,13 +326,15 @@ def unit_test_path(
     """Map source file paths to unit test paths.
 
     E.g. 'src/xx/yy.py' to 'tests/unit/xx/test_yy.py'. Create test file stub
-    if missing. Raise ValueError if src folder missing.
+    if missing. Write to disk. Raise ValueError if src folder missing.
     """
     path_list = to_path_list(src_file_path)
     out_paths: list[Path] = []
 
     for item in path_list:
         res_item = item.resolve()
+        if res_item.name == INIT_FILE_PATH:
+            continue
         try:
             rel_src = res_item.relative_to(
                 root_dir(res_item) / SRC_DIR,
