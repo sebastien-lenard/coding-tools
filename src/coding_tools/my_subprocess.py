@@ -1,6 +1,11 @@
 # src/coding_tools/my_subprocess.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Run shell sub-processes and log data.
+
+Key logic for command substitution and output capture. Writes log files to disk.
+"""
+
 import re
 import subprocess
 from collections.abc import Callable
@@ -15,7 +20,10 @@ logger = my_logger.logger(__name__)
 
 @dataclass
 class CmdParams:
-    """Params to run a command and check outcome."""
+    """Hold data to run sub-process and parse run output.
+
+    Params for path swaps, checks, and logs. Data class used in run steps.
+    """
 
     check_result: Callable[[str, str, int, RunOutput], RunOutput]
     clean_log: Callable[[str], str] | None
@@ -26,13 +34,18 @@ class CmdParams:
 
 
 def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
+    """Run shell cmd with path swaps and save log file.
+
+    Uses subprocess.run. Swaps keys like INPUT_PATH in cmd string. Writes
+    log to disk. Calls check_result callback. Returns updated RunOutput.
+    """
     try:
         module_path = my_path.module_path(params.input_path)
     except ValueError:
         module_path = ""
     try:
         unit_test_path = my_path.unit_test_path(params.input_path)[0]
-    except ValueError:
+    except (ValueError, IndexError):
         unit_test_path = ""
     swaps = {
         "INPUT_PATH": my_string.my_str(params.input_path),
