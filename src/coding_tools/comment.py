@@ -1,6 +1,11 @@
 # src/coding_tools/comment.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Comment and header ops for text and source files.
+
+Wrap, strip, sync head rules. Base config map.
+"""
+
 import re
 from enum import Enum
 from pathlib import Path
@@ -11,13 +16,20 @@ from coding_tools import my_io, my_path
 _LICENSE_DIR = "LICENSES"
 _NOTICE_PATH = "NOTICE"
 
+
 _HTML_HEAD = re.compile(r"^(?:[ \t]*<!--.*?-->[ \t]*\s*)+", flags=re.DOTALL)
 _PYTHON_HEAD = re.compile(
-    r"^(?:[ \t]*#(?!\s*!)(?!.*coding[=:]).*?\n|[ \t]*\n)*",
+    r"^(?:"
+    # Skip shebang, encoding, and blank lines at the top
+    r"[ \t]*#\![^\n]*\n?|[ \t]*#.*coding[=:][^\n]*\n?|[ \t]*\n"
+    r")*"
+    # Get comment lines and blank lines between them
+    r"(?:[ \t]*#(?![\s!])(?![^\n]*coding[=:]).*?\n|[ \t]*\n)+",
+    flags=re.IGNORECASE,
 )
 
 _PYTHON_INSERT_HEAD = re.compile(
-    r"^(?:[ \t]*#\![^\n]*\n?|[ \t]*#.*coding[=:][^\n]*\n?)*",
+    r"^(?:[ \t]*#\![^\n]*\n?|[ \t]*#.*coding[=:][^\n]*\n?)+",
     flags=re.IGNORECASE,
 )
 
@@ -59,7 +71,7 @@ _PATH_AND_LICENSE = re.compile(
 class HeaderState(Enum):
     """State of file comments header.
 
-    PASS or FAIL.
+    Pass or fail stats. Enum values PASS, FAIL.
     """
 
     PASS = "Good header"  # noqa: S105
@@ -67,9 +79,9 @@ class HeaderState(Enum):
 
 
 def comment(txt: str, ext: str) -> str:
-    """Wrap text in comments based on extension.
+    """Wrap text in comments based on extension map.
 
-    Return "" if extension is unknown.
+    Get template from config. Return blank str if ext unknown.
     """
     if system := _EXT_SYSTEM.get(ext):
         template, _ = _SYSTEM_CONFIG[system]
@@ -80,7 +92,7 @@ def comment(txt: str, ext: str) -> str:
 def head(txt: str) -> str:
     """Get comment header from html or python text.
 
-    Return "" if no header found.
+    Scan start of text with regex. Return blank str if no match.
     """
     if (m := _HTML_HEAD.match(txt)) or (m := _PYTHON_HEAD.match(txt)):
         return m.group(0)
@@ -88,27 +100,33 @@ def head(txt: str) -> str:
 
 
 def head_insert_line(txt: str) -> int:
-    """Yield line number where inserting path and license comments.
+    """Find line number to insert path and license comments.
 
-    Line numbers start with 1
+    Scan python header. Line numbers start at 1. Fall back to 1.
     """
     match = _PYTHON_INSERT_HEAD.match(txt)
     if match:
-        header_part = match.group(0)
-        if header_part:
-            return header_part.count("\n") + 1
+        return match.group(0).count("\n") + 1
 
     return 1
 
 
 def is_comment_or_blank(txt: str, ext: str) -> bool:
+    """Check if all lines in text are comments or blank.
+
+    Use file ext rules. Read lines and match pattern.
+    """
     if (system := _EXT_SYSTEM.get(ext)) and (pat := _SYSTEM_CONFIG[system][1]):
         return all(pat.match(line) for line in txt.splitlines())
     return False
 
 
 def spdx_copyright(base_dir: Path | str, ext: str) -> str:
-    """Extract SPDX copyright line from NOTICE file in base_dir."""
+    """Extract SPDX copyright line from NOTICE file in base dir.
+
+    Reads NOTICE file via io tool. Raises RuntimeError if file missing,
+    ValueError if no copyright line found. Formats comment via ext.
+    """
     notice_file = Path(base_dir) / _NOTICE_PATH
     try:
         content = my_io.read_txt(notice_file, header=False)
@@ -126,7 +144,11 @@ def spdx_copyright(base_dir: Path | str, ext: str) -> str:
 
 
 def spdx_license(base_dir: Path | str, ext: str) -> str:
-    """Extract SPDX license line from first file in base_dir/LICENSES."""
+    """Extract SPDX license line from first file in licenses dir.
+
+    Scans LICENSES dir via path tool. Raises FileNotFoundError if scan fails.
+    Formats comment via ext.
+    """
     licenses_dir = Path(base_dir) / _LICENSE_DIR
     try:
         license_file = my_path.files(licenses_dir, ext=None)[0]
@@ -141,12 +163,15 @@ def spdx_license(base_dir: Path | str, ext: str) -> str:
 def strip_head(txt: str) -> str:
     """Strip comment headers from html or python text.
 
-    Full False: Skip shebang (lines starting with #!) and encoding (lines containing
-    coding: or coding=)
+    Skips shebang and encoding lines. Modifies text input.
     """
     txt = _HTML_HEAD.sub("", txt)
     return _PYTHON_HEAD.sub("", txt)
 
 
 def strip_path_and_license(txt: str) -> str:
+    """Strip path and license comments from text.
+
+    Removes SPDX and file path lines. Clean up left start lines.
+    """
     return _PATH_AND_LICENSE.sub("", txt).lstrip("\n")
