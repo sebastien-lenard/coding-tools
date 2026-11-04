@@ -1,6 +1,10 @@
 # src/coding_tools/my_pyright.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Run basedpyright and check output logs.
+
+Runs basedpyright via uv. Save log to file. Clean path strings.
+"""
 
 import re
 from dataclasses import replace
@@ -12,23 +16,33 @@ from coding_tools.my_subprocess import CmdParams
 
 logger = my_logger.logger(__name__)
 
-CLEAR_PATHS = r"(?:[a-zA-Z]:\\|[.\\/])[^\s]*?\.py(?::\d+:\d+)?"
+CLEAR_PATHS = r"(?:[a-zA-Z]:\|[.\/])[^\s]*?\.py(?::\d+:\d+)?"
 CMD = "uv run basedpyright INPUT_PATH"
 FUNC_NAME = "Based-Pyright"
 
 
 def check_edited(out: str, err: str) -> EditState:  # noqa: ARG001
-    """Check whether file has been edited."""
+    """Check if file got edit state and keep.
+
+    Pass out and err. Return EditState.KEPT.
+    """
     return EditState.KEPT
 
 
 def check_result(
-    out: str,
-    err: str,
-    exit_code: int,
-    run_output: RunOutput,
+    out:
+    str,
+    err:
+    str,
+    exit_code:
+    int,
+    run_output:
+    RunOutput,
 ) -> RunOutput:
-    """Check the result of the command run."""
+    """Check run exit code and set pass or fail state.
+
+    Returns RunOutput with state and sub func set. Exit code 0 means pass.
+    """
     func = __name__
     return replace(
         run_output,
@@ -39,14 +53,17 @@ def check_result(
 
 
 def clean_log(txt: str) -> str:
-    """Clear running info that don't give tips on type check issues."""
+    """Clear run path info from log text.
+
+    Regex sub on CLEAR_PATHS pattern. Input txt, output clean str.
+    """
     return re.sub(CLEAR_PATHS, "", txt)
 
 
 def run(file_path: Path | str, run_output: RunOutput) -> RunOutput:
-    """Run ruff check with fix option and save output to log.
+    """Run basedpyright via uv and save output to log.
 
-    Uses uv and ruff check.
+    Uses CmdParams and my_subprocess.run. Needs uv and basedpyright CLI tool.
     """
     params = CmdParams(
         check_result=check_result,
