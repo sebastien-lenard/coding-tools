@@ -1,20 +1,31 @@
 # src/coding_tools/my_run.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Track run states and file edit steps.
+
+Safe helpers for run ops.
+"""
+
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 
 class EditState(Enum):
-    """Give to which stage a file has been edited and saved, or not."""
+    """State of file edit and save step.
+
+    Edited or kept.
+    """
 
     EDITED = "Edited"
     KEPT = "Kept"
 
 
 class RunState(Enum):
-    """Run state for process or block."""
+    """Run state for process or block.
+
+    Start, live, done, fail, pass, skip, or prestart.
+    """
 
     START = "Started"
     LIVE = "Live"
@@ -27,13 +38,17 @@ class RunState(Enum):
 
 @dataclass
 class RunOutput:
-    """Gather the output run of a command, inc. exit, std.err and out."""
+    """Store run output data of a command.
+
+    Holds func, status, paths, step counts, sub func, msg, brief, and edit state.
+    """
 
     func: str
     status: RunState
     input_path: Path | None = None
     output_path: Path | None = None
     log_path: Path | None = None
+    root_dir: Path | None = None
     step: str | int | None = None
     max_steps: int | None = None
     sub_func: str = ""
