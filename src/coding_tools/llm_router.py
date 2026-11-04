@@ -1,7 +1,6 @@
 # src/coding_tools/llm_router.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Map LLM models to fit client adapters based on config and import."""
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ logger = my_logger.logger(__name__)
 def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
     """Get LLM client map to target model via config and dynamic import.
 
-    Check provider map. Use default model if model name is none. Raise ValueError
-    if model not found in conf. Use importlib to load adapter class.
+    Check provider map. Use default model if none. Raise ValueError if not found.
+    Use importlib to load adapter class.
     """
     target_model = model_name if model_name is not None else get_default_model()
     providers = get_provider_mapping()

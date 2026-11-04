@@ -14,6 +14,10 @@ from coding_tools import lead
 
 
 def pen_header() -> None:
+    """Run pen-header task via lead main.
+
+    Set up sys.argv, call lead.main(). Gets sys.argv access.
+    """
     sys.argv.insert(1, "pen-header")
     lead.main()
 

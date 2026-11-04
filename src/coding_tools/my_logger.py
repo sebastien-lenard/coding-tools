@@ -1,8 +1,10 @@
 # src/coding_tools/my_logger.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Plain log print. Format text and drop fluff.
 
-"""Plain-text logging module applying formatting and anti-fluff."""
+Uses std logging module. Filters text via BANNED_WORDS list.
+"""
 
 from __future__ import annotations
 
@@ -23,14 +25,20 @@ BANNED_WORDS = {}
 
 
 class Verbose(Enum):
-    """Verbosity of logs."""
+    """Log rank set. V for base info, VV for more data.
+
+    Base info logs warnings and main progress. Details log extra data.
+    """
 
     V = "Log warnings and main progress"
     VV = "Log details"
 
 
 def _clean(text: str) -> str:
-    """Strip banned words from log text."""
+    """Drop bad words from log text.
+
+    Checks BANNED_WORDS set. Splits and strips punctuation from words.
+    """
     if not BANNED_WORDS:
         return text
     words = text.split()
@@ -39,15 +47,24 @@ def _clean(text: str) -> str:
 
 
 class MyLogger:
-    """Wrap standard logging with target path formatting and anti-fluff."""
+    """Wrap std logging. Format target path and drop fluff.
+
+    Uses logging module. Cleans text and formats target paths for log lines.
+    """
 
     def __init__(self, name: str) -> None:
-        """Get logger instance by name."""
+        """Get log base by name.
+
+        Stores std logger instance.
+        """
         self.logger = logging.getLogger(name)
 
     @staticmethod
     def _format_target(target: str | Path | None, *, full_path: bool = False) -> str:
-        """Get filename or path for target log lines."""
+        """Get file name or path for target log line.
+
+        Skips directories. Uses stem for py files or full path if flag set.
+        """
         if not target:
             return ""
         path = Path(target)
@@ -64,7 +81,10 @@ class MyLogger:
         target: str | Path | None = None,
         **details: Any,  # noqa: ANN401
     ) -> None:
-        """Log process start with optional target context and nested params."""
+        """Log task start. Add target tag and dict items.
+
+        Cleans process name and detail values. Logs info via std logger.
+        """
         step = self._format_target(target)
         clean_process = _clean(process_name)
         self.logger.info("%sStart %s", step, clean_process)
@@ -73,7 +93,10 @@ class MyLogger:
             self.logger.info("%s", detail_line)
 
     def end(self, process_name: str, target: str | Path | None = None) -> None:
-        """Log process end."""
+        """Log task end.
+
+        Cleans process name and logs info via std logger.
+        """
         step = self._format_target(target)
         clean_process = _clean(process_name)
         self.logger.info("%sEnd %s", step, clean_process)
@@ -86,7 +109,10 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log progress and status updates."""
+        """Log step state and extra data.
+
+        Cleans status and extra message text. Logs info via std logger.
+        """
         step = self._format_target(target, full_path=full_path)
         clean_status = _clean(status)
         clean_info = _clean(supp_msg)
@@ -106,7 +132,10 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log non-fatal warning."""
+        """Log soft warning.
+
+        Cleans message text. Logs warning via std logger.
+        """
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.warning("%s%s", step, clean_msg)
@@ -118,7 +147,10 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log fatal error."""
+        """Log hard error.
+
+        Cleans message text. Logs error via std logger.
+        """
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.error("%s%s", step, clean_msg)
@@ -130,22 +162,28 @@ class MyLogger:
         *,
         full_path: bool = False,
     ) -> None:
-        """Log fatal error with traceback."""
+        """Log hard error with trace.
+
+        Cleans message text. Logs exception via std logger.
+        """
         step = self._format_target(target, full_path=full_path)
         clean_msg = _clean(message)
         self.logger.exception("%s%s", step, clean_msg)  # noqa: LOG004
 
     @contextmanager
     def run_spin(self, message: str, prefix: str = "") -> Generator[None, None, None]:
-        """Print inline dots in console during API wait.
+        """Print dot in console during API wait.
 
-        Writes to sys.stdout. Spawns daemon thread.
+        Writes to sys.stdout. Spawns daemon thread with 1 second sleep.
         """
         self.progress(prefix, message, "(waiting)")
         stop_event = threading.Event()
 
         def spin() -> None:
-            """Loop and write dot to stdout until stop event set."""
+            """Loop and write dot to stdout until stop flag set.
+
+            Writes to sys.stdout and sleeps for 1 second.
+            """
             while not stop_event.is_set():
                 sys.stdout.write(".")
                 sys.stdout.flush()
@@ -168,7 +206,10 @@ class MyLogger:
         rows: list[Any],
         formatters: dict[str, Any] | None = None,
     ) -> None:
-        """Log formatter multi-line summary table from objects or dicts."""
+        """Log multi-line stats table from rows.
+
+        Applies formatters to row values. Builds table lines and logs info.
+        """
         headers = list(columns.values())
         keys = list(columns.keys())
         formatters = formatters or {}
@@ -201,7 +242,10 @@ class MyLogger:
         headers: list[str],
         values: list[str],
     ) -> None:
-        """Print single-line table summary."""
+        """Print one-line stats table.
+
+        Builds table headers and values line and logs info.
+        """
         lines = [
             title,
             "---",
@@ -213,7 +257,10 @@ class MyLogger:
 
 
 def setup() -> None:
-    """Set root logger to target sys.stderr with HH:MM:SS LEVEL layout."""
+    """Set root log stream to stderr with time format.
+
+    Clears root log handlers and adds StreamHandler with time format and INFO level.
+    """
     handler = logging.StreamHandler(sys.stderr)
     formatter = logging.Formatter(
         fmt="%(asctime)s %(levelname)s: %(message)s",
@@ -228,5 +275,8 @@ def setup() -> None:
 
 
 def logger(name: str) -> MyLogger:
-    """Get MyLogger object for module."""
+    """Get MyLogger object for module name.
+
+    Returns new MyLogger instance with given name.
+    """
     return MyLogger(name)

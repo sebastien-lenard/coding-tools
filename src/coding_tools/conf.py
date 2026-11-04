@@ -21,6 +21,11 @@ PYPROJECT_TOML = "pyproject.toml"
 
 
 class ToolConf(TypedDict):
+    """Tool config map type.
+
+    Has mod and llm keys.
+    """
+
     mod: str
     llm: str
 
@@ -96,7 +101,10 @@ def get_provider_mapping() -> dict[str, dict[str, Any]]:
 
 
 def pyproject(path: Path | str | None = None) -> dict[str, Any]:
-    """Raise RuntimeError, ValueError"""
+    """Read pyproject.toml and return dict data.
+
+    File I/O on pyproject.toml. Raise RuntimeError or ValueError on bad path.
+    """
     path = Path(PYPROJECT_TOML) if not path else my_path.root_dir(path) / PYPROJECT_TOML
     return my_io.read_toml(my_path.root_dir(path) / PYPROJECT_TOML)
 
@@ -118,6 +126,10 @@ def python_version(path: Path | str | None) -> str | None:
 
 
 def tools() -> dict[str, ToolConf]:
+    """Get tools configuration dictionary from pyproject.toml.
+
+    File I/O on pyproject.toml. Raise ValueError if key is missing.
+    """
     try:
         return pyproject()["tool"]["coding-tools"]["tools"]
     except KeyError as e:

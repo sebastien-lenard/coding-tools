@@ -1,11 +1,9 @@
 # src/coding_tools/docstring.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Scan code edits since last docstring pen.
 
-"""Check if code had been edited after automatic penning of docstrings using a LLM.
-
-AST check of unexpected edits of code. Parallel runs with cap.
-Writes files.
+AST audit of code match. Run jobs in sync with cap limit. File write access.
 """
 
 from __future__ import annotations
@@ -30,7 +28,10 @@ logger = my_logger.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
-    """Don't use file_path in params."""
+    """Run AST match on old and new text to spot code edits.
+
+    Fail if text blank. Yield run output with state and sub func. File read.
+    """
     func = __name__
     if not params.old_txt:
         msg = "Empty original text"
@@ -49,5 +50,9 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
 
 
 def precheck(params: CheckParams, run_output: RunOutput) -> RunOutput:  # noqa: ARG001
+    """Skip precheck step and yield skip state.
+
+    No check run. Base return of input run output.
+    """
     func = __name__
     return replace(run_output, status=RunState.SKIP, sub_func=func, msg="Skip precheck")

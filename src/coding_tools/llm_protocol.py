@@ -1,8 +1,10 @@
 # src/coding_tools/llm_protocol.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Protocols, base models, and errors for LLM wrappers.
 
-"""Protocols, base models, and errors for LLM wrappers."""
+Type rules and base errors for LLM tasks.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +17,10 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LLMError(Exception):
-    """Base class for LLM errors."""
+    """Base class for LLM errors.
+
+    Root type for LLM API and client bugs.
+    """
 
 
 class LLMAPIError(LLMError):
@@ -32,7 +37,7 @@ class LLMAPIError(LLMError):
     ) -> None:
         """Set up API error with code and text.
 
-        Saves status code and error code.
+        Saves status code and error code for debug.
         """
         super().__init__(message)
         self.status_code = status_code
@@ -54,7 +59,7 @@ class LLMClientError(LLMError):
     ) -> None:
         """Set up client error with retry flag.
 
-        Saves retryable state and status code.
+        Saves retryable state and status code for client.
         """
         super().__init__(message)
         self.status_code = status_code
@@ -76,7 +81,7 @@ class LLMServerError(LLMError):
     ) -> None:
         """Set up server error with retry flag.
 
-        Saves retryable state and status code.
+        Saves retryable state and status code for server.
         """
         super().__init__(message)
         self.status_code = status_code

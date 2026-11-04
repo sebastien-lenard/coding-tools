@@ -1,11 +1,9 @@
 # src/coding_tools/lint.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Run lint checks and fix rules.
 
-"""Check lints and pen fixes for the simplest rules.
-
-Parallel runs with cap.
-Writes files.
+Writes file, calls ruff via my_ruff. Needs file path and check params.
 """
 
 from __future__ import annotations
@@ -27,7 +25,10 @@ logger = my_logger.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
-    """Write file to run the check if new_txt is suggested."""
+    """Write file if new text given and run ruff.
+
+    Fail if file miss. Write file via my_io. Run my_ruff.
+    """
     func_name = __name__
     if not params.file_path.is_file():
         msg = f"No file {params.file_path}"
@@ -44,4 +45,8 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
 
 
 def precheck(params: CheckParams, run_output: RunOutput) -> RunOutput:
+    """Run check before lint pass.
+
+    Call check with params and run output. Yield run output.
+    """
     return check(params, run_output)

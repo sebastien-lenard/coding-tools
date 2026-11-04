@@ -1,11 +1,9 @@
 # src/coding_tools/static_type.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Audit type sync with pyright. No code run.
 
-"""Check types are consistents without running the code.
-
-Parallel runs with cap.
-Writes files.
+Writes files to disk. Parallel steps. Max steps 10, min steps 1.
 """
 
 from __future__ import annotations
@@ -27,7 +25,11 @@ logger = my_logger.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
-    """Write file to run the check if new_txt is suggested."""
+    """Write text to file and run pyright type audit if new text set.
+
+    Fails if file path is missing. Writes to disk via my_io. Calls my_pyright.run.
+    Returns RunOutput state. Step logic checks file and saves text.
+    """
     func_name = __name__
     if not params.file_path.is_file():
         msg = f"No file {params.file_path}"
@@ -44,4 +46,8 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
 
 
 def precheck(params: CheckParams, run_output: RunOutput) -> RunOutput:
+    """Run precheck step via check call.
+
+    Passes params and run output through. Returns RunOutput state.
+    """
     return check(params, run_output)

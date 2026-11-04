@@ -19,7 +19,7 @@ logger = my_logger.logger(__name__)
 def read_lines(path: Path | str, *, header: bool = True) -> list[str]:
     """Get text lines from file.
 
-    Calls read_txt. Raise RuntimeError, ValueError if file bad.
+    Calls read_txt. Raise RuntimeError, ValueError if file bad. UTF-8.
     """
     return str(read_txt(path, header=header)).splitlines()
 
@@ -29,7 +29,7 @@ def read_toml(
 ) -> dict[str, Any]:
     """Get dict from TOML file.
 
-    Raises RunTimeError, ValueError. Catch TOMLDecodeError, log and return None.
+    Raises RuntimeError, ValueError. Catch TOMLDecodeError, log and raise ValueError.
     """
     txt = read_txt(path)
     try:
@@ -43,7 +43,7 @@ def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -
     """Read text from file with UTF-8.
 
     Catch OSError, UnicodeDecodeError. Raise RuntimeError if raise_err True. Strip
-    workspace header if header False. Raise ValueError if text empty.
+    workspace header if header False. Raise ValueError if text empty. Writes error log.
     """
     txt = ""
     try:
@@ -73,6 +73,7 @@ def save_llm_req_resp(
     """Save LLM request and response pair to JSON log.
 
     Uses my_path.llm_log_path. Writes to .llm_logs/ path. Catch Exception and log.
+    File writing access.
     """
     try:
         log_path = my_path.llm_log_path(
@@ -99,6 +100,7 @@ def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
     """Write text to file with UTF-8 and diff check.
 
     Reads old file for unified diff if verbose VV. Saves to path and logs end.
+    File writing access.
     """
     try:
         old_txt = Path(path).read_text(encoding="utf-8")

@@ -1,7 +1,6 @@
 # tests/unit/test_my_ast.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Unit tests for coding_tools.my_ast."""
 
 import ast
@@ -9,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from coding_tools.my_ast import uncov_map
+from coding_tools.my_ast import del_docstrings, match_codes, uncov_map
+from coding_tools.my_run import RunOutput, RunState
 
 
 def test_uncov_map_non_existent_file(tmp_path: Path) -> None:
@@ -64,11 +64,7 @@ def test_async_function_and_unparse_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test uncov_map with async functions and unparse failures."""
-    code = (
-        "async def async_func():\n"
-        "    if (lambda: True)():\n"
-        "        pass\n"
-    )
+    code = "async def async_func():\n    if (lambda: True)():\n        pass\n"
     src = tmp_path / "async_sample.py"
     src.write_text(
         code,
@@ -86,16 +82,43 @@ def test_async_function_and_unparse_failure(
 
 
 def test_all_constructs_fully(tmp_path: Path) -> None:
-    """Test uncov_map covering all constructs."""
-    code = (
-        "while False:\n"
-        "    pass\n"
-        "try:\n"
-        "    x = 1\n"
-        "except Exception:\n"
-        "    pass\n"
-    )
+    """Test uncov_map covering all constructs.
+
+    Includes while and try blocks without target match or with match.
+    """
+    code = "while False:\n    pass\ntry:\n    x = 1\nexcept Exception:\n    pass\n"
     src = tmp_path / "full.py"
     src.write_text(code, encoding="utf-8")
     mappings = uncov_map(src, [1, 3, 5])
     assert len(mappings) >= 3
+
+
+def test_del_docstrings() -> None:
+    """Test clearing docstrings from AST nodes."""
+    code = '"""Module docstring"""\ndef sample():\n    """Func docstring"""\n    pass'
+    tree = ast.parse(code)
+    del_docstrings(tree)
+    assert len(tree.body) == 1
+
+
+def test_match_codes_syntax_error() -> None:
+    """Test match_codes with syntax errors."""
+    out = RunOutput(func="test", status=RunState.PRESTART)
+    res = match_codes("def foo(: pass", "def foo(): pass", out)
+    assert res.status == RunState.FAIL
+
+
+def test_match_codes_edits() -> None:
+    """Test match_codes spotting code edits."""
+    out = RunOutput(func="test", status=RunState.PRESTART)
+    res = match_codes("x = 1", "x = 2", out)
+    assert res.status == RunState.FAIL
+
+
+def test_match_codes_pass() -> None:
+    """Test match_codes passing when codes match (ignoring docstrings)."""
+    out = RunOutput(func="test", status=RunState.PRESTART)
+    old = '"""doc1"""\nx = 1'
+    new = '"""doc2"""\nx = 1'
+    res = match_codes(old, new, out)
+    assert res.status == RunState.PASS

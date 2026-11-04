@@ -1,9 +1,9 @@
 # src/coding_tools/function_signatures_dependencies.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Extract project structure into LLM-ready markdown.
+"""Extract code structure to markdown via AST.
 
-Reads src folder via AST. Exposes signatures, exceptions, and mermaid graph.
+Read src folder. Yield signatures, errors, and graphs.
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ logger = my_logger.logger(__name__)
 
 
 class FunctionInfo(BaseModel):
-    """Metadata for function or method."""
+    """Data for function or method.
+
+    Store name, signature, doc, tags, errors, and calls.
+    """
 
     name: str
     signature: str
@@ -38,7 +41,10 @@ class FunctionInfo(BaseModel):
 
 
 class ClassInfo(BaseModel):
-    """Metadata for class."""
+    """Data for class.
+
+    Store name, doc, bases, tags, and methods.
+    """
 
     name: str
     docstring: str | None
@@ -48,7 +54,10 @@ class ClassInfo(BaseModel):
 
 
 class ModuleInfo(BaseModel):
-    """Metadata for parsed source module."""
+    """Data for parsed module.
+
+    Store path, doc, const, imports, classes, and funcs.
+    """
 
     path: Path
     relative_path: str
@@ -60,9 +69,9 @@ class ModuleInfo(BaseModel):
 
 
 class CodeStructureAnalyzer(BaseModel):
-    """Run AST static analysis and write markdown summary.
+    """Run AST scan and write markdown summary.
 
-    Reads project path, writes to output file or default path.
+    Read project path, write output file or default path.
     """
 
     project_path: DirectoryPath
@@ -72,7 +81,7 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def target_output_path(self) -> Path:
-        """Get output file path, fallback to project name."""
+        """Get output file path or fall back to name."""
         if self.output_file:
             return self.output_file
         project_name = self.project_path.resolve().name
@@ -80,13 +89,13 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def src_path(self) -> Path:
-        """Get src subfolder path."""
+        """Get src folder path."""
         return self.project_path / "src"
 
     def execute(self) -> int:
         """Run project analysis and write markdown file.
 
-        Returns 0 on success, 1 on error.
+        Return 0 on success, 1 on error. Write to disk.
         """
         logger.start(
             "code-structure-analyzer",
@@ -134,7 +143,7 @@ class CodeStructureAnalyzer(BaseModel):
     def _analyze_modules(self) -> list[ModuleInfo]:
         """Scan and parse python files in src folder.
 
-        Skips ignored dirs.
+        Skip ignore dirs and log parse errors.
         """
         modules: list[ModuleInfo] = []
         source_files = [

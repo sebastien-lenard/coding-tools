@@ -1,7 +1,6 @@
 # src/coding_tools/unit_test.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Run and check unit tests.
 
 Parallel runs with cap.
@@ -26,7 +25,11 @@ logger = my_logger.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
-    """Write file to run the check if new_txt is suggested."""
+    """Run check steps and pytest on target file.
+
+    Writes text to file system if new_txt set. Runs pytest, then
+    pytest_cov if pass. Returns RunOutput state. File system write access.
+    """
     func_name = __name__
     if not params.file_path.is_file():
         msg = f"No file {params.file_path}"
@@ -53,4 +56,8 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
 
 
 def precheck(params: CheckParams, run_output: RunOutput) -> RunOutput:
+    """Run precheck step before unit tests.
+
+    Calls check function. Returns RunOutput.
+    """
     return check(params, run_output)

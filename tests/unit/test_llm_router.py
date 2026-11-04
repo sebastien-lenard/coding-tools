@@ -1,7 +1,6 @@
 # tests/unit/test_llm_router.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Unit tests for llm_router.py."""
 
 from unittest.mock import MagicMock, patch

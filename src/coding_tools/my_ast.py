@@ -1,8 +1,10 @@
 # src/coding_tools/my_ast.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Scan source AST to map line numbers to Python constructs.
 
-"""Scan source AST to map line numbers to Python constructs."""
+AST node visitor and mapper. File read, parse, and match helpers.
+"""
 
 from __future__ import annotations
 
@@ -17,35 +19,35 @@ logger = my_logger.logger(__name__)
 
 
 class ASTNodeMapper(ast.NodeVisitor):
-    """Map line numbers to AST constructs.
+    """Map line numbers to AST nodes.
 
-    Inherit ast.NodeVisitor. Store target line matches in mappings dict.
-    Track current class and function scope during traversal.
+    Inherit ast.NodeVisitor. Store target line matches in dict.
+    Track class and function scope in walk.
     """
 
     def __init__(self, target_lines: list[int]) -> None:
-        """Set up mapper with target line set and empty mappings."""
+        """Set up mapper with target line set and empty dict."""
         self.target_lines = set(target_lines)
         self.mappings: dict[int, tuple[str, str]] = {}
         self._current_function = "module scope"
         self._current_class = ""
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        """Visit ClassDef, update scope, and walk child nodes."""
+        """Visit ClassDef, update scope, walk child nodes."""
         old_class = self._current_class
         self._current_class = node.name
         self.generic_visit(node)
         self._current_class = old_class
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Visit FunctionDef, update scope, and walk child nodes."""
+        """Visit FunctionDef, update scope, walk child nodes."""
         old_func = self._current_function
         self._current_function = node.name
         self.generic_visit(node)
         self._current_function = old_func
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        """Visit AsyncFunctionDef, update scope, and walk child nodes."""
+        """Visit AsyncFunctionDef, update scope, walk child nodes."""
         old_func = self._current_function
         self._current_function = node.name
         self.generic_visit(node)
@@ -60,7 +62,7 @@ class ASTNodeMapper(ast.NodeVisitor):
         )
 
     def visit_If(self, node: ast.If) -> None:
-        """Map line to uncovered if statement if target line match."""
+        """Map line to uncovered if node if match."""
         lineno = getattr(node, "lineno", None)
         if (
             lineno is not None
@@ -78,7 +80,7 @@ class ASTNodeMapper(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Try(self, node: ast.Try) -> None:
-        """Map line to uncovered try block if target line match."""
+        """Map line to uncovered try node if match."""
         lineno = getattr(node, "lineno", None)
         if (
             lineno is not None
@@ -92,7 +94,7 @@ class ASTNodeMapper(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_For(self, node: ast.For) -> None:
-        """Map line to uncovered for loop if target line match."""
+        """Map line to uncovered for node if match."""
         lineno = getattr(node, "lineno", None)
         if (
             lineno is not None
@@ -106,7 +108,7 @@ class ASTNodeMapper(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_While(self, node: ast.While) -> None:
-        """Map line to uncovered while loop if target line match."""
+        """Map line to uncovered while node if match."""
         lineno = getattr(node, "lineno", None)
         if (
             lineno is not None
@@ -120,7 +122,7 @@ class ASTNodeMapper(ast.NodeVisitor):
         self.generic_visit(node)
 
     def generic_visit(self, node: ast.AST) -> None:
-        """Map line to generic node if target line match."""
+        """Map line to generic node if match."""
         lineno = getattr(node, "lineno", None)
         if (
             lineno is not None
@@ -137,7 +139,7 @@ class ASTNodeMapper(ast.NodeVisitor):
 def del_docstrings(tree: ast.AST) -> None:
     """Clear docstrings from AST nodes in place.
 
-    Walk tree and pop first body expr if constant string.
+    Walk tree and pop first body expr if string constant.
     """
     for node in ast.walk(tree):
         if isinstance(
@@ -157,9 +159,9 @@ def match_codes(
     new_code: str,
     run_output: RunOutput,
 ) -> RunOutput:
-    """Check if non-docstring code matches between two strings.
+    """Check if non-docstring code match between strings.
 
-    FAIL if syntax error, or if unparsed code trees differ.
+    Fail if syntax error or code trees differ.
     """
     func = f"{__name__}"
     logger.start(func)
@@ -190,7 +192,7 @@ def uncov_map(
     src_file_path: str | Path,
     uncov_lines: list[int],
 ) -> dict[int, tuple[str, str]]:
-    """Audit source AST and return mapping of line numbers to analysis tuple.
+    """Audit source AST and map line numbers to analysis tuple.
 
     Read file from disk. Return empty dict if file missing or parse error.
     """

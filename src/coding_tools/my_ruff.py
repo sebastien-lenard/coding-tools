@@ -1,6 +1,10 @@
 # src/coding_tools/my_ruff.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Run ruff check and fix lint issues via uv.
+
+Checks and fixes py files. Log output saved to file. Uses uv run ruff check --fix.
+"""
 import re
 import subprocess
 from dataclasses import replace
@@ -18,7 +22,10 @@ CMD = "uv run ruff check INPUT_PATH --fix"
 
 
 def check_edited(out: str, err: str) -> EditState:
-    """Check whether file has been edited."""
+    """Scan log output for fix match.
+
+    Return EDITED state if ruff fix count found, else KEPT.
+    """
     return EditState.EDITED if (re.search(FIXED_MSG, f"{out}{err}")) else EditState.KEPT
 
 
@@ -28,7 +35,10 @@ def check_result(
     exit_code: int,
     run_output: RunOutput,
 ) -> RunOutput:
-    """Check the result of the command run."""
+    """Map exit code and log output to run status.
+
+    Pass if exit code zero. Set sub func name and edit state.
+    """
     func = __name__
     return replace(
         run_output,
@@ -39,7 +49,10 @@ def check_result(
 
 
 def clean_log(txt: str) -> str:
-    """Clear running info that don't give tips on lint issues."""
+    """Drop warning lines from log text.
+
+    Keep core error data for audit.
+    """
     lines = [
         line
         for line in txt.splitlines()
@@ -49,9 +62,9 @@ def clean_log(txt: str) -> str:
 
 
 def run(file_path: Path | str, run_output: RunOutput) -> RunOutput:
-    """Run ruff check with fix option and save output to log.
+    """Run ruff check with fix flag via uv sub process.
 
-    Uses uv and ruff check.
+    Save log output to disk path. Uses check result and clean log callbacks.
     """
     params = CmdParams(
         check_result=check_result,
@@ -64,7 +77,11 @@ def run(file_path: Path | str, run_output: RunOutput) -> RunOutput:
 
 
 def no_docstring_files(path: Path | str) -> list[Path]:
-    """TOSEE."""
+    """Run ruff check for missing docstrings via sub process.
+
+    Parse github format output and return list of file paths.
+    Uses uv run ruff check --select D1 --output-format github.
+    """
     cmd_list = [
         "uv",
         "run",
