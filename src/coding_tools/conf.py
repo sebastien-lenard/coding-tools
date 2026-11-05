@@ -1,9 +1,9 @@
 # src/coding_tools/conf.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Load LLM config from JSONC files.
+"""Read conf from conf folder and pyproject.toml.
 
-File I/O on conf/params/llms.jsonc.
+File I/O on .md, jsonc, toml files.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ from coding_tools import my_io, my_logger, my_path
 
 logger = my_logger.logger(__name__)
 
+CONF_FOLDER = "conf"
+EXAMPLE_EXT = ".example"
 PYPROJECT_TOML = "pyproject.toml"
 
 
@@ -28,6 +30,32 @@ class ToolConf(TypedDict):
 
     mod: str
     llm: str
+
+
+def root_dir() -> Path:
+    """Yield root directory of this project.
+
+    Warning: depends of the location of this file, here assumed at the package root.
+    """
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def conf_dir() -> Path:
+    """Yield conf directory of this project.
+
+    Assumes a conf folder at the root of the project. Can be mocked for tests.
+    """
+    return root_dir() / conf_folder()
+
+
+def conf_folder() -> str:
+    """Yield conf folder name."""
+    return CONF_FOLDER
+
+
+def example_ext() -> str:
+    """Yield .example conf file extension."""
+    return EXAMPLE_EXT
 
 
 def _strip_jsonc_comments(content: str) -> str:

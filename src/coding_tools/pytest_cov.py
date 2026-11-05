@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import cast
 
-from coding_tools import my_ast, my_io, my_logger, my_path
+from coding_tools import conf, my_ast, my_io, my_logger, my_path
 from coding_tools.my_run import RunOutput, RunState
 
 logger = my_logger.logger(__name__)
@@ -34,8 +34,8 @@ class CovState(Enum):
 BRIEF_MISSING = "No unit test seems to cover the source file"
 MAX_TEMPLATE_PARTS = 3
 MAX_SUBTEMPLATE_PARTS = 2
-COV_STMT_TEMPL_PATH = Path("conf/templates/cov_stmt.md")
-COV_BRANCH_TEMPL_PATH = Path("conf/templates/cov_branch.md")
+COV_STMT_TEMPL_PATH = conf.conf_dir() / "templates" / "cov_stmt.md"
+COV_BRANCH_TEMPL_PATH = conf.conf_dir() / "templates" / "cov_branch.md"
 SNIPPET_CONTEXT_OFFSET = 3
 SNIPPET_END_OFFSET = 2
 

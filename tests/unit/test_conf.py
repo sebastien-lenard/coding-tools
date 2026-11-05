@@ -12,12 +12,18 @@ import pytest
 
 from coding_tools.conf import (
     _strip_jsonc_comments,
+    example_ext,
     get_default_model,
     get_provider_mapping,
     load_llm_config,
     python_version,
     tools,
 )
+
+
+def test_example_ext() -> None:
+    """Test example_ext returns correct extension."""
+    assert example_ext() == ".example"
 
 
 def test_strip_jsonc_comments() -> None:

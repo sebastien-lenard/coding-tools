@@ -4,12 +4,14 @@
 """Global test fixtures and testing configuration."""
 
 import builtins
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any
 
 import pytest
 
+from coding_tools import conf
 from coding_tools.my_run import RunOutput, RunState
 
 _original_open: Callable[..., IO[Any]] = builtins.open
@@ -112,6 +114,35 @@ def guard_fs(
     monkeypatch.setattr(Path, "write_text", patched_write_text)
     monkeypatch.setattr(Path, "write_bytes", patched_write_bytes)
     monkeypatch.setattr(Path, "mkdir", patched_mkdir)
+
+
+@pytest.fixture(scope="session")
+def tmp_conf_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build a fresh temporary conf directory for the test session.
+
+    Copy the project conf folder. Copy .example files to their base filename
+    (e.g., skill.md.example -> skill.md), overwrite any existing files.
+    """
+    conf_dir = conf.conf_dir()
+    tmp_conf = tmp_path_factory.mktemp("shared_conf") / conf.conf_folder()
+
+    if conf_dir.exists():
+        shutil.copytree(conf_dir, tmp_conf, dirs_exist_ok=True)
+        for file in tmp_conf.glob(f"**/*{conf.example_ext()}"):
+            shutil.copy2(file, file.with_suffix(""))
+
+    return tmp_conf
+
+
+@pytest.fixture(autouse=True)
+def mock_conf_dir(tmp_conf_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock conf_dir().
+
+    Make sure that any call points to a temporary path, where the .example files from
+    the real conf dir have been copied to non .example files, usable for tests
+    (github actions).
+    """
+    monkeypatch.setattr("coding_tools.conf.conf_dir", lambda: tmp_conf_dir)
 
 
 def pytest_collection_modifyitems(
