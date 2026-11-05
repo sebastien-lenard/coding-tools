@@ -14,6 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 from enum import Enum
+from logging import Logger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
+LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
 
 
 class Verbose(Enum):
@@ -32,6 +34,12 @@ class Verbose(Enum):
 
     V = "Log warnings and main progress"
     VV = "Log details"
+
+
+def set_level(logger: Logger, verbosity_count: int) -> None:
+    """Set logger level, defaults to DEBUG if verbosity_count < 0."""
+    index = max(0, min(verbosity_count, len(LEVELS) - 1))
+    logger.setLevel(LEVELS[index])
 
 
 def _clean(text: str) -> str:

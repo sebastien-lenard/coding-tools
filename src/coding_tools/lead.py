@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -134,6 +135,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Target unit test files.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity: -v for INFO, -vv for DEBUG",
+    )
     return parser.parse_args()
 
 
@@ -156,6 +164,8 @@ async def run() -> None:
     logger.start(func)
 
     args = parse_args()
+
+    my_logger.set_level(logging.getLogger(), args.verbose)
     try:
         ctx, run_outputs = context(args)
     except Exception as e:
@@ -166,6 +176,7 @@ async def run() -> None:
     try:
         run_outputs = await llm_emcee.run(ctx, run_outputs)
     except (LLMAPIError, LLMClientError, LLMServerError, Exception) as e:
+        logging.getLogger().setLevel(logging.INFO)
         logger.summary_table(
             f"{args.tool.capitalize()} Summary",
             {
@@ -187,6 +198,7 @@ async def run() -> None:
         if not ro.input_path and ro.output_path:
             ro.input_path = ro.output_path
 
+    logging.getLogger().setLevel(logging.INFO)
     logger.summary_table(
         f"{args.tool.capitalize()} Summary",
         {

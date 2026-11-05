@@ -34,6 +34,17 @@ def test_clean_with_banned_words(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "This" in cleaned
 
 
+def test_set_level() -> None:
+    """Test set_level sets logger level properly with various verbosity counts."""
+    logger = logging.getLogger("test_level")
+    my_logger.set_level(logger, -1)
+    assert logger.level == logging.WARNING
+    my_logger.set_level(logger, 1)
+    assert logger.level == logging.INFO
+    my_logger.set_level(logger, 10)
+    assert logger.level == logging.DEBUG
+
+
 @pytest.mark.parametrize(
     ("target", "full_path", "expected"),
     [
@@ -97,8 +108,8 @@ def test_project_logger_methods(caplog: pytest.LogCaptureFixture) -> None:
 
         logger.summary_table(
             title="Stats",
-            columns={"name": "Name"},
-            rows=[{"name": "Alice"}, DummyRow("Bob")],
+            columns={"name": "Name", "missing": "Missing"},
+            rows=[{"name": "Alice", "missing": None}, DummyRow("Bob")],
             formatters={"name": lambda x: x.upper()},
         )
 
