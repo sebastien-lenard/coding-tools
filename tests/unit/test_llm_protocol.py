@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+
 from pydantic import BaseModel
 
 from coding_tools.llm_protocol import (
@@ -69,10 +69,12 @@ def test_structured_generation_options_defaults() -> None:
 def test_llm_client_protocol_implementation() -> None:
     """Test that DummyLLMClient implements LLMClientProtocol correctly."""
     client: LLMClientProtocol = DummyLLMClient()
-    res = asyncio.run(client.call(
-        "req",
-        LLMCallParams(response_schema=DummyModel, prefix="p"),
-    ))
+    res = asyncio.run(
+        client.call(
+            "req",
+            LLMCallParams(response_schema=DummyModel, prefix="p"),
+        ),
+    )
     assert isinstance(res, LLMResponse)
     assert res.message == "test"
 

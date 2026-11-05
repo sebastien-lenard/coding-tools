@@ -92,7 +92,9 @@ def test_chat_bad_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test chat with a bad file."""
     missing = tmp_path / "missing.py"
     monkeypatch.setattr(
-        my_io, "read_txt", lambda p, header=False, raise_err=True: _raise_fn()
+        my_io,
+        "read_txt",
+        lambda p, header=False, raise_err=True: _raise_fn(),
     )
     monkeypatch.setattr(conf, "python_version", lambda p: "")
     ctx = Context(
@@ -115,7 +117,9 @@ def test_chat_success_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     """Test chat success flow."""
     f = tmp_path / "code.py"
     monkeypatch.setattr(
-        my_io, "read_txt", lambda p, header=False, raise_err=True: "print('hi')"
+        my_io,
+        "read_txt",
+        lambda p, header=False, raise_err=True: "print('hi')",
     )
     monkeypatch.setattr(my_io, "write_txt", lambda txt, p, **kw: None)
     monkeypatch.setattr(conf, "python_version", lambda p: "3.12")
@@ -157,7 +161,9 @@ def test_run_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f1 = tmp_path / "code1.py"
     f2 = tmp_path / "code2.py"
     monkeypatch.setattr(
-        my_io, "read_txt", lambda p, header=False, raise_err=True: "print('hi')"
+        my_io,
+        "read_txt",
+        lambda p, header=False, raise_err=True: "print('hi')",
     )
     monkeypatch.setattr(my_io, "write_txt", lambda txt, p, **kw: None)
     monkeypatch.setattr(conf, "python_version", lambda p: "3.12")
@@ -177,6 +183,7 @@ def test_run_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_safe_call_func_exception() -> None:
     """Test safe call function exception handling."""
+
     def bad_func(*args: object, **kwargs: object) -> Never:
         del args, kwargs
         msg = "fail"
@@ -226,9 +233,9 @@ def test_prepare_context_and_version_error(
     monkeypatch.setattr(
         my_io,
         "read_txt",
-        lambda p, header=False, raise_err=True: (
-            _ for _ in ()
-        ).throw(OSError("Missing")),
+        lambda p, header=False, raise_err=True: (_ for _ in ()).throw(
+            OSError("Missing"),
+        ),
     )
 
     async def run_prep() -> tuple[str, str]:
@@ -365,9 +372,9 @@ def test_chat_prepare_context_error(
     monkeypatch.setattr(
         my_io,
         "read_txt",
-        lambda p, header=False, raise_err=True: (
-            _ for _ in ()
-        ).throw(RuntimeError("Missing")),
+        lambda p, header=False, raise_err=True: (_ for _ in ()).throw(
+            RuntimeError("Missing"),
+        ),
     )
     ctx = Context(
         func_name="test",
