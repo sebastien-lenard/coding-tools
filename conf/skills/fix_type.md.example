@@ -2,8 +2,9 @@
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-1. Fix static type warnings.
+1. Fix static type warnings (--- Tips --- section).
 2. Don't edit code or clear comments or clear docstrings outside of your edits to address the static type warnings.
+3. Check that all functionalities present in the original file are present in your updated file.
 
 ## Examples of accepted fixes:
 ```python

@@ -2,11 +2,37 @@
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-1. Create or fix unit tests using pytest. Handle issues in this order: (1) errors, (2) fails, (3) warnings, (4) source coverage.
+1. Create or fix unit tests using pytest. Address issues given in the --- Tips --- section, in this order: (1) errors, (2) fails, (3) warnings, (4) source coverage.
 2. Don't edit code or clear comments or clear docstrings outside of your edits to address the issues.
 
 ## Examples of accepted pens and fixes:
+
 ```python
+"""Patch calc helper module functions used by my_process"""
+from unittest.mock import Mock
+import pytest
+from xxx_yyy import my_process
+
+def test_assess_mocked_math(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test calc runner with mocked core logic."""
+    mock_add = Mock(return_value=42)
+    mock_log = Mock()
+    monkeypatch.setattr("xxx_yyy.calc.add", mock_add)
+    monkeypatch.setattr("xxx_yyy.calc.log_step", mock_log)
+
+    res = my_process.assess(2, 40)
+    assert res == 42
+    mock_log.assert_called_once()
+```
+
+```python
+import os
+from pathlib import Path
+
+import pytest
+
+from xxx_yyy import my_path
+
 def test_live_path_errors(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         my_file.live_path(tmp_path / "missing", "*.txt")
@@ -15,25 +41,43 @@ def test_live_path_errors(tmp_path: Path) -> None:
     sub.mkdir()
     with pytest.raises(FileNotFoundError):
         my_file.live_path(sub, "*.txt")
-```
 
-```python
-try:
-   raise ValueError("Error")
-except ValueError:
-   logger.exception(target, "Message")
-```
+    with pytest.raises(ValueError, match="Bad characters in path"):
+        my_file.live_path(tmp_path / "a?ver", "*.txt")
 
-```python
-def test_main_entry_run_failure() -> None:
+def test_main_entry_run_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test failure run via the main CLI."""
-    test_args = ["bundle_sources.py", "missing_dir"]
-    with patch("sys.argv", test_args), pytest.raises(SystemExit) as exc_info:
-        main()
+    test_args = ["bund.py", "missing_dir"]
+    monkeypatch.setattr("sys.argv", test_args)
+
+    with pytest.raises(SystemExit) as exc_info:
+        my_path.main()
+    
     assert exc_info.value.code == 1
+
+def test_read_conf_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test good reading of config."""
+    monkeypatch.chdir(tmp_path)
+    conf_dir = tmp_path / "config"
+    conf_dir.mkdir(parents=True)
+    conf_file = conf_dir / "conf.jsonc"
+    conf_file.write_text('{"default": "model-a"}', encoding="utf-8")
+
+    cfg = read_conf()
+    assert cfg["default"] == "model-a"
 ```
 
 ```python
+import os
+from pathlib import Path
+
+import pytest
+
+from xxx_yyy import my_fmt
+
 @pytest.mark.parametrize(
     ("target", "full_path", "expected"),
     [
@@ -55,24 +99,9 @@ def test_fmt(
     expected: str,
 ) -> None:
     """Test target formatting handles paths and extensions."""
-    assert MyFormatter.fmt(target, full=full) == expected
+    assert my_fmt.fmt(target, full=full) == expected
 ```
 
-```python
-def test_read_config_pass(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test good reading of config."""
-    monkeypatch.chdir(tmp_path)
-    config_dir = tmp_path / "config"
-    config_dir.mkdir(parents=True)
-    config_file = config_dir / "config.jsonc"
-    config_file.write_text('{"default": "model-a"}', encoding="utf-8")
-
-    cfg = read_config()
-    assert cfg["default"] == "model-a"
-```
 
 ```python
 def test_run_mod_as_main(
@@ -96,8 +125,14 @@ def test_run_mod_as_main(
 ```
 
 ```python
+from unittest.mock import MagicMock, patch
+import pytest
+
+from this_project.this_client import ClientAdapter
+
+
 class MockAPIError(Exception):
-    """Global mock replacement for APIError."""
+    """Global mock replacement for Google GenAI APIError."""
 
     def __init__(
         self,
@@ -110,25 +145,25 @@ class MockAPIError(Exception):
         self.code = code
         self.status = status
 
-@patch("this_project.this_client.Client")
-    def test_cleanup_files(self, mock_client_cls: MagicMock) -> None:
-        """Test cleanup_files handles APIError."""
-        adapter = ClientAdapter()
-        file_mock = MagicMock()
-        file_mock.name = "file_name"
-        api_err = MockAPIError(message="Del Fail", code=400)
-        mock_client_cls.return_value.files.delete.side_effect = api_err
-        with patch("this_project.this_client.errors.APIError", MockAPIError):
-            adapter.cleanup_files([file_mock], "TEST")
-        mock_client_cls.return_value.files.delete.assert_called_once_with(
-            name="file_name",
-        )
-```
 
-```python
-except ServerError as e:
-    if e.code == HTTP_SERVICE_UNAVAILABLE:
-       this_msg = "Failed. HTTP 503"
-       logger.exception(None, this_msg)
-    msg = getattr(e, "message", None) or str(e)
+def test_cleanup_files() -> None:
+    """Test cleanup_files handles APIError."""
+    api_err = MockAPIError(message="Del Fail", code=400)
+    
+    file_mock = MagicMock()
+    file_mock.name = "file_name"
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.files.delete.side_effect = api_err
+
+    with (
+        patch("this_project.this_client.Client", return_value=mock_client_instance),
+        patch("google.genai.errors.APIError", MockAPIError),
+    ):
+        adapter = ClientAdapter()
+        adapter.cleanup_files([file_mock], "TEST")
+
+    mock_client_instance.files.delete.assert_called_once_with(
+        name="file_name",
+    )
 ```
