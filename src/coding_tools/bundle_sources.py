@@ -1,7 +1,7 @@
 # src/coding_tools/bundle_sources.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Bundle project source files into text file and strip redundant headers."""
+"""Bundle source files to text file and strip headers."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ class SourceBundler(BaseModel):
     """Bundle project source files into text file via Pydantic check.
 
     Uses files-to-prompt via uvx. Skips missing optional files. Needs internet/uvx.
+    Writing to disk with utf-8 encoding.
     """
 
     project_path: DirectoryPath
@@ -38,7 +39,7 @@ class SourceBundler(BaseModel):
 
     @property
     def target_output_path(self) -> Path:
-        """Get output file path."""
+        """Get output path. Use custom path if set, else root default."""
         if self.output_file:
             return self.output_file
         return self.project_path / self._default_output_name
@@ -51,7 +52,8 @@ class SourceBundler(BaseModel):
     def execute(self) -> bool:
         """Read source files and write bundled output.
 
-        False if src folder missing, subprocess fail, or write error.
+        False if src folder missing, subprocess fail, or write error. Uses uvx
+        and files-to-prompt. Writes to disk with utf-8 encoding. Needs internet/uvx.
         """
         logger.start(
             "bundle-sources",
@@ -93,7 +95,7 @@ class SourceBundler(BaseModel):
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
-        """Check output target dir access."""
+        """Check output target dir access. Make dir if missing. False on error."""
         if not output_base_dir.exists():
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
@@ -106,7 +108,13 @@ class SourceBundler(BaseModel):
         return True
 
     def _run_files_to_prompt(self) -> str:
-        """Run files-to-prompt on filtered source files and optional project files."""
+        """Run files-to-prompt on filtered source files and optional project files.
+
+        Uses uvx command. Skips junk dirs like __pycache__, .git, venv. Sorts
+        source files. Appends optional pyproject.toml, .env.example,
+        tests/conftest.py if present. Needs internet/uvx. File write/read
+        access.
+        """
         accumulated_output = ""
 
         # Gather files matching allowed extensions, ignoring junk directories
@@ -169,7 +177,7 @@ class SourceBundler(BaseModel):
 
 
 def main() -> None:
-    """Run CLI to parse arguments and run SourceBundler."""
+    """Run CLI to parse args and run SourceBundler. Exit 0 on pass, 1 on fail."""
     parser = argparse.ArgumentParser(
         description=(
             "Bundle project source files into a text file, stripping redundant headers"

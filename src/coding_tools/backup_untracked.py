@@ -1,9 +1,9 @@
 # src/coding_tools/backup_untracked.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Back up untracked files using config file.
+"""Back up untracked files with config file.
 
-Reads .git_untracked_to_save in project root. Writes to output base dir.
+Read .git_untracked_to_save in project root. Write to output base dir.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ logger = my_logger.logger(__name__)
 
 
 class UntrackedBackupManager(BaseModel):
-    """Back up untracked project files based on config.
+    """Back up untracked files based on config file rules.
 
-    Pydantic check. Reads .git_untracked_to_save for target list.
+    Pydantic check. Read .git_untracked_to_save for list. File write access.
     """
 
     project_path: DirectoryPath
@@ -35,13 +35,13 @@ class UntrackedBackupManager(BaseModel):
 
     @property
     def config_file_path(self) -> Path:
-        """Get config path from project root and config name."""
+        """Get path to conf from project root and conf name."""
         return self.project_path / self._config_name
 
     def execute(self) -> bool:
-        """Run backup from config read to file copies.
+        """Run backup from conf read to file copies.
 
-        Return True if success, False on missing config or IO error.
+        Return True if pass, False on miss conf or IO err. File write access.
         """
         if self.verbose:
             # Verbose setting handled via central config or level if needed
@@ -82,9 +82,9 @@ class UntrackedBackupManager(BaseModel):
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
-        """Check output dir and create if missing.
+        """Check output dir and make if miss.
 
-        Return False on IO error.
+        Return False on IO err or bad path. File write access.
         """
         if not output_base_dir.exists():
             try:
@@ -98,14 +98,14 @@ class UntrackedBackupManager(BaseModel):
         return True
 
     def _get_backup_target_dir(self, output_base_dir: Path) -> Path:
-        """Get timestamped folder in output base dir."""
+        """Get date and time stamped folder in output base dir."""
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         return output_base_dir / f"backup_{self.project_path.name}_{timestamp}"
 
     def _copy_item(self, item_str: str, backup_target_dir: Path) -> bool:
         """Copy file or dir to backup target dir.
 
-        Skip if missing. Return False on IO error.
+        Skip if miss. Return False on IO err or perm err. File write access.
         """
         clean_item_str = item_str.rstrip("/\\")
         source_item = self.project_path / clean_item_str
@@ -138,9 +138,9 @@ class UntrackedBackupManager(BaseModel):
             return True
 
     def _parse_config(self) -> tuple[Path, list[str]] | None:
-        """Parse config file, get base dir and items to backup.
+        """Parse conf file, get base dir and items to backup.
 
-        Return None on read fail or empty file.
+        Return None on read fail or empty file. File read access.
         """
         try:
             content = self.config_file_path.read_text(encoding="utf-8")
@@ -166,7 +166,10 @@ class UntrackedBackupManager(BaseModel):
 
 
 def main() -> None:
-    """Parse CLI args, run backup, and exit with status code."""
+    """Parse CLI args, run backup, and exit with status code.
+
+    Commands with options: project_path, -v, --verbose. Default dir is .
+    """
     parser = argparse.ArgumentParser(
         description="Back up untracked project files",
     )

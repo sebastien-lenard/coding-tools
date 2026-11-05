@@ -1,4 +1,6 @@
-// config/parameters/llm_config.jsonc.example
+// config/parameters/llms.jsonc.example
+// SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+// SPDX-License-Identifier: Apache-2.0
 {
     // Global fallback default model
     "default_model": "gemini-3.5-flash-lite",

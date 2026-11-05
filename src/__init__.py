@@ -1,5 +1,7 @@
 # src/__init__.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Core tools base for code tasks.
 
-"""Package root for coding tools."""
+No side effects.
+"""
