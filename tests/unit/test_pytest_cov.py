@@ -12,6 +12,25 @@ from coding_tools import pytest_cov
 from coding_tools.my_run import RunOutput, RunState
 
 
+@pytest.fixture(autouse=True)
+def conf_files() -> None:
+    """Create template files if don't exist."""
+    files = [
+        (
+            Path("conf/templates/cov_stmt.md.example"),
+            Path("conf/templates/cov_stmt.md"),
+        ),
+        (
+            Path("conf/templates/cov_branch.md.example"),
+            Path("conf/templates/cov_branch.md"),
+        ),
+    ]
+    for source, target in files:
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def test_pytest_cov_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test pytest_cov run when coverage file is missing."""
     src = tmp_path / "dummy.py"

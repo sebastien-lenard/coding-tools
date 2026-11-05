@@ -279,7 +279,7 @@ def test_module_path_and_src_path(
 
     invalid_file = tmp_path / "outside.py"
     invalid_file.write_text("a = 1", encoding="utf-8")
-    with pytest.raises(ValueError, match="is outside src directory"):
+    with pytest.raises(ValueError, match="is not in the subpath of"):
         my_path.module_path(invalid_file)
 
     tests_dir = tmp_path / "tests" / "unit" / "pkg"
@@ -319,7 +319,7 @@ def test_unit_test_path_mapping(
 
     invalid_path = tmp_path / "outside_src.py"
     invalid_path.write_text("x", encoding="utf-8")
-    with pytest.raises(ValueError, match="is outside src directory"):
+    with pytest.raises(ValueError, match="is not in the subpath of"):
         my_path.unit_test_path(invalid_path)
 
 
