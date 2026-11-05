@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
 LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
+MIN_LEVEL_TRACES = logging.INFO
 
 # ANSI color codes for terminal output
 GREY = "\x1b[38;20m"
@@ -51,6 +52,16 @@ def drop_pkg_name(mod_name: str) -> str:
     """
     parts = mod_name.split(".", 1)
     return parts[1] if len(parts) > 1 else parts[0]
+
+
+def drop_traces(record: logging.LogRecord, log_level: int) -> None:
+    """Set up logger to skip traces for log level higher or equal to log_level."""
+    if (
+        record.levelno >= logging.ERROR
+        and logging.getLogger().getEffectiveLevel() >= log_level
+    ):
+        record.exc_info = None
+        record.exc_text = None
 
 
 def set_level(logger: Logger, verbosity_count: int) -> None:
@@ -154,19 +165,18 @@ class Formatter(logging.Formatter):
         func_name = f"[{drop_pkg_name(record.name)}.{record.funcName}]"
         tool = getattr(record, "tool", "unknown tool")
         match getattr(record, "leg", None):
-            case "start":
-                record.msg = f"Start {tool} {func_name}"
             case "end":
                 record.msg = f"End {tool} {func_name}"
-            case "None":
+            case "fail":
+                record.msg = f"Failed {tool} {func_name}"
+            case "start":
+                record.msg = f"Start {tool} {func_name}"
+            case _:
                 is_summary = isinstance(record.msg, str) and "\n" in record.msg
-                is_trace = (
-                    record.exc_info is not None or record.levelno >= logging.ERROR
-                )
-                if not is_summary and not is_trace and record.msg:
+                if not is_summary and record.msg:
                     record.msg = f"{record.msg} {func_name}"
 
-        txt = super().format(record)
+        drop_traces(record, MIN_LEVEL_TRACES)
 
         if record.levelno <= logging.INFO:
             txt = self.info_formatter.format(record)

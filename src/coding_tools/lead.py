@@ -43,18 +43,21 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
         mod_name = TOOLS[str(args.tool)]["mod"]
     except KeyError as e:
         msg = f"Bad tool: {args.tool}"
+        logger.exception(msg)
         raise ValueError(msg) from e
 
     try:
         mod = my_import.import_module(mod_name)
     except (ImportError, OSError) as e:
         msg = f"Failed import of {mod_name}"
+        logger.exception(msg)
         raise RuntimeError(msg) from e
 
     try:
         files: list[Path] = my_path.files(args.path)
     except FileNotFoundError as e:
         msg = f"Missing input files at {args.path}"
+        logger.exception(msg)
         raise FileNotFoundError(msg) from e
     root_dir = my_path.root_dir(files[0])
 
@@ -64,6 +67,7 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
             conftest = my_io.read_txt(my_path.conftest_path(args.path))
         except (RuntimeError, ValueError) as e:
             msg = rf"Missing tests\conftest.py in repo of {args.path}"
+            logger.exception(msg)
             raise RuntimeError(msg) from e
     else:
         file_paths_to_edit = files
@@ -76,11 +80,13 @@ def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
             skill = my_io.read_txt(skill_path(args), header=False)
         except (RuntimeError, ValueError) as e:
             msg = f"Missing skill at {skill_path(args)}"
+            logger.exception(msg)
             raise RuntimeError(msg) from e
         try:
             templ = my_io.read_txt(TEMPLATE_PATH, header=False)
         except (RuntimeError, ValueError) as e:
             msg = f"Missing template at {TEMPLATE_PATH}"
+            logger.exception(msg)
             raise RuntimeError(msg) from e
 
     return (
@@ -160,8 +166,6 @@ async def run() -> None:
     Parse args, get file list, set up context, run tasks in loop, log summary.
     Catches LLM and general errors, prints summary table, exits on failure.
     """
-    func = __name__
-
     args = parse_args()
     logger.info("", extra={"leg": "start", "tool": args.tool})
 
@@ -169,13 +173,16 @@ async def run() -> None:
     try:
         ctx, run_outputs = context(args)
     except Exception as e:
-        msg = f"Failed context {func}"
-        logger.exception(None, msg)
+        msg = "Failed context"
+        logger.exception(msg)
+        logger.info("", extra={"leg": "fail", "tool": args.tool})
         raise SystemExit(1) from e
 
     try:
         run_outputs = await llm_emcee.run(ctx, run_outputs)
     except (LLMAPIError, LLMClientError, LLMServerError, Exception) as e:
+        msg = str(e)
+        logger.exception(msg)
         logging.getLogger().setLevel(logging.INFO)
         logger.info(
             "\n%s",
@@ -194,7 +201,7 @@ async def run() -> None:
                 },
             ),
         )
-        logger.exception("Failed run")
+        logger.info("", extra={"leg": "fail", "tool": args.tool})
         raise SystemExit(1) from e
 
     for ro in run_outputs:
