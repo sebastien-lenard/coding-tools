@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -68,14 +68,14 @@ def test_set_config(
     assert cfg["response_schema"] == response_schema
 
 
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_success(mock_llm_call: MagicMock) -> None:
+def test_retry_llm_call_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call successful response."""
+    mock_resp = DummyModel(message="hi", edited_files="print()")
+    mock_llm_call = AsyncMock(return_value=mock_resp)
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
 
     async def _run() -> None:
         mock_client = MagicMock()
-        mock_resp = DummyModel(message="hi", edited_files="print()")
-        mock_llm_call.return_value = mock_resp
 
         res = await retry_llm_call(
             RetryParams(
@@ -91,59 +91,57 @@ def test_retry_llm_call_success(mock_llm_call: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.should_retry", return_value=(True, 0.0))
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_server_error_retryable(
-    mock_llm_call: MagicMock,
-    mock_should_retry: MagicMock,
-) -> None:
+def test_retry_llm_call_server_error_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call retries on 503 and succeeds."""
+    mock_resp = DummyModel(message="hi", edited_files="print()")
+    err = LLMServerError(message="Unavailable", status_code=503, retryable=True)
+
+    mock_llm_call = AsyncMock(side_effect=[err, mock_resp])
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
+    monkeypatch.setattr(
+        "coding_tools.gemini.should_retry",
+        lambda *args, **kwargs: (True, 0.0),
+    )
 
     async def _run() -> None:
         mock_client = MagicMock()
-        mock_resp = DummyModel(message="hi", edited_files="print()")
-        err = LLMServerError(message="Unavailable", status_code=503, retryable=True)
-        mock_llm_call.side_effect = [err, mock_resp]
 
-        with (
-            patch("asyncio.sleep", return_value=None),
-            patch("google.genai.errors.ServerError", MockServerError),
-        ):
-            res = await retry_llm_call(
-                RetryParams(
-                    client=mock_client,
-                    req="request",
-                    model="model",
-                    config={},
-                    prefix="TEST",
-                ),
-            )
+        monkeypatch.setattr("asyncio.sleep", lambda *args, **kwargs: None)
+        monkeypatch.setattr("google.genai.errors.ServerError", MockServerError)
+
+        res = await retry_llm_call(
+            RetryParams(
+                client=mock_client,
+                req="request",
+                model="model",
+                config={},
+                prefix="TEST",
+            ),
+        )
         assert res == mock_resp
 
     asyncio.run(_run())
 
 
-@patch(
-    "coding_tools.gemini.should_retry",
-    side_effect=[(True, 0.0), (True, 0.0), (False, 0.0)],
-)
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_server_error_exhausted(
-    mock_llm_call: MagicMock,
-    mock_should_retry: MagicMock,
-) -> None:
+def test_retry_llm_call_server_error_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call raises LLMServerError after max retries."""
+    mock_llm_call = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
+    side_effects = iter([(True, 0.0), (True, 0.0), (False, 0.0)])
+    monkeypatch.setattr(
+        "coding_tools.gemini.should_retry",
+        lambda *args, **kwargs: next(side_effects),
+    )
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = LLMServerError(message="Unavailable", status_code=503, retryable=True)
         mock_llm_call.side_effect = [err, err, err]
 
-        with (
-            patch("asyncio.sleep"),
-            patch("google.genai.errors.ServerError", MockServerError),
-            pytest.raises(LLMServerError, match="Unavailable"),
-        ):
+        monkeypatch.setattr("asyncio.sleep", lambda *args, **kwargs: None)
+        monkeypatch.setattr("google.genai.errors.ServerError", MockServerError)
+
+        with pytest.raises(LLMServerError, match="Unavailable"):
             await retry_llm_call(
                 RetryParams(
                     client=mock_client,
@@ -157,19 +155,19 @@ def test_retry_llm_call_server_error_exhausted(
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_non_503_server_error(mock_llm_call: MagicMock) -> None:
+def test_retry_llm_call_non_503_server_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call raises LLMServerError immediately."""
+    mock_llm_call = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = LLMServerError(message="Internal Error", status_code=500, retryable=False)
         mock_llm_call.side_effect = err
 
-        with (
-            patch("google.genai.errors.ServerError", MockServerError),
-            pytest.raises(LLMServerError, match="Internal Error"),
-        ):
+        monkeypatch.setattr("google.genai.errors.ServerError", MockServerError)
+
+        with pytest.raises(LLMServerError, match="Internal Error"):
             await retry_llm_call(
                 RetryParams(
                     client=mock_client,
@@ -183,9 +181,10 @@ def test_retry_llm_call_non_503_server_error(mock_llm_call: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_generic_exception(mock_llm_call: MagicMock) -> None:
+def test_retry_llm_call_generic_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call handles general Exception as LLMAPIError."""
+    mock_llm_call = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -206,20 +205,20 @@ def test_retry_llm_call_generic_exception(mock_llm_call: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_client_error(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call handling ClientError (e.g. 429)."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = MockClientError(message="Rate limit", code=429)
         mock_client.models.generate_content.side_effect = err
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            patch("google.genai.errors.ClientError", MockClientError),
-            pytest.raises(LLMClientError, match="Rate limit") as exc_info,
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        monkeypatch.setattr("google.genai.errors.ClientError", MockClientError)
+
+        with pytest.raises(LLMClientError, match="Rate limit") as exc_info:
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -232,20 +231,20 @@ def test_llm_call_client_error(mock_logger_run_spin: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_client_error_non_429(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_client_error_non_429(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call handling ClientError with code other than 429."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = MockClientError(message="Bad Request", code=400)
         mock_client.models.generate_content.side_effect = err
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            patch("google.genai.errors.ClientError", MockClientError),
-            pytest.raises(LLMClientError, match="Bad Request") as exc_info,
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        monkeypatch.setattr("google.genai.errors.ClientError", MockClientError)
+
+        with pytest.raises(LLMClientError, match="Bad Request") as exc_info:
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -291,11 +290,12 @@ def test_rate_limit_throttle_no_sleep() -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
 def test_llm_call_client_error_exhausted_no_message(
-    mock_logger_run_spin: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test llm_call handling ClientError without message attribute."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -309,11 +309,13 @@ def test_llm_call_client_error_exhausted_no_message(
         err = MockClientErrorNoMsgError()
         mock_client.models.generate_content.side_effect = err
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            patch("google.genai.errors.ClientError", MockClientErrorNoMsgError),
-            pytest.raises(LLMClientError, match="Raw error"),
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        monkeypatch.setattr(
+            "google.genai.errors.ClientError",
+            MockClientErrorNoMsgError,
+        )
+
+        with pytest.raises(LLMClientError, match="Raw error"):
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -328,44 +330,34 @@ def test_llm_call_client_error_exhausted_no_message(
 class TestGemini:
     """Unit tests for Gemini class."""
 
-    @patch("coding_tools.gemini.genai.Client")
-    @pytest.mark.usefixtures("_mock_client_cls")
-    def test_init_default(self) -> None:
+    def test_init_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test default initialization."""
-        with patch(
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
+        monkeypatch.setattr(
             "coding_tools.conf.get_provider_mapping",
-            return_value={"gemini": {}},
-        ):
-            adapter = Gemini()
-            assert adapter.model_name == "gemini-3.5-flash-lite"
+            lambda: {"gemini": {}},
+        )
+        adapter = Gemini()
+        assert adapter.model_name == "gemini-3.5-flash-lite"
 
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls")
-    def test_init_custom(self) -> None:
+    def test_init_custom(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test custom initialization."""
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
         adapter = Gemini(model_name="custom-model")
         assert adapter.model_name == "custom-model"
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch("coding_tools.gemini.retry_llm_call")
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_success(
         self,
-        mock_call: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call successful execution."""
+        mock_resp = DummyModel(message="hi", edited_files="print()")
+        mock_call = AsyncMock(return_value=mock_resp)
+        monkeypatch.setattr("coding_tools.gemini.retry_llm_call", mock_call)
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
-            mock_resp = DummyModel(message="hi", edited_files="print()")
-            mock_call.return_value = mock_resp
-
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
@@ -379,22 +371,18 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch("coding_tools.gemini.retry_llm_call")
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_invalid_json(
         self,
-        mock_call: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call handles invalid json / schema."""
+        # Use AsyncMock with return_value=None
+        mock_call = AsyncMock(return_value=None)
+        monkeypatch.setattr("coding_tools.gemini.retry_llm_call", mock_call)
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
-            mock_call.return_value = None
-
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
@@ -410,20 +398,17 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch(
-        "coding_tools.gemini.retry_llm_call",
-        side_effect=TypeError("type err"),
-    )
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_type_error(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call handles TypeError."""
+        monkeypatch.setattr(
+            "coding_tools.gemini.retry_llm_call",
+            AsyncMock(side_effect=TypeError("type err")),
+        )
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
             adapter = Gemini()
@@ -438,20 +423,17 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch(
-        "coding_tools.gemini.retry_llm_call",
-        side_effect=ValueError("val err"),
-    )
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_value_error(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call handles ValueError."""
+        monkeypatch.setattr(
+            "coding_tools.gemini.retry_llm_call",
+            AsyncMock(side_effect=ValueError("val err")),
+        )
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
             adapter = Gemini()
@@ -466,20 +448,17 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch(
-        "coding_tools.gemini.retry_llm_call",
-        side_effect=RuntimeError("runtime err"),
-    )
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_runtime_error(
         self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call handles RuntimeError."""
+        monkeypatch.setattr(
+            "coding_tools.gemini.retry_llm_call",
+            AsyncMock(side_effect=RuntimeError("runtime err")),
+        )
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
             adapter = Gemini()
@@ -494,22 +473,17 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch("coding_tools.gemini.my_io.save_llm_req_resp")
-    @patch("coding_tools.gemini.retry_llm_call")
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_model_validate_error(
         self,
-        mock_call: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Test call handles model_validate failure raising ValueError."""
+        mock_call = AsyncMock(return_value={"wrong_key": "val"})
+        monkeypatch.setattr("coding_tools.gemini.retry_llm_call", mock_call)
+        monkeypatch.setattr("coding_tools.gemini.my_io.save_llm_req_resp", MagicMock())
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
 
         async def _run() -> None:
-            mock_call.return_value = {"wrong_key": "val"}
-
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
@@ -526,19 +500,13 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @patch(
-        "coding_tools.conf.get_provider_mapping",
-        return_value={"gemini": {}},
-    )
-    @patch(
-        "coding_tools.gemini.genai.Client",
-        autospec=True,
-    )
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_conf")
-    def test_init_default_fixture(
-        self,
-    ) -> None:
+    def test_init_default_fixture(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test init default using mock."""
+        monkeypatch.setattr("coding_tools.gemini.genai.Client", MagicMock())
+        monkeypatch.setattr(
+            "coding_tools.conf.get_provider_mapping",
+            lambda: {"gemini": {}},
+        )
         adapter = Gemini()
         assert adapter.model_name == "gemini-3.5-flash-lite"
 
@@ -560,45 +528,44 @@ def test_should_retry() -> None:
 ###################################################################################
 
 
-def test_should_sleep_true_branch() -> None:
+def test_should_sleep_true_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test _should_sleep returns condition True when timestamps exceed limit."""
     gemini.CALL_TIMESTAMPS.clear()
     now = time.time()
     for _ in range(gemini.MAX_REQUESTS_PER_MINUTE):
         gemini.CALL_TIMESTAMPS.append(now - 1.0)
 
-    with patch("coding_tools.gemini._max_requests_per_minute", return_value=1):
-        cond, _sleep_time = gemini._should_sleep(now)
-        assert cond is True
-        assert _sleep_time > 0.0
+    monkeypatch.setattr("coding_tools.gemini._max_requests_per_minute", lambda: 1)
+    cond, _sleep_time = gemini._should_sleep(now)
+    assert cond is True
+    assert _sleep_time > 0.0
 
 
-def test_should_sleep_false_branch() -> None:
+def test_should_sleep_false_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test _should_sleep returns condition False when sleep_time <= 0."""
     gemini.CALL_TIMESTAMPS.clear()
     now = time.time()
-    # Add old timestamp so sleep_time will be negative or zero
     gemini.CALL_TIMESTAMPS.append(now - 70.0)
 
-    with patch("coding_tools.gemini._max_requests_per_minute", return_value=1):
-        cond, _sleep_time = gemini._should_sleep(now)
-        assert cond is False
+    monkeypatch.setattr("coding_tools.gemini._max_requests_per_minute", lambda: 1)
+    cond, _sleep_time = gemini._should_sleep(now)
+    assert cond is False
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_server_error_503(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_server_error_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMServerError on 503 ServerError."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = MockServerError(message="Service Unavailable", code=503)
         mock_client.models.generate_content.side_effect = err
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            patch("google.genai.errors.ServerError", MockServerError),
-            pytest.raises(LLMServerError, match="Service Unavailable") as exc_info,
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        monkeypatch.setattr("google.genai.errors.ServerError", MockServerError)
+
+        with pytest.raises(LLMServerError, match="Service Unavailable") as exc_info:
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -612,20 +579,20 @@ def test_llm_call_server_error_503(mock_logger_run_spin: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_server_error_non_503(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_server_error_non_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMServerError with retryable False when code is not 503."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
         err = MockServerError(message="Internal Error", code=500)
         mock_client.models.generate_content.side_effect = err
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            patch("google.genai.errors.ServerError", MockServerError),
-            pytest.raises(LLMServerError, match="Internal Error") as exc_info,
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        monkeypatch.setattr("google.genai.errors.ServerError", MockServerError)
+
+        with pytest.raises(LLMServerError, match="Internal Error") as exc_info:
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -639,9 +606,10 @@ def test_llm_call_server_error_non_503(mock_logger_run_spin: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_returns_resp_parsed(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_returns_resp_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call returns resp.parsed on success."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -650,27 +618,28 @@ def test_llm_call_returns_resp_parsed(mock_logger_run_spin: MagicMock) -> None:
         mock_resp.parsed = expected_parsed
         mock_client.models.generate_content.return_value = mock_resp
 
-        with patch("coding_tools.gemini._rate_limit_throttle"):
-            res = await llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
-            )
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+        res = await llm_call(
+            client=mock_client,
+            req="request",
+            model="model",
+            config={},
+            prefix="TEST",
+        )
         assert res == expected_parsed
 
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.llm_call")
-def test_retry_llm_call_returns_resp_directly(mock_llm_call: MagicMock) -> None:
+def test_retry_llm_call_returns_resp_directly(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call returns resp on success via else block."""
+    mock_resp = DummyModel(message="hi", edited_files="print()")
+    # Use AsyncMock or async function so it can be awaited by retry_llm_call
+    mock_llm_call = AsyncMock(return_value=mock_resp)
+    monkeypatch.setattr("coding_tools.gemini.llm_call", mock_llm_call)
 
     async def _run() -> None:
         mock_client = MagicMock()
-        mock_resp = DummyModel(message="hi", edited_files="print()")
-        mock_llm_call.return_value = mock_resp
 
         res = await retry_llm_call(
             RetryParams(
@@ -686,18 +655,18 @@ def test_retry_llm_call_returns_resp_directly(mock_llm_call: MagicMock) -> None:
     asyncio.run(_run())
 
 
-@patch("coding_tools.gemini.logger.run_spin")
-def test_llm_call_api_error(mock_logger_run_spin: MagicMock) -> None:
+def test_llm_call_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMAPIError on APIError or general Exception."""
+    mock_logger_run_spin = MagicMock()
+    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("API failure")
 
-        with (
-            patch("coding_tools.gemini._rate_limit_throttle"),
-            pytest.raises(LLMAPIError, match="API failure") as exc_info,
-        ):
+        monkeypatch.setattr("coding_tools.gemini._rate_limit_throttle", AsyncMock())
+
+        with pytest.raises(LLMAPIError, match="API failure") as exc_info:
             await llm_call(
                 client=mock_client,
                 req="request",
@@ -710,21 +679,21 @@ def test_llm_call_api_error(mock_logger_run_spin: MagicMock) -> None:
     asyncio.run(_run())
 
 
-def test_max_retries_zero() -> None:
+def test_max_retries_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test retry_llm_call when max retries is zero (range is empty)."""
 
     async def _run() -> None:
         mock_client = MagicMock()
-        with patch("coding_tools.gemini._max_retries", return_value=0):
-            res = await retry_llm_call(
-                RetryParams(
-                    client=mock_client,
-                    req="request",
-                    model="model",
-                    config={},
-                    prefix="TEST",
-                ),
-            )
-            assert res is None
+        monkeypatch.setattr("coding_tools.gemini._max_retries", lambda: 0)
+        res = await retry_llm_call(
+            RetryParams(
+                client=mock_client,
+                req="request",
+                model="model",
+                config={},
+                prefix="TEST",
+            ),
+        )
+        assert res is None
 
     asyncio.run(_run())
