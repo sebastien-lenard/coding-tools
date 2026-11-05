@@ -19,11 +19,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, MutableMapping
 
 # Global prohibited fluff words to enforce lean phrasing
 BANNED_WORDS = {}
 LEVELS = [logging.WARNING, logging.INFO, logging.DEBUG]
+
+# ANSI color codes for terminal output
+GREY = "\x1b[38;20m"
+WHITE = "\x1b[37;20m"
+YELLOW = "\x1b[33;20m"
+RED = "\x1b[31;20m"
+BOLD_RED = "\x1b[31;1m"
+RESET = "\x1b[0m"
 
 
 class Verbose(Enum):
@@ -34,6 +42,15 @@ class Verbose(Enum):
 
     V = "Log warnings and main progress"
     VV = "Log details"
+
+
+def drop_pkg_name(mod_name: str) -> str:
+    """Drop package name from module name.
+
+    E.g. toto.blabla.lead return blabla.lead.
+    """
+    parts = mod_name.split(".", 1)
+    return parts[1] if len(parts) > 1 else parts[0]
 
 
 def set_level(logger: Logger, verbosity_count: int) -> None:
@@ -52,6 +69,136 @@ def _clean(text: str) -> str:
     words = text.split()
     cleaned_words = [w for w in words if w.lower().strip(".,:;!?") not in BANNED_WORDS]
     return " ".join(cleaned_words)
+
+
+def summary_table(
+    title: str,
+    columns: dict[str, str],
+    rows: list[Any],
+    formatters: dict[str, Any] | None = None,
+) -> str:
+    """Get multi-line stats table from rows.
+
+    Applies formatters to row values. Builds table lines and logs info.
+    """
+    headers = list(columns.values())
+    keys = list(columns.keys())
+    formatters = formatters or {}
+
+    formatted_rows = []
+    for row in rows:
+        row_cells = []
+        for key in keys:
+            val = row.get(key, "") if isinstance(row, dict) else getattr(row, key, "")
+            if key in formatters and val is not None:
+                val = formatters[key](val)
+            row_cells.append(str(val) if val else "")
+        formatted_rows.append(row_cells)
+
+    lines = [
+        title,
+        "---",
+        " | ".join(headers),
+        "---",
+    ]
+    lines.extend(" | ".join(cell) for cell in formatted_rows)
+    return "\n".join(lines)
+
+
+def summary_line(
+    title: str,
+    headers: list[str],
+    values: list[str],
+) -> str:
+    """Get one-line stats table.
+
+    Builds table headers and values line and logs info.
+    """
+    lines = [
+        title,
+        "---",
+        " | ".join(headers),
+        "---",
+        " | ".join(str(val) for val in values),
+    ]
+    return "\n".join(lines)
+
+
+class Formatter(logging.Formatter):
+    """Log formatter."""
+
+    def __init__(
+        self,
+        fmt: str = "%(asctime)s %(levelname)s: %(message)s",
+        datefmt: str = "%H:%M:%S",
+    ) -> None:
+        super().__init__(fmt=fmt, datefmt=datefmt)
+        self.info_formatter = logging.Formatter(
+            fmt="%(asctime)s: %(message)s",
+            datefmt=datefmt,
+        )
+        self.formatter = logging.Formatter(
+            fmt="%(asctime)s %(levelname)s: %(message)s",
+            datefmt=datefmt,
+        )
+        self.COLORS = {
+            logging.DEBUG: GREY,
+            logging.INFO: WHITE,
+            logging.WARNING: YELLOW,
+            logging.ERROR: RED,
+            logging.CRITICAL: BOLD_RED,
+        }
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format logs depending on extra options."""
+        func_name = f"[{drop_pkg_name(record.name)}.{record.funcName}]"
+        tool = getattr(record, "tool", "unknown tool")
+        match getattr(record, "leg", None):
+            case "start":
+                record.msg = f"Start {tool} {func_name}"
+            case "end":
+                record.msg = f"End {tool} {func_name}"
+            case "None":
+                is_summary = isinstance(record.msg, str) and "\n" in record.msg
+                is_trace = (
+                    record.exc_info is not None or record.levelno >= logging.ERROR
+                )
+                if not is_summary and not is_trace and record.msg:
+                    record.msg = f"{record.msg} {func_name}"
+
+        txt = super().format(record)
+
+        if record.levelno <= logging.INFO:
+            txt = self.info_formatter.format(record)
+        else:
+            txt = self.formatter.format(record)
+
+        color = self.COLORS.get(record.levelno, RESET)
+        return f"{color}{txt}{RESET}"
+
+
+class ContextAdapter(logging.LoggerAdapter):
+    """Log context handler."""
+
+    def process(
+        self,
+        msg: str,
+        kwargs: MutableMapping[str, Any],
+    ) -> tuple[str, MutableMapping[str, Any]]:
+        """Push extra new context info into the extra dict temporarily."""
+        extra = dict(self.extra) if self.extra else {}
+
+        call_extra = kwargs.get("extra")
+        if isinstance(call_extra, dict):
+            extra.update(call_extra)
+
+        kwargs["extra"] = extra
+        return msg, kwargs
+
+
+def get_logger(name: str) -> ContextAdapter:
+    """Return logger with extra dict."""
+    return ContextAdapter(logging.getLogger(name), {})
 
 
 class MyLogger:
@@ -269,15 +416,10 @@ def setup() -> None:
 
     Clears root log handlers and adds StreamHandler with time format and INFO level.
     """
-    handler = logging.StreamHandler(sys.stderr)
-    formatter = logging.Formatter(
-        fmt="%(asctime)s %(levelname)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    handler.setFormatter(formatter)
-
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(Formatter())
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.INFO)
 

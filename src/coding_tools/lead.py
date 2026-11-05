@@ -29,7 +29,7 @@ TEMPLATE_PATH: Final[Path] = Path("conf/templates/improve.md")
 TOOLS: Final[dict[str, ToolConf]] = conf.tools()
 
 
-logger = my_logger.logger(__name__)
+logger = my_logger.get_logger(__name__)
 
 
 def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
@@ -161,9 +161,9 @@ async def run() -> None:
     Catches LLM and general errors, prints summary table, exits on failure.
     """
     func = __name__
-    logger.start(func)
 
     args = parse_args()
+    logger.info("", extra={"leg": "start", "tool": args.tool})
 
     my_logger.set_level(logging.getLogger(), args.verbose)
     try:
@@ -177,7 +177,34 @@ async def run() -> None:
         run_outputs = await llm_emcee.run(ctx, run_outputs)
     except (LLMAPIError, LLMClientError, LLMServerError, Exception) as e:
         logging.getLogger().setLevel(logging.INFO)
-        logger.summary_table(
+        logger.info(
+            "\n%s",
+            my_logger.summary_table(
+                f"{args.tool.capitalize()} Summary",
+                {
+                    "input_path": SUMMARY_HEADERS[0],
+                    "status": SUMMARY_HEADERS[1],
+                    "edited": SUMMARY_HEADERS[2],
+                },
+                run_outputs,
+                formatters={
+                    "input_path": lambda p: my_path.rel_path(p) if p else "",
+                    "status": lambda s: s.value,
+                    "edited": lambda ed: ed.value,
+                },
+            ),
+        )
+        logger.exception("Failed run")
+        raise SystemExit(1) from e
+
+    for ro in run_outputs:
+        if not ro.input_path and ro.output_path:
+            ro.input_path = ro.output_path
+
+    logging.getLogger().setLevel(logging.INFO)
+    logger.info(
+        "\n%s",
+        my_logger.summary_table(
             f"{args.tool.capitalize()} Summary",
             {
                 "input_path": SUMMARY_HEADERS[0],
@@ -188,32 +215,11 @@ async def run() -> None:
             formatters={
                 "input_path": lambda p: my_path.rel_path(p) if p else "",
                 "status": lambda s: s.value,
-                "edited": lambda ed: ed.value,
+                "edited": lambda e: e.value,
             },
-        )
-        logger.exception(None, "Failed run for lead()")
-        raise SystemExit(1) from e
-
-    for ro in run_outputs:
-        if not ro.input_path and ro.output_path:
-            ro.input_path = ro.output_path
-
-    logging.getLogger().setLevel(logging.INFO)
-    logger.summary_table(
-        f"{args.tool.capitalize()} Summary",
-        {
-            "input_path": SUMMARY_HEADERS[0],
-            "status": SUMMARY_HEADERS[1],
-            "edited": SUMMARY_HEADERS[2],
-        },
-        run_outputs,
-        formatters={
-            "input_path": lambda p: my_path.rel_path(p) if p else "",
-            "status": lambda s: s.value,
-            "edited": lambda e: e.value,
-        },
+        ),
     )
-    logger.end(func)
+    logger.info("", extra={"leg": "end", "tool": args.tool})
 
 
 def main() -> None:
