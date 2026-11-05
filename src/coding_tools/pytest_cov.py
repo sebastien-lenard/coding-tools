@@ -34,10 +34,20 @@ class CovState(Enum):
 BRIEF_MISSING = "No unit test seems to cover the source file"
 MAX_TEMPLATE_PARTS = 3
 MAX_SUBTEMPLATE_PARTS = 2
-COV_STMT_TEMPL_PATH = conf.conf_dir() / "templates" / "cov_stmt.md"
-COV_BRANCH_TEMPL_PATH = conf.conf_dir() / "templates" / "cov_branch.md"
+COV_BRANCH_TEMPL_REL_PATH = Path("templates/cov_branch.md")
+COV_STMT_TEMPL_REL_PATH = Path("templates/cov_stmt.md")
 SNIPPET_CONTEXT_OFFSET = 3
 SNIPPET_END_OFFSET = 2
+
+
+def cov_branch_templ_path() -> Path:
+    """Yielf branch template path."""
+    return conf.conf_dir() / COV_BRANCH_TEMPL_REL_PATH
+
+
+def cov_stmt_templ_path() -> Path:
+    """Yield statement template path."""
+    return conf.conf_dir() / COV_STMT_TEMPL_REL_PATH
 
 
 def _read(path: Path, err_msg: str, *, lines: bool = True) -> list[str] | str:
@@ -151,7 +161,7 @@ def _fmt_stmts(src_file_path: Path, uncovered_lines: list[int]) -> str:
 
     Reads src file and template. Calls my_ast to map uncov lines. Returns joined items.
     """
-    templ_path = COV_STMT_TEMPL_PATH
+    templ_path = cov_stmt_templ_path()
     src_lines = _read(
         Path(src_file_path),
         f"Missing src file {src_file_path}",
@@ -198,7 +208,7 @@ def _fmt_branches(
 
     Reads src file and branch template. Maps notes and builds text. Returns items.
     """
-    templ_path = COV_BRANCH_TEMPL_PATH
+    templ_path = cov_branch_templ_path()
     src_lines = _read(
         Path(src_file_path),
         f"Missing src file {src_file_path}",
