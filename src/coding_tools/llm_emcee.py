@@ -31,7 +31,7 @@ MIN_STEPS = 1
 PARALLEL_CALLS = 2
 
 
-logger = my_logger.logger(__name__)
+logger = my_logger.get_logger(__name__)
 
 
 @dataclass
@@ -85,7 +85,7 @@ def _safe_call_func(
     try:
         return func(*args, **kwargs)
     except Exception as e:
-        logger.exception(None, f"Failed run failed {func.__name__}")
+        logger.exception("", extra={"leg": "fail"})
         return e
 
 
@@ -95,7 +95,7 @@ async def _prepare_context_and_version(file_path: Path) -> tuple[str, str]:
         try:
             context_txt = my_io.read_txt(my_path.src_path(file_path))
         except (OSError, UnicodeEncodeError):
-            logger.exception(None, "")
+            logger.exception("Failed read src file %s", file_path)
             raise
     else:
         context_txt = ""
@@ -124,9 +124,15 @@ async def _execute_chat_step(
     step = params.step
 
     run_output = replace(run_output, step=(step + 1))
-    step_msg = f"{file_stem} {step + 1}/{ctx.max_steps}"
+    extra = {
+        "leg": "start",
+        "file": file_path,
+        "files_count": len(ctx.file_paths_to_edit),
+        "step": step + 1,
+        "max_steps": ctx.max_steps,
+    }
     try:
-        logger.start(step_msg)
+        logger.info("", extra=extra)
         req: str = ctx.template.format(
             msg="",
             python_version=python_version,
@@ -173,12 +179,18 @@ async def _execute_chat_step(
             )
             run_output = replace(run_output, edited=EditState.EDITED)
             if step + 1 >= ctx.min_steps:
-                logger.end(file_path.name, f"Passed after {step + 1} steps")
+                logger.info(
+                    "after {step + 1} steps",
+                    extra=extra.update({"leg": "pass"}),
+                )
                 return run_output, check_params, True
 
     except Exception:
         run_output = replace(run_output, status=RunState.FAIL, msg="Error")
-        logger.exception(step_msg, "Failed")
+        logger.exception(
+            "",
+            extra=extra.update({"leg": "fail"}),
+        )
 
     return run_output, check_params, False
 
@@ -195,7 +207,7 @@ async def chat(
     try:
         current_txt = my_io.read_txt(file_path)
     except (RuntimeError, ValueError):
-        logger.exception(None, "")
+        logger.exception("reading file %s", file_path, extra={"leg": "fail"})
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
     check_params = CheckParams(old_txt=current_txt, new_txt="", file_path=file_path)
@@ -206,8 +218,15 @@ async def chat(
 
     if run_output.status == RunState.PASS:
         msg = ", saved fixes." if run_output.edited == EditState.EDITED else "."
-        msg = f"Passed precheck{msg} No call to LLM. File {file_path.name}"
-        logger.end(ctx.func_name, msg)
+        msg = f"precheck{msg} No call to LLM. File {file_path.name}"
+        logger.info(
+            msg,
+            extra={
+                "leg": "pass",
+                "file": file_path,
+                "files_count": len(ctx.file_paths_to_edit),
+            },
+        )
         return replace(
             run_output,
             msg="Passed precheck, saved fixes",

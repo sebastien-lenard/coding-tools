@@ -82,6 +82,46 @@ def _clean(text: str) -> str:
     return " ".join(cleaned_words)
 
 
+def apply_templ_msg(record: logging.LogRecord) -> None:
+    """Set message applying a template and depending on context.
+
+    Context includes leg (start, fail, end), tool (global), local function,
+    processed file, step (iteration).
+    """
+    if isinstance(record.msg, str) and "\n" in record.msg:
+        return
+    msg = "[FILE][STEP][LEG][TOOL][MSG][FUNC_NAME]"
+    file = getattr(record, "file", None)
+    file = Path(file) if file else ""
+    files_count = getattr(record, "files_count", None)
+    file = file.stem if file and files_count else ""
+    msg = msg.replace("[FILE]", f" {file}." if file else "")
+
+    step = getattr(record, "step", None)
+    max_steps = getattr(record, "max_steps", None)
+    step = f"{step}/{max_steps}" if step and max_steps else ""
+    msg = msg.replace("[STEP]", f" {step}." if step else "")
+
+    legs = {
+        "end": "End",
+        "fail": "Failed",
+        "live": "",
+        "pass": "Passed",
+        "start": "Start",
+    }
+    leg = legs[getattr(record, "leg", "live")]
+    msg = msg.replace("[LEG]", f" {leg}" if leg else "")
+
+    tool = getattr(record, "tool", "")
+    msg = msg.replace("[TOOL]", f" {tool}" if tool else "")
+
+    msg = msg.replace("[MSG]", f" {record.msg}" if record.msg else "")
+
+    func_name = f"[{drop_pkg_name(record.name)}.{record.funcName}]"
+    msg = msg.replace("[FUNC_NAME]", f" {func_name}")
+    record.msg = msg
+
+
 def summary_table(
     title: str,
     columns: dict[str, str],
@@ -162,20 +202,7 @@ class Formatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format logs depending on extra options."""
-        func_name = f"[{drop_pkg_name(record.name)}.{record.funcName}]"
-        tool = getattr(record, "tool", "unknown tool")
-        match getattr(record, "leg", None):
-            case "end":
-                record.msg = f"End {tool} {func_name}"
-            case "fail":
-                record.msg = f"Failed {tool} {func_name}"
-            case "start":
-                record.msg = f"Start {tool} {func_name}"
-            case _:
-                is_summary = isinstance(record.msg, str) and "\n" in record.msg
-                if not is_summary and record.msg:
-                    record.msg = f"{record.msg} {func_name}"
-
+        apply_templ_msg(record)
         drop_traces(record, MIN_LEVEL_TRACES)
 
         if record.levelno <= logging.INFO:
