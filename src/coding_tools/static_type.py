@@ -1,0 +1,53 @@
+# src/coding_tools/static_type.py
+# SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
+# SPDX-License-Identifier: Apache-2.0
+"""Audit type sync with pyright. No code run.
+
+Writes files to disk. Parallel steps. Max steps 10, min steps 1.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+from coding_tools import my_io, my_logger, my_pyright
+from coding_tools.my_logger import Verbose
+from coding_tools.my_run import EditState, RunOutput, RunState
+
+if TYPE_CHECKING:
+    from coding_tools.check import CheckParams
+
+MAX_STEPS = 1
+MIN_STEPS = 1
+
+logger = my_logger.logger(__name__)
+
+
+def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
+    """Write text to file and run pyright type audit if new text set.
+
+    Fails if file path is missing. Writes to disk via my_io. Calls my_pyright.run.
+    Returns RunOutput state. Step logic checks file and saves text.
+    """
+    func_name = __name__
+    if not params.file_path.is_file():
+        msg = f"No file {params.file_path}"
+        logger.warning(func_name, msg)
+        return replace(run_output, status=RunState.FAIL, msg="Bad file")
+    if params.new_txt:
+        my_io.write_txt(
+            str(params.new_txt),
+            params.file_path,
+            verbose=Verbose.VV,
+        )
+        run_output = replace(run_output, edited=EditState.EDITED)
+    return my_pyright.run(file_path=params.file_path, run_output=run_output)
+
+
+def precheck(params: CheckParams, run_output: RunOutput) -> RunOutput:
+    """Run precheck step via check call.
+
+    Passes params and run output through. Returns RunOutput state.
+    """
+    return check(params, run_output)

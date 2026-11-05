@@ -1,18 +1,21 @@
 # tests/unit/test_llm_protocol.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-
 """Unit tests for llm_protocol.py."""
 
 from __future__ import annotations
+
+import asyncio
 
 from pydantic import BaseModel
 
 from coding_tools.llm_protocol import (
     LLMAPIError,
+    LLMCallParams,
+    LLMClientError,
     LLMClientProtocol,
+    LLMResponse,
     LLMServerError,
-    StructuredGenerationOptions,
 )
 
 
@@ -27,15 +30,15 @@ class DummyLLMClient:
 
     supports_caching: bool = True
 
-    def generate_structured_response(
+    async def call(
         self,
-        contents_list: list[object],
-        options: StructuredGenerationOptions,
-    ) -> BaseModel:
+        req: str,
+        params: LLMCallParams,
+    ) -> LLMResponse:
         """Generate a dummy structured response."""
-        _ = contents_list
-        _ = options
-        return DummyModel(value="test")
+        _ = req
+        _ = params
+        return LLMResponse(message="test", edited_files="test")
 
     def setup_cache(
         self,
@@ -54,45 +57,26 @@ class DummyLLMClient:
 
 
 def test_structured_generation_options_defaults() -> None:
-    """Test default values for StructuredGenerationOptions."""
-    options = StructuredGenerationOptions(
+    """Test default values for LLMCallParams."""
+    options = LLMCallParams(
         response_schema=DummyModel,
         prefix="test_prefix",
-        spinner_msg="Loading...",
     )
     assert options.response_schema == DummyModel
     assert options.prefix == "test_prefix"
-    assert options.spinner_msg == "Loading..."
-    assert options.system_instruction is None
-    assert options.cache_name is None
-
-
-def test_structured_generation_options_full() -> None:
-    """Test full configuration for StructuredGenerationOptions."""
-    options = StructuredGenerationOptions(
-        response_schema=DummyModel,
-        prefix="test_prefix",
-        spinner_msg="Loading...",
-        system_instruction="Be helpful",
-        cache_name="my_cache",
-    )
-    assert options.system_instruction == "Be helpful"
-    assert options.cache_name == "my_cache"
 
 
 def test_llm_client_protocol_implementation() -> None:
     """Test that DummyLLMClient implements LLMClientProtocol correctly."""
     client: LLMClientProtocol = DummyLLMClient()
-    res = client.generate_structured_response(
-        [],
-        StructuredGenerationOptions(DummyModel, "p", "s"),
+    res = asyncio.run(
+        client.call(
+            "req",
+            LLMCallParams(response_schema=DummyModel, prefix="p"),
+        ),
     )
-    assert isinstance(res, DummyModel)
-    assert res.value == "test"
-    cache_name, files = client.setup_cache("file.txt", "p")
-    assert cache_name == "cache_1"
-    assert files == []
-    client.cleanup_files([], "p")
+    assert isinstance(res, LLMResponse)
+    assert res.message == "test"
 
 
 def test_llm_api_error() -> None:
@@ -101,6 +85,14 @@ def test_llm_api_error() -> None:
     assert str(err) == "api error"
     assert err.status_code == 400
     assert err.error_code == "INVALID_ARGUMENT"
+
+
+def test_llm_client_error() -> None:
+    """Test LLMClientError initialization and attributes."""
+    err = LLMClientError("client error", status_code=400, retryable=False)
+    assert str(err) == "client error"
+    assert err.status_code == 400
+    assert err.retryable is False
 
 
 def test_llm_server_error() -> None:

@@ -1,25 +1,28 @@
 # src/coding_tools/llm_router.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-#
-
-"""Route dynamic instantiation of LLM client adapter based on config."""
+"""Map LLM models to fit client adapters based on config and import."""
 
 from __future__ import annotations
 
 import importlib
 from typing import TYPE_CHECKING
 
-from coding_tools.config import get_default_model, get_provider_mapping
+from coding_tools.conf import get_default_model, get_provider_mapping
 
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
+
 
 def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
-    """Get matching LLM client adapter.
+    """Get LLM client map to target model via config and dynamic import.
 
-    Raise ValueError if model unknown. Use default model if model_name is None.
+    Check provider map. Use default model if none. Raise ValueError if not found.
+    Use importlib to load adapter class.
     """
     target_model = model_name if model_name is not None else get_default_model()
     providers = get_provider_mapping()
@@ -37,8 +40,6 @@ def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
             adapter_class = getattr(module, class_str)
             return adapter_class(model_name=target_model)
 
-    msg = (
-        "Unsupported LLM model specified or model not found in "
-        f"provider configuration: {target_model}"
-    )
+    msg = f"Unsupported LLM model or model not found in provider config: {target_model}"
+    logger.error(None, msg)
     raise ValueError(msg)

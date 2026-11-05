@@ -1,0 +1,22 @@
+<!-- config/templates/cov_branch.md -->
+<!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+- Uncovered branch pathway (statement):
+```python
+{stmt_snippet}
+```
+- Branch starting point:
+```python
+{branch_snippet}
+```
+- Pathway context:
+```python
+{context_snippet}
+```
+- Branch context:
+```python
+{branch_cxt_snippet}
+```
+- Where: Function `{function_name}`
+- Audit: {audit}
+- Fix: Pen test running the statement pathway (and thus both outcomes of this branch).

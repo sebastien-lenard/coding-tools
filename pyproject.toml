@@ -26,13 +26,16 @@ dependencies = [
 ]
 
 [project.scripts]
-batch-unit-test = "coding_tools.batch_unit_test_ask_llm:main"
 workspace-stamper = "coding_tools.workspace_stamper:main"
 backup-untracked = "coding_tools.backup_untracked:main"
 bundle-sources = "coding_tools.bundle_sources:main"
 function-signatures-dependencies = "coding_tools.function_signatures_dependencies:main"
-workspace-guard = "coding_tools.workspace_guard:main"
-docstring-enhancer = "coding_tools.docstring_enhancer:main"
+fix-lint = "coding_tools.entry:fix_lint"
+fix-type = "coding_tools.entry:fix_type"
+pen-docstring = "coding_tools.entry:pen_docstring"
+pen-header = "coding_tools.entry:pen_header"
+pen-test = "coding_tools.entry:pen_test"
+
 
 [project.optional-dependencies]
 gemini = [
@@ -43,6 +46,7 @@ gemini = [
 dev = [
     "basedpyright>=1.39.9",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.1.post1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.1",
 ]
@@ -80,6 +84,11 @@ reportUnusedVariable = "none"
 # Set to "warning" or "none" if it creates too much noise in existing code.
 reportAny = "none" 
 
+[tool.coverage.report]
+exclude_also = [
+    "if __name__ == .__main__.:",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
@@ -102,6 +111,7 @@ allowed-confusables = ["ℹ"]
     "BLE001",  # Allow broad exception catching (great for checking fallback paths)
     "FBT001", # Allow boolean positional arguments
     "FBT002", # Allow boolean default positional arguments
+    "INP001",
     "PLR2004", # Allow numerical values not being constant
     "PLW0120", # Allow loose control structures if an LLM generated messy loop edge-case tests
     "PLR0913", # Allow many arguments
@@ -117,3 +127,24 @@ notice-rgx = '(?i)SPDX-FileCopyrightText:\s*2026\s*'
 
 [tool.ruff.format]
 quote-style = "double"
+
+# Project tools
+[tool.coding-tools.tools.fix-lint]
+mod = "coding_tools.lint"
+llm = "True"
+
+[tool.coding-tools.tools.fix-type]
+mod = "coding_tools.static_type"
+llm = "True"
+
+[tool.coding-tools.tools.pen-docstring]
+mod = "coding_tools.docstring"
+llm = "True"
+
+[tool.coding-tools.tools.pen-header]
+mod = "coding_tools.header"
+llm = "False"
+
+[tool.coding-tools.tools.pen-test]
+mod = "coding_tools.unit_test"
+llm = "True"

@@ -17,16 +17,19 @@ ruff-*.txt
 ruff.txt
 unit-test-*.txt
 unit-test.txt
+*llm_log*
 
 # Temp/Misc files and backups
 *.txt
-*.old.py
-*.copy.txt
-test_dummy_target.py
+*.tmp.*
+*.old.*
+*.copy.*
 
 # VS Code / Environment
 .vscode/
 .env
 
 # Config
-config/parameters/llm_config.jsonc
+conf/**/*.jsonc
+conf/**/*.json
+conf/**/*.md

@@ -169,7 +169,7 @@ function-signatures-dependencies [project_path] [OPTIONS]
 
 ## 6. Docstring Enhancer (`docstring-enhancer`)
 
-`docstring-enhancer` is an AI-powered utility that automates improving and correcting Python docstrings across project source files using Gemini.
+`pen-docstrings` is an AI-powered utility that automates improving and correcting Python docstrings across project source files using Gemini.
 
 ### Core Use Case
 To assess functionalities, conditions, and constraints efficiently without feeding full source code to LLMs, docstrings need to be concise, precise, and high-value. This tool audits and refines docstrings to be maximum 5 lines long, omitting redundant type and exception details while preserving code logic and usage subtleties.
@@ -182,7 +182,7 @@ To assess functionalities, conditions, and constraints efficiently without feedi
 
 ### CLI Command Options
 ```bash
-docstring-enhancer target [OPTIONS]
+pen-docstrings target [OPTIONS]
 ```
 
 #### Arguments
@@ -210,7 +210,7 @@ powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ### 2. Synchronize the Environment & Register Commands
 
-Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`batch-unit-test`, `workspace-stamper`, `backup-untracked`, `bundle-sources`, `function-signatures-dependencies`, `docstring-enhancer`) locally:
+Navigate to the project root directory and synchronize the virtual environment. This installs all dependencies and registers the command-line scripts (`batch-unit-test`, `workspace-stamper`, `backup-untracked`, `bundle-sources`, `function-signatures-dependencies`, `pen-docstrings`) locally:
 ```bash
 uv sync --all-extras
 ```
@@ -229,7 +229,7 @@ uv run workspace-stamper --help
 uv run backup-untracked --help
 uv run bundle-sources --help
 uv run function-signatures-dependencies --help
-uv run docstring-enhancer --help
+uv run pen-docstrings --help
 ```
 
 ### Option B: Editable Install (For direct command-line access)
@@ -244,7 +244,7 @@ workspace-stamper --help
 backup-untracked --help
 bundle-sources --help
 function-signatures-dependencies --help
-docstring-enhancer --help
+pen-docstrings --help
 ```
 
 ---
@@ -317,12 +317,12 @@ uv run function-signatures-dependencies /path/to/target/project -o /path/to/outp
 
 **Example 1: Enhance docstrings for a single source file**
 ```bash
-uv run --extra gemini docstring-enhancer src/coding_tools/workspace_guard.py
+uv run --extra gemini pen-docstrings src/coding_tools/workspace_guard.py
 ```
 
 **Example 2: Enhance docstrings across an entire package directory**
 ```bash
-uv run --extra gemini docstring-enhancer src/coding_tools
+uv run --extra gemini pen-docstrings src/coding_tools
 ```
 
 ---

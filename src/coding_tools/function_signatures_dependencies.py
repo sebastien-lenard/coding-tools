@@ -1,14 +1,15 @@
 # src/coding_tools/function_signatures_dependencies.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
-"""Extract project structure into LLM-ready markdown.
+"""Extract code structure to markdown via AST.
 
-Reads src folder via AST. Exposes signatures, exceptions, and mermaid graph.
+Read src folder. Yield signatures, errors, and graphs.
 """
+
+from __future__ import annotations
 
 import argparse
 import ast
-import logging
 import os
 import sys
 from pathlib import Path
@@ -19,11 +20,16 @@ from pydantic import BaseModel, DirectoryPath
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-logger = logging.getLogger("coding_tools.function_signatures_dependencies")
+from coding_tools import my_logger
+
+logger = my_logger.logger(__name__)
 
 
 class FunctionInfo(BaseModel):
-    """Metadata for function or method."""
+    """Data for function or method.
+
+    Store name, signature, doc, tags, errors, and calls.
+    """
 
     name: str
     signature: str
@@ -35,7 +41,10 @@ class FunctionInfo(BaseModel):
 
 
 class ClassInfo(BaseModel):
-    """Metadata for class."""
+    """Data for class.
+
+    Store name, doc, bases, tags, and methods.
+    """
 
     name: str
     docstring: str | None
@@ -45,7 +54,10 @@ class ClassInfo(BaseModel):
 
 
 class ModuleInfo(BaseModel):
-    """Metadata for parsed source module."""
+    """Data for parsed module.
+
+    Store path, doc, const, imports, classes, and funcs.
+    """
 
     path: Path
     relative_path: str
@@ -57,9 +69,9 @@ class ModuleInfo(BaseModel):
 
 
 class CodeStructureAnalyzer(BaseModel):
-    """Run AST static analysis and write markdown summary.
+    """Run AST scan and write markdown summary.
 
-    Reads project path, writes to output file or default path.
+    Read project path, write output file or default path.
     """
 
     project_path: DirectoryPath
@@ -69,7 +81,7 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def target_output_path(self) -> Path:
-        """Get output file path, fallback to project name."""
+        """Get output file path or fall back to name."""
         if self.output_file:
             return self.output_file
         project_name = self.project_path.resolve().name
@@ -77,38 +89,34 @@ class CodeStructureAnalyzer(BaseModel):
 
     @property
     def src_path(self) -> Path:
-        """Get src subfolder path."""
+        """Get src folder path."""
         return self.project_path / "src"
 
     def execute(self) -> int:
-        """Run analysis workflow and write markdown file.
+        """Run project analysis and write markdown file.
 
-        Returns 0 on success, 1 on error.
+        Return 0 on success, 1 on error. Write to disk.
         """
-        logger.info(
-            "Starting CodeStructureAnalyzer workflow execution for project path: [%s]",
-            self.project_path,
+        logger.start(
+            "code-structure-analyzer",
+            target=self.project_path,
+            folder=self.project_path,
         )
 
         if not self.src_path.exists() or not self.src_path.is_dir():
             logger.error(
-                "[src path missing] Required 'src' subfolder missing at target: [%s]",
                 self.src_path,
+                f"No 'src' folder at: {self.src_path}",
             )
             return 1
 
         modules = self._analyze_modules()
         if not modules:
-            logger.warning(
-                "[no modules found] No python modules found in [%s]",
-                self.src_path,
-            )
+            logger.warning(self.src_path, "No python modules found")
             return 1
 
         self._resolve_call_graphs(modules)
-        logger.info(
-            "Successfully resolved call graphs across analyzed modules.",
-        )
+        logger.progress(None, "Done call graphs across modules")
 
         markdown_content = self._generate_markdown(modules)
 
@@ -117,27 +125,25 @@ class CodeStructureAnalyzer(BaseModel):
             output_path.write_text(markdown_content, encoding="utf-8")
         except OSError:
             logger.exception(
-                "[file write error] Failed to write structure markdown to: [%s]",
                 output_path,
+                "Failed to write structure markdown",
+                full_path=True,
             )
             return 1
 
-        logger.info(
-            "Successfully generated markdown output at: [%s]",
-            output_path,
+        logger.progress(output_path, "Done markdown output", full_path=True)
+        logger.summary_line(
+            "Analyzer Summary:",
+            ["Modules Analyzed", "Target Output"],
+            [str(len(modules)), str(output_path)],
         )
-        logger.info(
-            "Workflow execution summary: Status=SUCCESS, ModulesAnalyzed=%d,"
-            " TargetOutput=%s",
-            len(modules),
-            output_path.name,
-        )
+        logger.end("code-structure-analyzer", target=self.project_path)
         return 0
 
     def _analyze_modules(self) -> list[ModuleInfo]:
         """Scan and parse python files in src folder.
 
-        Skips ignored dirs.
+        Skip ignore dirs and log parse errors.
         """
         modules: list[ModuleInfo] = []
         source_files = [
@@ -154,19 +160,13 @@ class CodeStructureAnalyzer(BaseModel):
             try:
                 tree = ast.parse(file_path.read_text(encoding="utf-8"))
             except Exception:
-                logger.exception(
-                    "[ast parse error] Failed to parse AST for file: [%s]",
-                    file_path,
-                )
+                logger.exception(file_path, "Failed to parse AST for file")
                 continue
 
             module_info = self._parse_ast_tree(tree, file_path, rel_path)
             modules.append(module_info)
 
-        logger.info(
-            "Successfully parsed [%03d] python modules from src folder.",
-            len(modules),
-        )
+        logger.progress(self.src_path, f"Parsed {len(modules):03d} python modules")
         return modules
 
     def _parse_ast_tree(
@@ -410,7 +410,7 @@ class CodeStructureAnalyzer(BaseModel):
         lines: list[str],
         indent: str = "",
     ) -> None:
-        """Append rendered docstring block to lines."""
+        """Add docstrings."""
         if docstring:
             for doc_line in docstring.strip().splitlines():
                 if doc_line.strip():
@@ -424,7 +424,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append module header and docstring."""
+        """Add module header and docstring."""
         lines.append(f"### Module: `{mod.relative_path}`")
         lines.append("")
         self._append_docstring(mod.docstring, lines, indent="")
@@ -434,7 +434,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append global constants block."""
+        """Add global constants block."""
         if mod.constants:
             lines.append("#### Global Constants")
             for c_name, c_val in mod.constants.items():
@@ -447,7 +447,7 @@ class CodeStructureAnalyzer(BaseModel):
         lines: list[str],
         indent: str = "",
     ) -> None:
-        """Append function details and metrics."""
+        """Add function details and metrics."""
         prefix = f"{indent}- "
         lines.append(f"{prefix}`{func.signature}`")
         lines.append("")
@@ -473,7 +473,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append classes and methods block."""
+        """Add classes and methods block."""
         if mod.classes:
             lines.append("#### Classes")
             for cls in mod.classes:
@@ -496,7 +496,7 @@ class CodeStructureAnalyzer(BaseModel):
         mod: ModuleInfo,
         lines: list[str],
     ) -> None:
-        """Append standalone functions block."""
+        """Add standalone functions block."""
         if mod.functions:
             lines.append("#### Functions")
             for func in mod.functions:
@@ -508,7 +508,7 @@ class CodeStructureAnalyzer(BaseModel):
         modules: list[ModuleInfo],
         lines: list[str],
     ) -> None:
-        """Append Mermaid dependency graph block."""
+        """Add Mermaid dependency graph block."""
         lines.append("## 📊 Module Dependency Graph")
         lines.append("")
         lines.append("```mermaid")
@@ -576,7 +576,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Extract functions, classes, signatures, and dependencies "
-            "from a project's src folder into an LLM-ready markdown document."
+            "from a project's src into an LLM-ready markdown document."
         ),
     )
     parser.add_argument(
@@ -584,7 +584,7 @@ def main() -> None:
         type=str,
         nargs="?",
         default=".",
-        help=("Path to the target project directory (default: current directory)"),
+        help=("Path to target project dir (default: current dir)"),
     )
     parser.add_argument(
         "-o",
@@ -592,17 +592,13 @@ def main() -> None:
         type=str,
         default=None,
         help=(
-            "Destination markdown file path "
+            "Target markdown file path "
             "(default: '[project_name]_structure.md' at project root)"
         ),
     )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    my_logger.setup()
 
     try:
         analyzer = CodeStructureAnalyzer(
@@ -611,9 +607,7 @@ def main() -> None:
         )
         status_code = analyzer.execute()
     except Exception:
-        logger.exception(
-            "[fatal error] Execution terminated due to validation breakdown",
-        )
+        logger.exception(None, "End. Failed due to validation breakdown")
         status_code = 1
 
     sys.exit(status_code)

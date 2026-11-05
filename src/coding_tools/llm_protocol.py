@@ -1,8 +1,10 @@
 # src/coding_tools/llm_protocol.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
+"""Protocols, base models, and errors for LLM wrappers.
 
-"""Define protocol, shared models, and exceptions for LLM wrappers."""
+Type rules and base errors for LLM tasks.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +17,17 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LLMError(Exception):
-    """Base exception for LLM errors."""
+    """Base class for LLM errors.
+
+    Root type for LLM API and client bugs.
+    """
 
 
 class LLMAPIError(LLMError):
-    """Agnostic API error mirroring provider failure details."""
+    """Neutral API error mirror for provider bugs.
+
+    Holds status code and error code from provider.
+    """
 
     def __init__(
         self,
@@ -27,13 +35,20 @@ class LLMAPIError(LLMError):
         status_code: int | None = None,
         error_code: str | None = None,
     ) -> None:
+        """Set up API error with code and text.
+
+        Saves status code and error code for debug.
+        """
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
 
 
-class LLMServerError(LLMError):
-    """Agnostic server error mirroring server failure and retryability."""
+class LLMClientError(LLMError):
+    """Neutral client error mirror for quota or bad request states.
+
+    Holds retry flag and status code.
+    """
 
     def __init__(
         self,
@@ -42,58 +57,74 @@ class LLMServerError(LLMError):
         *,
         retryable: bool = False,
     ) -> None:
+        """Set up client error with retry flag.
+
+        Saves retryable state and status code for client.
+        """
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
+
+
+class LLMServerError(LLMError):
+    """Neutral server error mirror for retry state.
+
+    Holds retry flag and status code.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        retryable: bool = False,
+    ) -> None:
+        """Set up server error with retry flag.
+
+        Saves retryable state and status code for server.
+        """
         super().__init__(message)
         self.status_code = status_code
         self.retryable = retryable
 
 
 class LLMResponse(BaseModel):
-    """Expected JSON structure for code generation LLMs."""
+    """Valid JSON schema for LLM output data.
+
+    Has message and edited files strings.
+    """
 
     message: str
-    code: str
+    edited_files: str
 
 
 @dataclass
-class StructuredGenerationOptions:
-    """Parameters for structured text generation."""
+class LLMCallParams:
+    """Data bag for LLM text gen params.
+
+    Holds schema, prefix, tool name, process step, and target file.
+    """
 
     response_schema: type[BaseModel]
     prefix: str
-    spinner_msg: str
-    system_instruction: str | None = None
-    cache_name: str | None = None
     tool_name: str = "generic-tool"
     process_step: str = "generation"
     target_file: str = "unknown.py"
-    start_date: str = "26-01-01"
-    llm_name: str = "generic-model"
 
 
 class LLMClientProtocol(Protocol):
-    """High-level operations for any LLM client."""
+    """Core rules for any LLM client adapter.
 
-    @property
-    def supports_caching(self) -> bool:
-        """Check whether client supports remote caching."""
-        ...
+    Async call method returning LLMResponse.
+    """
 
-    def generate_structured_response(
+    async def call(
         self,
-        contents_list: list[object],
-        options: StructuredGenerationOptions,
-    ) -> BaseModel:
-        """Get validated Pydantic model response from contents."""
-        ...
+        req: str,
+        params: LLMCallParams,
+    ) -> LLMResponse:
+        """Ask LLM API and check Pydantic model response.
 
-    def setup_cache(
-        self,
-        source_file_path: str,
-        prefix: str,
-    ) -> tuple[str | None, list[object]]:
-        """Set up optional file caching and return cache name and uploaded files."""
-        ...
-
-    def cleanup_files(self, files: list[object], prefix: str) -> None:
-        """Remove remote uploaded files."""
+        Async IO. Raises LLMError subclasses on fail.
+        """
         ...
