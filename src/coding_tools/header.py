@@ -41,7 +41,7 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
         raise ValueError(msg)
     new_txt = comment.strip_path_and_license(old_txt)
     new_info = (
-        f"{comment.comment(path.as_posix(), path.suffix)}"
+        f"{comment.path(path)}"
         f"{comment.spdx_copyright(run_output.root_dir, path.suffix)}"
         f"{comment.spdx_license(run_output.root_dir, path.suffix)}"
     )

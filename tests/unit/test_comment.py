@@ -80,6 +80,19 @@ def test_comment_and_head() -> None:
     assert comment_mod.is_comment_or_blank("code", ".unknown") is False
 
 
+def test_path_formatting() -> None:
+    """Test path function and _ruff_trigger handling."""
+    p = Path("src/import.py")
+    res = comment_mod.path(p)
+    assert "src/import.py" in res
+    assert "noqa: ERA001" in res
+
+    p_normal = Path("src/foo.py")
+    res_normal = comment_mod.path(p_normal)
+    assert "src/foo.py" in res_normal
+    assert "noqa: ERA001" not in res_normal
+
+
 def test_strip_functions() -> None:
     """Test stripping heads, paths, and licenses."""
     py_code = "# Header\n# SPDX-FileCopyrightText: 2026\n# src/foo.py\nprint('hi')"

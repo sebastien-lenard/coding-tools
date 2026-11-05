@@ -23,8 +23,8 @@ _PYTHON_HEAD = re.compile(
     # Skip shebang, encoding, and blank lines at the top
     r"[ \t]*#\![^\n]*\n?|[ \t]*#.*coding[=:][^\n]*\n?|[ \t]*\n"
     r")*"
-    # Get comment lines and blank lines between them
-    r"(?:[ \t]*#(?![\s!])(?![^\n]*coding[=:]).*?\n|[ \t]*\n)+",
+    # Get comment lines, allowing any chars (even multiple #) up to the newline
+    r"(?:[ \t]*#(?![:\s!])(?![^\n]*coding[=:]).*?\n|[ \t]*\n)+",
     flags=re.IGNORECASE,
 )
 
@@ -66,6 +66,13 @@ _PATH_AND_LICENSE = re.compile(
     r"#[ \t]*[^/\n]+(?:/[^/\n]+)*\.[a-zA-Z0-9]+)\r?\n?",
     flags=re.MULTILINE,
 )
+
+RUFF_TRIGGER = "import.py"
+RUFF_NOQA = " # noqa: ERA001"
+
+
+def _ruff_trigger(txt: str) -> bool:
+    return RUFF_TRIGGER in txt
 
 
 class HeaderState(Enum):
@@ -119,6 +126,16 @@ def is_comment_or_blank(txt: str, ext: str) -> bool:
     if (system := _EXT_SYSTEM.get(ext)) and (pat := _SYSTEM_CONFIG[system][1]):
         return all(pat.match(line) for line in txt.splitlines())
     return False
+
+
+def path(path: Path) -> str:
+    """Get comment for file path.
+
+    Handle case when file path comment may trigger Ruff warning (Include Noqa).
+    """
+    txt = path.as_posix()
+    txt = f"{txt}{RUFF_NOQA}" if _ruff_trigger(txt) else txt
+    return comment(txt, path.suffix)
 
 
 def spdx_copyright(base_dir: Path | str, ext: str) -> str:
