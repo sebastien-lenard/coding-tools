@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from coding_tools import gemini
 from coding_tools.gemini import (
     Gemini,
+    RetryParams,
     _rate_limit_throttle,
     clean_old_timestamps,
     llm_call,
@@ -77,11 +78,13 @@ def test_retry_llm_call_success(mock_llm_call: MagicMock) -> None:
         mock_llm_call.return_value = mock_resp
 
         res = await retry_llm_call(
-            client=mock_client,
-            req="request",
-            model="model",
-            config={},
-            prefix="TEST",
+            RetryParams(
+                client=mock_client,
+                req="request",
+                model="model",
+                config={},
+                prefix="TEST",
+            ),
         )
         assert res == mock_resp
 
@@ -107,11 +110,13 @@ def test_retry_llm_call_server_error_retryable(
             patch("google.genai.errors.ServerError", MockServerError),
         ):
             res = await retry_llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
+                RetryParams(
+                    client=mock_client,
+                    req="request",
+                    model="model",
+                    config={},
+                    prefix="TEST",
+                ),
             )
         assert res == mock_resp
 
@@ -140,11 +145,13 @@ def test_retry_llm_call_server_error_exhausted(
             pytest.raises(LLMServerError, match="Unavailable"),
         ):
             await retry_llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
+                RetryParams(
+                    client=mock_client,
+                    req="request",
+                    model="model",
+                    config={},
+                    prefix="TEST",
+                ),
             )
 
     asyncio.run(_run())
@@ -164,11 +171,13 @@ def test_retry_llm_call_non_503_server_error(mock_llm_call: MagicMock) -> None:
             pytest.raises(LLMServerError, match="Internal Error"),
         ):
             await retry_llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
+                RetryParams(
+                    client=mock_client,
+                    req="request",
+                    model="model",
+                    config={},
+                    prefix="TEST",
+                ),
             )
 
     asyncio.run(_run())
@@ -184,11 +193,13 @@ def test_retry_llm_call_generic_exception(mock_llm_call: MagicMock) -> None:
 
         with pytest.raises(Exception, match="General failure") as exc_info:
             await retry_llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
+                RetryParams(
+                    client=mock_client,
+                    req="request",
+                    model="model",
+                    config={},
+                    prefix="TEST",
+                ),
             )
         assert "General failure" in str(exc_info.value)
 
@@ -317,9 +328,8 @@ def test_llm_call_client_error_exhausted_no_message(
 class TestGemini:
     """Unit tests for Gemini class."""
 
-    @pytest.mark.usefixtures("_mock_client_cls")
     @patch("coding_tools.gemini.genai.Client")
-    def test_init_default(self) -> None:
+    def test_init_default(self, _mock_client_cls: MagicMock) -> None:
         """Test default initialization."""
         with patch(
             "coding_tools.conf.get_provider_mapping",
@@ -328,17 +338,15 @@ class TestGemini:
             adapter = Gemini()
             assert adapter.model_name == "gemini-3.5-flash-lite"
 
-    @pytest.mark.usefixtures("_mock_client_cls")
     @patch(
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
-    def test_init_custom(self) -> None:
+    def test_init_custom(self, _mock_client_cls: MagicMock) -> None:
         """Test custom initialization."""
         adapter = Gemini(model_name="custom-model")
         assert adapter.model_name == "custom-model"
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch("coding_tools.gemini.retry_llm_call")
     @patch(
@@ -347,7 +355,9 @@ class TestGemini:
     )
     def test_generate_structured_response_success(
         self,
+        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call successful execution."""
 
@@ -368,7 +378,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch("coding_tools.gemini.retry_llm_call")
     @patch(
@@ -377,7 +386,9 @@ class TestGemini:
     )
     def test_generate_structured_response_invalid_json(
         self,
+        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call handles invalid json / schema."""
 
@@ -399,7 +410,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_call", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch(
         "coding_tools.gemini.retry_llm_call",
@@ -411,6 +421,9 @@ class TestGemini:
     )
     def test_generate_structured_response_type_error(
         self,
+        _mock_client_cls: MagicMock,
+        _mock_retry: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call handles TypeError."""
 
@@ -427,7 +440,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_call", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch(
         "coding_tools.gemini.retry_llm_call",
@@ -439,6 +451,9 @@ class TestGemini:
     )
     def test_generate_structured_response_value_error(
         self,
+        _mock_client_cls: MagicMock,
+        _mock_retry: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call handles ValueError."""
 
@@ -455,7 +470,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_call", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch(
         "coding_tools.gemini.retry_llm_call",
@@ -467,6 +481,9 @@ class TestGemini:
     )
     def test_generate_structured_response_runtime_error(
         self,
+        _mock_client_cls: MagicMock,
+        _mock_retry: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call handles RuntimeError."""
 
@@ -483,7 +500,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     @patch("coding_tools.gemini.my_io.save_llm_req_resp")
     @patch("coding_tools.gemini.retry_llm_call")
     @patch(
@@ -492,7 +508,9 @@ class TestGemini:
     )
     def test_generate_structured_response_model_validate_error(
         self,
+        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
+        _mock_save: MagicMock,
     ) -> None:
         """Test call handles model_validate failure raising ValueError."""
 
@@ -515,7 +533,6 @@ class TestGemini:
 
         asyncio.run(_run())
 
-    @pytest.mark.usefixtures("_mock_client_cls", "_mock_conf")
     @patch(
         "coding_tools.conf.get_provider_mapping",
         return_value={"gemini": {}},
@@ -526,6 +543,8 @@ class TestGemini:
     )
     def test_init_default_fixture(
         self,
+        _mock_client_cls: MagicMock,
+        _mock_conf: MagicMock,
     ) -> None:
         """Test init default using mock."""
         adapter = Gemini()
@@ -662,11 +681,13 @@ def test_retry_llm_call_returns_resp_directly(mock_llm_call: MagicMock) -> None:
         mock_llm_call.return_value = mock_resp
 
         res = await retry_llm_call(
-            client=mock_client,
-            req="request",
-            model="model",
-            config={},
-            prefix="TEST",
+            RetryParams(
+                client=mock_client,
+                req="request",
+                model="model",
+                config={},
+                prefix="TEST",
+            ),
         )
         assert res == mock_resp
 
@@ -704,11 +725,13 @@ def test_max_retries_zero() -> None:
         mock_client = MagicMock()
         with patch("coding_tools.gemini._max_retries", return_value=0):
             res = await retry_llm_call(
-                client=mock_client,
-                req="request",
-                model="model",
-                config={},
-                prefix="TEST",
+                RetryParams(
+                    client=mock_client,
+                    req="request",
+                    model="model",
+                    config={},
+                    prefix="TEST",
+                ),
             )
             assert res is None
 

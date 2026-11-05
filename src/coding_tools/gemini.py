@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from google import genai
@@ -192,6 +193,7 @@ async def llm_call(
 
 class RetryParams(BaseModel):
     """Parameters for retry_llm_call."""
+
     client: Any
     req: str
     model: str
