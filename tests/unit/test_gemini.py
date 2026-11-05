@@ -329,7 +329,8 @@ class TestGemini:
     """Unit tests for Gemini class."""
 
     @patch("coding_tools.gemini.genai.Client")
-    def test_init_default(self, _mock_client_cls: MagicMock) -> None:
+    @pytest.mark.usefixtures("_mock_client_cls")
+    def test_init_default(self) -> None:
         """Test default initialization."""
         with patch(
             "coding_tools.conf.get_provider_mapping",
@@ -342,7 +343,8 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
-    def test_init_custom(self, _mock_client_cls: MagicMock) -> None:
+    @pytest.mark.usefixtures("_mock_client_cls")
+    def test_init_custom(self) -> None:
         """Test custom initialization."""
         adapter = Gemini(model_name="custom-model")
         assert adapter.model_name == "custom-model"
@@ -353,11 +355,10 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_success(
         self,
-        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call successful execution."""
 
@@ -384,11 +385,10 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_invalid_json(
         self,
-        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call handles invalid json / schema."""
 
@@ -419,11 +419,9 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_type_error(
         self,
-        _mock_client_cls: MagicMock,
-        _mock_retry: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call handles TypeError."""
 
@@ -449,11 +447,9 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_value_error(
         self,
-        _mock_client_cls: MagicMock,
-        _mock_retry: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call handles ValueError."""
 
@@ -479,11 +475,9 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_retry", "_mock_save")
     def test_generate_structured_response_runtime_error(
         self,
-        _mock_client_cls: MagicMock,
-        _mock_retry: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call handles RuntimeError."""
 
@@ -506,11 +500,10 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_save")
     def test_generate_structured_response_model_validate_error(
         self,
-        _mock_client_cls: MagicMock,
         mock_call: MagicMock,
-        _mock_save: MagicMock,
     ) -> None:
         """Test call handles model_validate failure raising ValueError."""
 
@@ -541,10 +534,9 @@ class TestGemini:
         "coding_tools.gemini.genai.Client",
         autospec=True,
     )
+    @pytest.mark.usefixtures("_mock_client_cls", "_mock_conf")
     def test_init_default_fixture(
         self,
-        _mock_client_cls: MagicMock,
-        _mock_conf: MagicMock,
     ) -> None:
         """Test init default using mock."""
         adapter = Gemini()
