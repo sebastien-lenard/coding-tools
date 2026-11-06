@@ -8,6 +8,7 @@ Uses std logging module. Filters text via BANNED_WORDS list.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import sys
 import threading
@@ -34,6 +35,11 @@ RED = "\x1b[31;20m"
 BOLD_RED = "\x1b[31;1m"
 RESET = "\x1b[0m"
 
+_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_ctx",
+    default=None,
+)
+
 
 class Verbose(Enum):
     """Log rank set. V for base info, VV for more data.
@@ -43,6 +49,19 @@ class Verbose(Enum):
 
     V = "Log warnings and main progress"
     VV = "Log details"
+
+
+@contextmanager
+def log_scope(**kwargs: object) -> Generator[None, None, None]:
+    """Yield log context scope, including extra."""
+    base = _ctx.get()
+    current = dict(base) if base else {}
+    current.update(kwargs)
+    token = _ctx.set(current)
+    try:
+        yield
+    finally:
+        _ctx.reset(token)
 
 
 def drop_pkg_name(mod_name: str) -> str:
@@ -93,8 +112,8 @@ def apply_templ_msg(record: logging.LogRecord) -> None:
     msg = "[FILE][STEP][LEG][TOOL][MSG][FUNC_NAME]"
     file = getattr(record, "file", None)
     file = Path(file) if file else ""
-    files_count = getattr(record, "files_count", None)
-    file = file.stem if file and files_count else ""
+    files_count = getattr(record, "files_count", 0)
+    file = file.stem if file and files_count > 1 else ""
     msg = msg.replace("[FILE]", f" {file}." if file else "")
 
     step = getattr(record, "step", None)
@@ -223,7 +242,10 @@ class ContextAdapter(logging.LoggerAdapter):
         kwargs: MutableMapping[str, Any],
     ) -> tuple[str, MutableMapping[str, Any]]:
         """Push extra new context info into the extra dict temporarily."""
-        extra = dict(self.extra) if self.extra else {}
+        base_ctx = _ctx.get()
+        extra = dict(base_ctx) if base_ctx is not None else {}
+        if self.extra:
+            extra.update(self.extra)
 
         call_extra = kwargs.get("extra")
         if isinstance(call_extra, dict):

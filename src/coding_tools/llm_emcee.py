@@ -179,17 +179,19 @@ async def _execute_chat_step(
             )
             run_output = replace(run_output, edited=EditState.EDITED)
             if step + 1 >= ctx.min_steps:
+                extra.update({"leg": "pass"})
                 logger.info(
                     "after {step + 1} steps",
-                    extra=extra.update({"leg": "pass"}),
+                    extra=extra,
                 )
                 return run_output, check_params, True
 
     except Exception:
         run_output = replace(run_output, status=RunState.FAIL, msg="Error")
+        extra.update({"leg": "fail"})
         logger.exception(
             "",
-            extra=extra.update({"leg": "fail"}),
+            extra=extra,
         )
 
     return run_output, check_params, False
@@ -270,11 +272,15 @@ async def run_chat(
     Calls chat async. Uses ctx.semaphore to cap tasks.
     """
     async with ctx.semaphore:
-        return await chat(
-            file_path,
-            ctx,
-            run_output,
-        )
+        with my_logger.log_scope(
+            file=file_path.name,
+            files_count=len(ctx.file_paths_to_edit),
+        ):
+            return await chat(
+                file_path,
+                ctx,
+                run_output,
+            )
 
 
 async def run(ctx: Context, run_outputs: list[RunOutput]) -> list[RunOutput]:

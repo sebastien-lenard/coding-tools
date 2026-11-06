@@ -15,7 +15,7 @@ from pathlib import Path
 from coding_tools import my_io, my_logger, my_path, my_string
 from coding_tools.my_run import EditState, RunOutput
 
-logger = my_logger.logger(__name__)
+logger = my_logger.get_logger(__name__)
 
 
 @dataclass
@@ -57,7 +57,7 @@ def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
     log_path_in_cmd = re.search("LOG_PATH", cmd)
     pattern = re.compile(r"\b(" + "|".join(map(re.escape, swaps.keys())) + r")\b")
     cmd = pattern.sub(lambda match: swaps[match.group(0)], cmd)
-    logger.progress(None, f"Run `{cmd}`")
+    logger.info("Run `%s`", cmd)
 
     result = subprocess.run(  # noqa: S603
         cmd.split(),
@@ -90,7 +90,7 @@ def run(cmd: str, params: CmdParams, run_output: RunOutput) -> RunOutput:
         else ""
     )
 
-    logger.end(params.func_name, msg)
+    logger.info(msg, extra={"leg": "end"})
     return replace(
         run_output,
         msg=msg,
