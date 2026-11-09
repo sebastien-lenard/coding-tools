@@ -133,6 +133,7 @@ def test_parse_args(monkeypatch: pytest.MonkeyPatch) -> None:
     assert parsed.tool == "my-tool"
     assert parsed.path == "some/path"
     assert parsed.test is True
+    assert parsed.verbose == 0
 
 
 def test_run_exception_handling(
@@ -151,6 +152,7 @@ def test_run_exception_handling(
             tool="my-tool",
             path=str(target),
             test=False,
+            verbose=0,
         ),
     )
 
@@ -186,6 +188,7 @@ def test_run_context_exception(monkeypatch: pytest.MonkeyPatch) -> None:
             tool="bad",
             path="",
             test=False,
+            verbose=0,
         ),
     )
     with pytest.raises(SystemExit) as exc_info:
@@ -211,6 +214,7 @@ def test_run_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             tool="my-tool",
             path=str(target),
             test=False,
+            verbose=0,
         ),
     )
 
@@ -227,7 +231,8 @@ def test_run_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     async def mock_llm_run(
-        ctx: lead.Context, outputs: list[RunOutput],
+        ctx: lead.Context,
+        outputs: list[RunOutput],
     ) -> list[RunOutput]:
         outputs[0].status = RunState.PASS
         outputs[0].input_path = None
@@ -248,6 +253,7 @@ def test_main_block(monkeypatch: pytest.MonkeyPatch) -> None:
             tool="bad",
             path="",
             test=False,
+            verbose=0,
         ),
     )
     with pytest.raises(SystemExit):

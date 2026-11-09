@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from coding_tools import my_io
-from coding_tools.my_logger import Verbose
+from coding_tools.log import Verbose
 
 
 def test_dummy() -> None:
@@ -19,6 +19,7 @@ def test_dummy() -> None:
 
 def test_save_llm_res_resp_error() -> None:
     """Test save_llm_req_resp with path error."""
+
     class BadPath:
         """Mock class that raises on fspath."""
 
@@ -35,7 +36,7 @@ def test_save_llm_res_resp_error() -> None:
             llm="test_llm",
             request="req",
             response="resp",
-            target_file=Path("bad.py"), # type: ignore[arg-type]
+            target_file=Path("bad.py"),  # type: ignore[arg-type]
         )
 
 

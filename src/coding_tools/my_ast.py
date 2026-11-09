@@ -12,10 +12,10 @@ import ast
 from dataclasses import replace
 from pathlib import Path
 
-from coding_tools import my_logger
+from coding_tools import log
 from coding_tools.my_run import RunOutput, RunState
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 class ASTNodeMapper(ast.NodeVisitor):
@@ -163,15 +163,14 @@ def match_codes(
 
     Fail if syntax error or code trees differ.
     """
-    func = f"{__name__}"
-    logger.start(func)
+    logger.info("", extra={"leg": "start"})
     try:
         orig_tree = ast.parse(old_code)
         new_tree = ast.parse(new_code)
     except SyntaxError:
         msg = "Bad code syntax (failed scan)"
-        logger.exception(None, msg)
-        return replace(run_output, status=RunState.FAIL, sub_func=func, msg=msg)
+        logger.exception(msg)
+        return replace(run_output, status=RunState.FAIL, sub_func=__name__, msg=msg)
 
     del_docstrings(orig_tree)
     del_docstrings(new_tree)
@@ -181,11 +180,11 @@ def match_codes(
 
     if orig_normalized != new_normalized:
         msg = "Spotted code edits"
-        logger.warning(None, msg)
-        return replace(run_output, status=RunState.FAIL, sub_func=func, msg=msg)
+        logger.warning(msg)
+        return replace(run_output, status=RunState.FAIL, sub_func=__name__, msg=msg)
 
-    logger.end(func)
-    return replace(run_output, status=RunState.PASS, sub_func=func, msg="")
+    logger.info("", extra={"leg": "end"})
+    return replace(run_output, status=RunState.PASS, sub_func=__name__, msg="")
 
 
 def uncov_map(
@@ -203,7 +202,7 @@ def uncov_map(
     try:
         tree = ast.parse(src_path.read_text(encoding="utf-8"))
     except SyntaxError:
-        logger.exception(src_path, "Failed to parse source AST for mapping")
+        logger.exception("Failed to parse source AST for mapping %s", src_path)
         return {}
 
     mapper = ASTNodeMapper(uncov_lines)

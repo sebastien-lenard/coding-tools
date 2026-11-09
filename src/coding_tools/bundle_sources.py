@@ -17,9 +17,9 @@ from pydantic import BaseModel, DirectoryPath
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-from coding_tools import my_logger
+from coding_tools import log
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 class SourceBundler(BaseModel):
@@ -55,17 +55,11 @@ class SourceBundler(BaseModel):
         False if src folder missing, subprocess fail, or write error. Uses uvx
         and files-to-prompt. Writes to disk with utf-8 encoding. Needs internet/uvx.
         """
-        logger.start(
-            "bundle-sources",
-            target=self.project_path,
-            folder=self.project_path,
-        )
+        extra = {"tool": "bundle_sources", "leg": "start"}
+        logger.info("for %s", self.project_path, extra=extra)
 
         if not self.src_path.exists() or not self.src_path.is_dir():
-            logger.error(
-                self.src_path,
-                f"Missing src subfolder: {self.src_path}",
-            )
+            logger.error("Missing src subfolder: %s", self.src_path)
             return False
 
         output_path = self.target_output_path
@@ -75,11 +69,10 @@ class SourceBundler(BaseModel):
         try:
             combined_content = self._run_files_to_prompt()
         except subprocess.CalledProcessError:
-            logger.exception(None, "Failed files-to-prompt run")
+            logger.exception("Failed files-to-prompt run")
             return False
         except FileNotFoundError:
             logger.exception(
-                None,
                 "Missing 'uvx' or 'files-to-prompt' commands / available in PATH.",
             )
             return False
@@ -87,11 +80,12 @@ class SourceBundler(BaseModel):
         try:
             output_path.write_text(combined_content, encoding="utf-8")
         except OSError:
-            logger.exception(output_path, "Failed output writing")
+            logger.exception("Failed output writing %s", output_path)
             return False
 
-        logger.progress(output_path, "Bundled code", f"to {output_path.name}")
-        logger.end("bundle-sources", target=self.project_path)
+        logger.info("Bundled code to %s", output_path)
+        extra.update({"leg": "end"})
+        logger.info("", extra=extra)
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
@@ -100,10 +94,7 @@ class SourceBundler(BaseModel):
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
-                logger.exception(
-                    output_base_dir,
-                    "Bad target path",
-                )
+                logger.exception("Bad target path %s", output_base_dir)
                 return False
         return True
 
@@ -136,7 +127,7 @@ class SourceBundler(BaseModel):
                 "files-to-prompt",
                 *[str(p) for p in source_files],
             ]
-            logger.progress(None, "Scan source files", f"count={len(source_files)}")
+            logger.info("Scan source files, count=%s", len(source_files))
             result_src = subprocess.run(  # noqa: S603
                 cmd_src,
                 capture_output=True,
@@ -156,7 +147,7 @@ class SourceBundler(BaseModel):
         for file_rel_path in optional_files:
             target_file = self.project_path / file_rel_path
             if target_file.exists() and target_file.is_file():
-                logger.progress(file_rel_path, "Include optional file")
+                logger.info("Include optional file %s", file_rel_path)
                 cmd_file = [
                     "uvx",
                     "files-to-prompt",
@@ -171,7 +162,7 @@ class SourceBundler(BaseModel):
                 )
                 accumulated_output += result_file.stdout
             else:
-                logger.progress(file_rel_path, "Skipped optional file (not found)")
+                logger.info("Skipped optional file (not found) %s", file_rel_path)
 
         return accumulated_output
 
@@ -207,7 +198,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    my_logger.setup()
+    log.setup()
 
     try:
         bundler = SourceBundler(
@@ -217,7 +208,7 @@ def main() -> None:
         )
         success = bundler.execute()
     except Exception:
-        logger.exception(None, "End due to check breakdown")
+        logger.exception("End due to check breakdown")
         success = False
 
     sys.exit(0 if success else 1)

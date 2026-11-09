@@ -208,7 +208,7 @@ def test_retry_llm_call_generic_exception(monkeypatch: pytest.MonkeyPatch) -> No
 def test_llm_call_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call handling ClientError (e.g. 429)."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -234,7 +234,7 @@ def test_llm_call_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_llm_call_client_error_non_429(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call handling ClientError with code other than 429."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -295,7 +295,7 @@ def test_llm_call_client_error_exhausted_no_message(
 ) -> None:
     """Test llm_call handling ClientError without message attribute."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -555,7 +555,7 @@ def test_should_sleep_false_branch(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_llm_call_server_error_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMServerError on 503 ServerError."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -582,7 +582,7 @@ def test_llm_call_server_error_503(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_llm_call_server_error_non_503(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMServerError with retryable False when code is not 503."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -609,7 +609,7 @@ def test_llm_call_server_error_non_503(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_llm_call_returns_resp_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call returns resp.parsed on success."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()
@@ -658,7 +658,7 @@ def test_retry_llm_call_returns_resp_directly(monkeypatch: pytest.MonkeyPatch) -
 def test_llm_call_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test llm_call raises LLMAPIError on APIError or general Exception."""
     mock_logger_run_spin = MagicMock()
-    monkeypatch.setattr("coding_tools.gemini.logger.run_spin", mock_logger_run_spin)
+    monkeypatch.setattr("coding_tools.gemini.log.run_spin", mock_logger_run_spin)
 
     async def _run() -> None:
         mock_client = MagicMock()

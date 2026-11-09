@@ -5,16 +5,17 @@
 
 Checks and fixes py files. Log output saved to file. Uses uv run ruff check --fix.
 """
+
 import re
 import subprocess
 from dataclasses import replace
 from pathlib import Path
 
-from coding_tools import my_logger, my_path, my_subprocess
+from coding_tools import log, my_path, my_subprocess
 from coding_tools.my_run import EditState, RunOutput, RunState
 from coding_tools.my_subprocess import CmdParams
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 FIXED_MSG = r"Found \d+ errors \(\d+ fixed"
 FUNC_NAME = "Ruff"
@@ -92,7 +93,7 @@ def no_docstring_files(path: Path | str) -> list[Path]:
         "--output-format github",
     ]
     cmd_str = " ".join(cmd_list)
-    logger.progress(None, f"Run `{cmd_str}`")
+    logger.info("Run `%s`", cmd_str)
 
     txt = subprocess.run(  # noqa: S603
         cmd_list,

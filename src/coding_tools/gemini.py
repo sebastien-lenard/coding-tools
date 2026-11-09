@@ -20,7 +20,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
-from coding_tools import conf, llm_protocol, my_io, my_logger, my_string
+from coding_tools import conf, llm_protocol, log, my_io
 from coding_tools.llm_protocol import LLMAPIError, LLMClientError, LLMServerError
 
 if TYPE_CHECKING:
@@ -39,7 +39,7 @@ RATE_LIMIT_LOCK = asyncio.Lock()
 T = TypeVar("T", bound=BaseModel)
 
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 def _max_requests_per_minute() -> int:
@@ -145,7 +145,7 @@ async def llm_call(
     await _rate_limit_throttle()
     resp: genai.types.GenerateContentResponse | None = None
     try:
-        with logger.run_spin("Call LLM", my_string.my_str(prefix)):
+        with log.run_spin(logger, "Call LLM"):
             resp = client.models.generate_content(
                 model=model,
                 contents=req,
@@ -156,10 +156,7 @@ async def llm_call(
     except genai.errors.ServerError as e:
         if e.code == HTTP_SERVICE_UNAVAILABLE:
             this_msg = "Failed. HTTP 503"
-            logger.exception(
-                prefix,
-                this_msg,
-            )
+            logger.exception(this_msg)
         msg = getattr(e, "message", None) or str(e)
         raise LLMServerError(
             message=msg,
@@ -169,10 +166,7 @@ async def llm_call(
     except genai.errors.ClientError as e:
         if e.code == _resource_exhausted():
             this_msg = "Failed. 429 RESOURCE_EXHAUSTED"
-            logger.exception(
-                prefix,
-                this_msg,
-            )
+            logger.exception(this_msg)
         msg = getattr(e, "message", None) or str(e)
         raise LLMClientError(
             message=msg,
@@ -181,7 +175,7 @@ async def llm_call(
     except (genai.errors.APIError, Exception) as e:
         this_msg = "Failed Gemini API exchanges"
         msg = getattr(e, "message", None) or str(e) or this_msg
-        logger.exception(prefix, this_msg)
+        logger.exception(this_msg)
         raise LLMAPIError(
             message=msg,
             status_code=getattr(e, "code", None),
@@ -223,16 +217,17 @@ async def retry_llm_call(
             retry, sleep_time = should_retry(e.status_code, _try)
             if retry:
                 logger.warning(
-                    params.prefix,
-                    f"Bad reply http 503. Retry in {sleep_time}s "
-                    f"(Try {_try + 1}/{_max_retries()})...",
+                    "Bad reply http 503. Retry in %ss (Try %d/%d)...",
+                    sleep_time,
+                    _try + 1,
+                    _max_retries(),
                 )
                 await params.sleep_func(sleep_time)
                 continue
-            logger.exception(params.prefix, "Failed tries to bypass http 503")
+            logger.exception("Failed tries to bypass http 503")
             raise
         except (LLMAPIError, LLMClientError, Exception):
-            logger.exception(params.prefix, "Failed LLM API exchanges")
+            logger.exception("Failed LLM API exchanges")
             raise
         else:
             break

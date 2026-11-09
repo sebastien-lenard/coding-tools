@@ -12,10 +12,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from coding_tools import my_io, my_logger, my_path, my_string
+from coding_tools import log, my_io, my_path, my_string
 from coding_tools.my_run import EditState, RunOutput
 
-logger = my_logger.get_logger(__name__)
+logger = log.logger(__name__)
 
 
 @dataclass

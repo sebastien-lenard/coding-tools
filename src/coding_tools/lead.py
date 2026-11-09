@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from coding_tools import conf, llm_emcee, my_import, my_io, my_logger, my_path
+from coding_tools import conf, llm_emcee, log, my_import, my_io, my_path
 from coding_tools.conf import ToolConf
 from coding_tools.llm_emcee import Context
 from coding_tools.llm_protocol import LLMAPIError, LLMClientError, LLMServerError
@@ -29,7 +29,7 @@ TEMPLATE_PATH: Final[Path] = Path("conf/templates/improve.md")
 TOOLS: Final[dict[str, ToolConf]] = conf.tools()
 
 
-logger = my_logger.get_logger(__name__)
+logger = log.logger(__name__)
 
 
 def context(args: argparse.Namespace) -> tuple[Context, list[RunOutput]]:
@@ -169,7 +169,7 @@ async def run() -> None:
     args = parse_args()
     logger.info("", extra={"leg": "start", "tool": args.tool})
 
-    my_logger.set_level(logging.getLogger(), args.verbose)
+    log.set_level(logging.getLogger(), args.verbose)
     try:
         ctx, run_outputs = context(args)
     except Exception as e:
@@ -186,7 +186,7 @@ async def run() -> None:
         logging.getLogger().setLevel(logging.INFO)
         logger.info(
             "\n%s",
-            my_logger.summary_table(
+            log.summary_table(
                 f"{args.tool.capitalize()} Summary",
                 {
                     "input_path": SUMMARY_HEADERS[0],
@@ -211,7 +211,7 @@ async def run() -> None:
     logging.getLogger().setLevel(logging.INFO)
     logger.info(
         "\n%s",
-        my_logger.summary_table(
+        log.summary_table(
             f"{args.tool.capitalize()} Summary",
             {
                 "input_path": SUMMARY_HEADERS[0],
@@ -234,7 +234,7 @@ def main() -> None:
 
     Sets up logger and runs async run function.
     """
-    my_logger.setup()
+    log.setup()
     asyncio.run(run())
 
 

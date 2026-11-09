@@ -13,9 +13,9 @@ from coding_tools.conf import get_default_model, get_provider_mapping
 if TYPE_CHECKING:
     from coding_tools.llm_protocol import LLMClientProtocol
 
-from coding_tools import my_logger
+from coding_tools import log
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
@@ -41,5 +41,5 @@ def get_llm_client(model_name: str | None = None) -> LLMClientProtocol:
             return adapter_class(model_name=target_model)
 
     msg = f"Unsupported LLM model or model not found in provider config: {target_model}"
-    logger.error(None, msg)
+    logger.error(msg)
     raise ValueError(msg)

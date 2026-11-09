@@ -76,7 +76,7 @@ def test_bundler_executes_successfully_default_output(
 
     expected_output = proj["project_dir"] / "src_files.txt"
     assert expected_output.exists()
-    assert "Start bundle-sources" in caplog.text
+    assert "Start bundle_sources" in caplog.text
     assert "Include optional file" in caplog.text
 
 

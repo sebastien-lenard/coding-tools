@@ -14,10 +14,10 @@ from enum import Enum
 from pathlib import Path
 from typing import cast
 
-from coding_tools import conf, my_ast, my_io, my_logger, my_path
+from coding_tools import conf, log, my_ast, my_io, my_path
 from coding_tools.my_run import RunOutput, RunState
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 class CovState(Enum):
@@ -59,7 +59,7 @@ def _read(path: Path, err_msg: str, *, lines: bool = True) -> list[str] | str:
             else my_io.read_txt(path, header=False)
         )
     except (FileNotFoundError, RuntimeError, ValueError) as e:
-        logger.exception(None, err_msg)
+        logger.exception(err_msg)
         raise RuntimeError(err_msg) from e
 
 
@@ -106,7 +106,7 @@ def issues(
     try:
         cov_path = my_path.pytest_cov_path(src_file_path)
     except RuntimeError as e:
-        logger.warning(None, str(e))
+        logger.warning(str(e))
         return uncov_lines, branch_notes, CovState.MISSING, RunState.FAIL
     try:
         ann_lines = _read(
@@ -117,7 +117,7 @@ def issues(
             ),
         )
     except RuntimeError as e:
-        logger.warning(None, str(e))
+        logger.warning(str(e))
         return uncov_lines, branch_notes, CovState.MISSING, RunState.FAIL
 
     for idx, line in enumerate(ann_lines):
@@ -128,11 +128,10 @@ def issues(
     if not uncov_lines and not branch_notes:
         cov_status = CovState.FULL
         status = RunState.PASS
-        logger.progress(
-            None,
-            "Spotted coverage issues",
-            f"uncovered statements: {len(uncov_lines)}, branch notes: "
-            f"{len(branch_notes)}",
+        logger.info(
+            "Spotted coverage issues, uncovered statements: %s, branch notes: %s",
+            len(uncov_lines),
+            len(branch_notes),
         )
     else:
         cov_status = CovState.PARTLY
@@ -281,7 +280,7 @@ def run(src_file_path: Path | str, run_output: RunOutput) -> RunOutput:
     Gets issues, formats statements and branches, updates run output. Returns RunOutput.
     """
     func = f"{__name__}"
-    logger.start(func, target=src_file_path)
+    logger.info("%s", src_file_path, extra={"leg": "start"})
 
     uncovered_lines, branch_notes, cov_status, status = issues(src_file_path)
     if status == RunState.PASS:
@@ -295,7 +294,7 @@ def run(src_file_path: Path | str, run_output: RunOutput) -> RunOutput:
     brief_parts = [p for p in [stmt_brief, branch_brief] if p]
     brief = "\n\n".join(brief_parts)
 
-    logger.end(func, target=src_file_path)
+    logger.info("%s", src_file_path, extra={"leg": "end"})
     return replace(
         run_output,
         brief=brief,

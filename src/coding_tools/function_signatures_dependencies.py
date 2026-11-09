@@ -20,9 +20,9 @@ from pydantic import BaseModel, DirectoryPath
 # Force Python into UTF-8 mode on Windows
 os.environ["PYTHONUTF8"] = "1"
 
-from coding_tools import my_logger
+from coding_tools import log
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 class FunctionInfo(BaseModel):
@@ -97,26 +97,20 @@ class CodeStructureAnalyzer(BaseModel):
 
         Return 0 on success, 1 on error. Write to disk.
         """
-        logger.start(
-            "code-structure-analyzer",
-            target=self.project_path,
-            folder=self.project_path,
-        )
+        extra = {"tool": "code-structure-analyzer", "leg": "start"}
+        logger.info("for %s", self.project_path, extra=extra)
 
         if not self.src_path.exists() or not self.src_path.is_dir():
-            logger.error(
-                self.src_path,
-                f"No 'src' folder at: {self.src_path}",
-            )
+            logger.error("No 'src' folder at: %s", self.src_path)
             return 1
 
         modules = self._analyze_modules()
         if not modules:
-            logger.warning(self.src_path, "No python modules found")
+            logger.warning("No python modules found for %s", self.src_path)
             return 1
 
         self._resolve_call_graphs(modules)
-        logger.progress(None, "Done call graphs across modules")
+        logger.info("Done call graphs across modules")
 
         markdown_content = self._generate_markdown(modules)
 
@@ -124,20 +118,17 @@ class CodeStructureAnalyzer(BaseModel):
         try:
             output_path.write_text(markdown_content, encoding="utf-8")
         except OSError:
-            logger.exception(
-                output_path,
-                "Failed to write structure markdown",
-                full_path=True,
-            )
+            logger.exception("Failed to write structure markdown %s", output_path)
             return 1
 
-        logger.progress(output_path, "Done markdown output", full_path=True)
-        logger.summary_line(
+        logger.info("Done markdown output %s", output_path)
+        log.summary_line(
             "Analyzer Summary:",
             ["Modules Analyzed", "Target Output"],
             [str(len(modules)), str(output_path)],
         )
-        logger.end("code-structure-analyzer", target=self.project_path)
+        extra.update({"leg": "end"})
+        logger.info("", extra=extra)
         return 0
 
     def _analyze_modules(self) -> list[ModuleInfo]:
@@ -160,13 +151,13 @@ class CodeStructureAnalyzer(BaseModel):
             try:
                 tree = ast.parse(file_path.read_text(encoding="utf-8"))
             except Exception:
-                logger.exception(file_path, "Failed to parse AST for file")
+                logger.exception("Failed to parse AST for file %s", file_path)
                 continue
 
             module_info = self._parse_ast_tree(tree, file_path, rel_path)
             modules.append(module_info)
 
-        logger.progress(self.src_path, f"Parsed {len(modules):03d} python modules")
+        logger.info("Parsed %d python modules for %s", len(modules), self.src_path)
         return modules
 
     def _parse_ast_tree(
@@ -598,7 +589,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    my_logger.setup()
+    log.setup()
 
     try:
         analyzer = CodeStructureAnalyzer(
@@ -607,7 +598,7 @@ def main() -> None:
         )
         status_code = analyzer.execute()
     except Exception:
-        logger.exception(None, "End. Failed due to validation breakdown")
+        logger.exception("End. Failed due to validation breakdown")
         status_code = 1
 
     sys.exit(status_code)

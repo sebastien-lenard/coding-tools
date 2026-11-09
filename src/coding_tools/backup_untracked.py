@@ -17,9 +17,9 @@ from typing import ClassVar
 
 from pydantic import BaseModel, DirectoryPath
 
-from coding_tools import my_logger
+from coding_tools import log
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 class UntrackedBackupManager(BaseModel):
@@ -44,15 +44,15 @@ class UntrackedBackupManager(BaseModel):
         Return True if pass, False on miss conf or IO err. File write access.
         """
         if self.verbose:
-            # Verbose setting handled via central config or level if needed
             pass
-
-        logger.start("backup", target=self.project_path, folder=self.project_path)
+        extra = {"tool": "backup_untracked", "leg": "start"}
+        logger.info("backup of %s", self.project_path, extra=extra)
 
         if not self.config_file_path.exists():
             logger.error(
+                "No conf: %s for project %s",
+                self.config_file_path,
                 self.project_path,
-                f"No conf: {self.config_file_path}",
             )
             return False
 
@@ -66,19 +66,16 @@ class UntrackedBackupManager(BaseModel):
             return False
 
         backup_target_dir = self._get_backup_target_dir(output_base_dir)
-        logger.progress(self.project_path, "Start backup", str(backup_target_dir))
+        logger.info("Start backup %s to %s", self.project_path, str(backup_target_dir))
         success_count = 0
 
         for item_str in items_to_backup:
             if self._copy_item(item_str, backup_target_dir):
                 success_count += 1
 
-        logger.progress(
-            self.project_path,
-            "End backup",
-            f"Saved {success_count} items",
-        )
-        logger.end("backup", target=self.project_path)
+        logger.info("End backup. Saved %s items", success_count)
+        extra.update({"leg": "end"})
+        logger.info("", extra=extra)
         return True
 
     def _ensure_output_dir(self, output_base_dir: Path) -> bool:
@@ -90,10 +87,7 @@ class UntrackedBackupManager(BaseModel):
             try:
                 output_base_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
-                logger.exception(
-                    self.project_path,
-                    "Bad output path",
-                )
+                logger.exception("Bad output path %s", output_base_dir)
                 return False
         return True
 
@@ -111,7 +105,7 @@ class UntrackedBackupManager(BaseModel):
         source_item = self.project_path / clean_item_str
 
         if not source_item.exists():
-            logger.warning(clean_item_str, "Skipped (Not Found)")
+            logger.warning("Skipped (Not Found) %s", clean_item_str)
             return False
 
         destination_path = backup_target_dir / clean_item_str
@@ -120,19 +114,16 @@ class UntrackedBackupManager(BaseModel):
             if source_item.is_file():
                 destination_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source_item, destination_path)
-                logger.progress(clean_item_str, "Copied")
+                logger.info("Copied %s", clean_item_str)
             elif source_item.is_dir():
                 shutil.copytree(
                     source_item,
                     destination_path,
                     dirs_exist_ok=True,
                 )
-                logger.progress(clean_item_str, "Copied")
+                logger.info("Copied %s", clean_item_str)
         except (PermissionError, shutil.Error):
-            logger.exception(
-                clean_item_str,
-                "Failed copy",
-            )
+            logger.exception("Failed copy %s", clean_item_str)
             return False
         else:
             return True
@@ -150,13 +141,14 @@ class UntrackedBackupManager(BaseModel):
                 if (cleaned := line.strip()) and not cleaned.startswith("#")
             ]
         except (PermissionError, FileNotFoundError):
-            logger.exception(self.project_path, "Failed reading conf")
+            logger.exception("Failed reading conf of %s", self.project_path)
             return None
 
         if not lines:
             logger.error(
+                "Empty conf: %s for %s",
+                self.config_file_path,
                 self.project_path,
-                f"Empty conf: {self.config_file_path}",
             )
             return None
 
@@ -187,7 +179,7 @@ def main() -> None:
         help="Verbose",
     )
     args = parser.parse_args()
-    my_logger.setup()
+    log.setup()
 
     try:
         manager = UntrackedBackupManager(
@@ -196,7 +188,7 @@ def main() -> None:
         )
         success = manager.execute()
     except Exception:
-        logger.exception(None, "End due to check breakdown")
+        logger.exception("End due to check breakdown")
         success = False
 
     sys.exit(0 if success else 1)

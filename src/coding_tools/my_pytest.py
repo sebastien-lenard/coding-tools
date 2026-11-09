@@ -13,11 +13,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
-from coding_tools import my_logger, my_path, my_subprocess
+from coding_tools import log, my_path, my_subprocess
 from coding_tools.my_run import EditState, RunOutput, RunState
 from coding_tools.my_subprocess import CmdParams
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 COVERAGE_HEADER: Final[str] = "tests coverage"
 SUMMARY_HEADER: Final[str] = "short test summary info"

@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-from coding_tools import conf, llm_protocol, llm_router, my_io, my_logger, my_path
+from coding_tools import conf, llm_protocol, llm_router, log, my_io, my_path
 from coding_tools.check import CheckParams, default_check_func
-from coding_tools.my_logger import Verbose
+from coding_tools.log import Verbose
 from coding_tools.my_run import EditState, RunOutput, RunState
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ MIN_STEPS = 1
 PARALLEL_CALLS = 2
 
 
-logger = my_logger.get_logger(__name__)
+logger = log.logger(__name__)
 
 
 @dataclass
@@ -272,7 +272,7 @@ async def run_chat(
     Calls chat async. Uses ctx.semaphore to cap tasks.
     """
     async with ctx.semaphore:
-        with my_logger.log_scope(
+        with log.log_scope(
             file=file_path.name,
             files_count=len(ctx.file_paths_to_edit),
         ):

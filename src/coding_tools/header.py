@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from coding_tools import comment, my_io, my_logger, my_path, my_string, txt
+from coding_tools import comment, log, my_io, my_path, my_string, txt
 from coding_tools.my_run import EditState, RunOutput, RunState
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 MAX_STEPS = 10
 MIN_STEPS = 1
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:

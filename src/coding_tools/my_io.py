@@ -10,10 +10,10 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from coding_tools import comment, my_logger, my_path
-from coding_tools.my_logger import Verbose
+from coding_tools import comment, log, my_path
+from coding_tools.log import Verbose
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 def read_lines(path: Path | str, *, header: bool = True) -> list[str]:
@@ -50,14 +50,14 @@ def read_txt(path: Path | str, *, header: bool = True, raise_err: bool = True) -
         txt = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as e:
         msg = f"No file (or corrupted) {path}"
-        logger.exception(None, msg)
+        logger.exception(msg)
         if raise_err:
             raise RuntimeError(msg) from e
     if not header:
         txt = comment.strip_head(txt)
     if not txt:
         msg = f"Empty file {path}"
-        logger.error(None, msg)
+        logger.error(msg)
         if raise_err:
             raise ValueError(msg)
     return txt
@@ -85,15 +85,9 @@ def save_llm_req_resp(
             f"***Request***\n-------\n{request}\n\n***Response***\n-------\n{response}"
         )
         write_txt(txt, log_path)
-        logger.progress(
-            target_file,
-            f"Done. LLM output file: {log_path}",
-        )
+        logger.info(". LLM output file: %s", log_path, extra={"leg": "pass"})
     except Exception:
-        logger.exception(
-            target_file,
-            "End. Failed to write LLM log",
-        )
+        logger.exception("to write LLM log", extra={"leg": "fail"})
 
 
 def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
@@ -106,7 +100,7 @@ def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
         old_txt = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         if verbose == Verbose.VV:
-            logger.progress(None, f"No previous file (or previous corrupted) {path}")
+            logger.info("No previous file (or previous corrupted) %s", path)
     else:
         old_lines = old_txt.splitlines(keepends=True)
         new_lines = txt.splitlines(keepends=True)
@@ -120,10 +114,10 @@ def write_txt(txt: str, path: Path | str, verbose: Verbose = Verbose.V) -> None:
         )
         if diff:
             if verbose == Verbose.VV:
-                logger.progress(None, f"Diff:\n{''.join(diff)}")
+                logger.info("Diff:\n%s", "".join(diff))
             Path(path).write_text(txt, encoding="utf-8")
-            logger.end(f"Txt saved to {path}")
+            logger.info("Txt saved to %s", path, extra={"leg": "end"})
             return
 
     Path(path).write_text(txt, encoding="utf-8")
-    logger.end(f"Txt saved to {path}")
+    logger.info("Txt saved to %s", path, extra={"leg": "end"})

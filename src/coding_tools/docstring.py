@@ -12,8 +12,8 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from coding_tools import (
+    log,
     my_ast,
-    my_logger,
 )
 from coding_tools.my_run import RunOutput, RunState
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 MAX_STEPS = 2
 MIN_STEPS = 2
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 
 def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
@@ -35,11 +35,11 @@ def check(params: CheckParams, run_output: RunOutput) -> RunOutput:
     func = __name__
     if not params.old_txt:
         msg = "Empty original text"
-        logger.warning(func, msg)
+        logger.warning(msg)
         return replace(run_output, status=RunState.FAIL, msg=f"{func} - {msg}")
     if not params.new_txt:
         msg = "Empty new text"
-        logger.warning(func, msg)
+        logger.warning(msg)
         return replace(run_output, status=RunState.FAIL, msg=f"{func} - {msg}")
     run_output = my_ast.match_codes(
         str(params.old_txt),

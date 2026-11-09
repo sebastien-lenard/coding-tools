@@ -13,9 +13,9 @@ import re
 from pathlib import Path
 from typing import Any, TypedDict
 
-from coding_tools import my_io, my_logger, my_path
+from coding_tools import log, my_io, my_path
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 CONF_FOLDER = "conf"
 EXAMPLE_EXT = ".example"
@@ -81,7 +81,7 @@ def load_llm_config() -> dict[str, Any]:
     if not config_path.exists():
         example_path = Path("conf/params/llms.jsonc.example")
         if example_path.exists():
-            logger.progress(config_path, "Missing conf, copying from example")
+            logger.info("Missing conf %s, copying from example", config_path)
             config_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 config_path.write_text(
@@ -89,24 +89,24 @@ def load_llm_config() -> dict[str, Any]:
                     encoding="utf-8",
                 )
             except OSError:
-                logger.exception(config_path, "Failed to copy conf")
+                logger.exception("Failed to copy conf %s", config_path)
                 raise
         else:
             msg = "Missing LLM conf file and example."
-            logger.error(config_path, msg)
+            logger.error("%s %s", msg, config_path)
             raise FileNotFoundError(msg)
 
     try:
         raw_content = config_path.read_text(encoding="utf-8")
     except OSError:
-        logger.exception(config_path, "Failed to read conf")
+        logger.exception("Failed to read conf %s", config_path)
         raise
 
     clean_json = _strip_jsonc_comments(raw_content)
     try:
         return json.loads(clean_json)
     except json.JSONDecodeError:
-        logger.exception(config_path, "Failed to parse JSONC")
+        logger.exception("Failed to parse JSONC. %s", config_path)
         raise
 
 

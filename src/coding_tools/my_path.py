@@ -12,9 +12,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from coding_tools import my_io, my_logger, my_string, my_time
+from coding_tools import log, my_io, my_string, my_time
 
-logger = my_logger.logger(__name__)
+logger = log.logger(__name__)
 
 CONFTEST_FILE_PATH = "tests/conftest.py"
 COVERAGE_ANNOTATIONS_DIR = ".coverage_annotations"
@@ -82,9 +82,9 @@ def files(path: list[Path | str] | Path | str, ext: str | None = ".py") -> list[
 
     this_ext = "file(s)" if not ext else f"{ext} "
     if not out_files:
-        logger.warning(func, f"No file at {path}")
+        logger.warning("No file at %s", path)
     else:
-        logger.progress(func, f"Got {len(out_files)} {this_ext} at: {path}")
+        logger.info("Got %d %s at: %s", len(out_files), this_ext, path)
 
     return sorted(set(out_files))
 
@@ -126,7 +126,7 @@ def ensure_directory(dir_path: str | Path) -> Path:
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError:
-        logger.exception(path, "Failed to create target dir")
+        logger.exception("Failed to create target dir %s", path)
         raise
     return path
 
@@ -262,7 +262,7 @@ def module_path(src_file_path: Path | str | None) -> str | None:
             root_dir(src_file_path) / SRC_DIR,
         )
     except ValueError:
-        logger.exception(None, f"No src module at {src_file_path}")
+        logger.exception("No src module at %s", src_file_path)
         raise
 
     if relative_src.name == INIT_FILE_PATH:
@@ -305,7 +305,7 @@ def src_path(test_file_path: Path | str) -> Path:
         msg = f"No source file for {path}"
         raise FileNotFoundError(msg)
 
-    logger.progress(None, f"Mapped {path} to {match}")
+    logger.info("Mapped %s to %s", path, match)
     return match
 
 
@@ -340,7 +340,7 @@ def unit_test_path(
                 root_dir(res_item) / SRC_DIR,
             )
         except ValueError:
-            logger.exception(None, f"No src folder in {res_item}")
+            logger.exception("No src folder in %s", res_item)
             raise
         rel_src = rel_src.relative_to(rel_src.parts[0])
         test_filename = f"test_{rel_src.name}"
@@ -349,12 +349,9 @@ def unit_test_path(
         test_path.parent.mkdir(parents=True, exist_ok=True)
         if not test_path.exists() or test_path.stat().st_size == 0:
             my_io.write_txt(UNIT_TEST_DEFAULT_TXT, test_path)
-            logger.progress(None, f"Created test file {test_path}")
+            logger.info("Created test file %s", test_path)
 
         out_paths.append(test_path)
 
-    logger.progress(
-        None,
-        f"Mapped {len(out_paths)} source file(s) to unit test path(s)",
-    )
+    logger.info("Mapped %d source file(s) to unit test path(s)", len(out_paths))
     return sorted(out_paths)
