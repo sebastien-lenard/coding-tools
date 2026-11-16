@@ -8,7 +8,6 @@ Reads cov report, finds gaps, fills templates.
 
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 from enum import Enum
 from pathlib import Path
@@ -41,7 +40,7 @@ SNIPPET_END_OFFSET = 2
 
 
 def cov_branch_templ_path() -> Path:
-    """Yielf branch template path."""
+    """Yield branch template path."""
     return conf.conf_dir() / COV_BRANCH_TEMPL_REL_PATH
 
 
@@ -140,21 +139,6 @@ def issues(
     return uncov_lines, branch_notes, cov_status, status
 
 
-def _parse_branch_audit(audit_line: str) -> str:
-    """Turn raw branch line into audit text.
-
-    Checks for no branch or exit jumps. Returns formatted audit string.
-    """
-    match = re.search(r"(\d+)->(exit|\d+)", audit_line)
-    if match:
-        target = match.group(2)
-        if target == "exit":
-            return "Branch jump exited early; the other branch path was never taken."
-        return f"Branch jump to line {target} was never taken; tests only ran one way."
-
-    return f"Partial branch test coverage jump: {audit_line}"
-
-
 def _fmt_stmts(src_file_path: Path, uncovered_lines: list[int]) -> str:
     """Format uncov statement items with templates.
 
@@ -223,52 +207,26 @@ def _fmt_branches(
         [start_ln for start_ln, _, _ in branch_notes],
     )
     items: list[str] = []
-    for start_line, target_line, audit in branch_notes:
-        if start_line > len(src_lines) or (
-            target_line > 0 and target_line > len(src_lines)
-        ):
+    for start_line, _target_line, _audit in branch_notes:
+        if start_line > len(src_lines):
             continue
 
-        branch_snippet = src_lines[start_line - 1] if start_line > 0 else audit
-        stmt_snippet = (
-            src_lines[target_line - 1]
-            if target_line > 0 and target_line <= len(src_lines)
-            else branch_snippet
-        )
+        stmt_snippet = src_lines[start_line - 1] if start_line > 0 else ""
 
         start_idx = max(0, start_line - SNIPPET_CONTEXT_OFFSET)
         end_idx = min(len(src_lines), start_line + SNIPPET_END_OFFSET)
-        context_snippet = (
-            "\n".join(src_lines[start_idx:end_idx]) if src_lines else audit
-        )
-
-        branch_cxt_idx = (
-            max(0, target_line - SNIPPET_CONTEXT_OFFSET) if target_line > 0 else 0
-        )
-        branch_cxt_end = (
-            min(len(src_lines), target_line + SNIPPET_END_OFFSET)
-            if target_line > 0
-            else 0
-        )
-        branch_cxt_snippet = (
-            "\n".join(src_lines[branch_cxt_idx:branch_cxt_end])
-            if target_line > 0 and target_line <= len(src_lines)
-            else branch_snippet
-        )
+        context_snippet = "\n".join(src_lines[start_idx:end_idx]) if src_lines else ""
 
         func_name, _ = ast_map.get(
             start_line,
             ("conditional block", "Partial branch coverage."),
         )
-        descriptive_audit = _parse_branch_audit(audit)
 
         formatted_branch = templ.format(
+            stmt_line=start_line,
             stmt_snippet=stmt_snippet,
-            branch_snippet=branch_snippet,
             context_snippet=context_snippet,
-            branch_cxt_snippet=branch_cxt_snippet,
             function_name=func_name,
-            audit=descriptive_audit,
         )
         items.append(formatted_branch)
     return "\n\n".join(items) if items else ""
@@ -279,7 +237,6 @@ def run(src_file_path: Path | str, run_output: RunOutput) -> RunOutput:
 
     Gets issues, formats statements and branches, updates run output. Returns RunOutput.
     """
-    func = f"{__name__}"
     logger.info("%s", src_file_path, extra={"leg": "start"})
 
     uncovered_lines, branch_notes, cov_status, status = issues(src_file_path)

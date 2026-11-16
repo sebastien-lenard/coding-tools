@@ -20,6 +20,6 @@ Entire file content given.
 --- End of Files to edit ---
 --- Response expected ---
 Give:
-- a message
+- a message that gives (1) a score from 0 to 10 that represents your neutral and honest assessment of the user request, (2) a brief justification of your score, and (3) a brief explanation of what you did. 0 is the worst score: unclear or missing or contradictory instructions in `--- To do ---` or `--- Tips ---`, or missing files in `--- Files for tip context, don't edit ---` or `--- Files to edit ---`. 10 is the best score.
 - the fully updated file with header comments if only one file (edited_files)
 - or the concatenation of fully updated files with header comments if several files (edited_files).

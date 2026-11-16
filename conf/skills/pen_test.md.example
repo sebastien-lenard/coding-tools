@@ -167,3 +167,49 @@ def test_cleanup_files() -> None:
         name="file_name",
     )
 ```
+
+## Examples of accepted pens for partly covered branches:
+```
+# src/demo.py
+"""Demo module for nested if branches."""
+
+from pathlib import Path
+
+
+def process_file(path: Path, force: bool) -> str:
+    """Process file if path exists.
+
+    Raise FileNotFoundError if path missing.
+    """
+    if path.exists():
+        if force:
+            return "exists-and-forced"
+        return "exists-not-forced"
+    return "missing"
+
+# tests/test_demo.py
+"""Unit tests to fully cover the nested if branches of demo.py."""
+
+from pathlib import Path
+from demo import process_file
+
+
+def test_child_true(tmp_path: Path) -> None:
+    """Test path where file exists and force is true."""
+    f = tmp_path / "file.txt"
+    f.write_text("data", encoding="utf-8")
+    assert process_file(f, True) == "exists-and-forced"
+
+
+def test_child_false(tmp_path: Path) -> None:
+    """Test path where file exists and force is false."""
+    f = tmp_path / "file.txt"
+    f.write_text("data", encoding="utf-8")
+    assert process_file(f, False) == "exists-not-forced"
+
+
+def test_parent_false(tmp_path: Path) -> None:
+    """Test path where file does not exist."""
+    f = tmp_path / "missing.txt"
+    assert process_file(f, True) == "missing"
+```

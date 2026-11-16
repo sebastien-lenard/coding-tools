@@ -1,22 +1,14 @@
 <!-- config/templates/cov_branch.md -->
 <!-- SPDX-FileCopyrightText: Copyright (C) 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-- Uncovered branch pathway (statement):
+- Partly covered branch (statement line {stmt_line} in source script):
 ```python
 {stmt_snippet}
 ```
-- Branch starting point:
-```python
-{branch_snippet}
-```
-- Pathway context:
+- Branch context:
 ```python
 {context_snippet}
 ```
-- Branch context:
-```python
-{branch_cxt_snippet}
-```
 - Where: Function `{function_name}`
-- Audit: {audit}
-- Fix: Pen test running the statement pathway (and thus both outcomes of this branch).
+- Audit: `({stmt_snippet}) == True` is tested but `({stmt_snippet}) == False` is not tested.
+- Fix: Check you spot the `{stmt_snippet}` branch that fits the `Branch context` above (line {stmt_line} in source script). Check if `{stmt_snippet}` is a `if` or `elif` or `except` branch (case B) or a `for` or `while` loop (case L). If you check case B, pen a test that directly runs `({stmt_snippet}) == False` and does not skip this condition `{stmt_snippet}`. If you check case L, pen a test that directly runs the loop `{stmt_snippet}` but never has an loop iteration because `({stmt_snippet}) == False`
