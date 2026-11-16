@@ -90,8 +90,14 @@ def test_read_txt_errors(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError):
         my_io.read_txt(missing, raise_err=True)
 
-    with pytest.raises(RuntimeError):
-        my_io.read_txt(missing, raise_err=True)
+    # Test read_txt missing with raise_err=False
+    assert my_io.read_txt(missing, raise_err=False) == ""
+
+    # Test header=False branch
+    f_head = tmp_path / "header.py"
+    f_head.write_text("# Header\ncode_line\n", encoding="utf-8")
+    content = my_io.read_txt(f_head, header=False)
+    assert "code_line" in content
 
     # Test empty file with raise_err=True
     empty = tmp_path / "empty.txt"
@@ -110,9 +116,55 @@ def test_write_txt_diff(tmp_path: Path) -> None:
     my_io.write_txt("new text\n", f, verbose=Verbose.VV)
     assert f.read_text(encoding="utf-8") == "new text\n"
 
+    # Test write_txt when diff is present, but verbose is V
+    # (covers verbose == Verbose.VV as False)
+    f.write_text("old diff text\n", encoding="utf-8")
+    my_io.write_txt("new diff text\n", f, verbose=Verbose.V)
+    assert f.read_text(encoding="utf-8") == "new diff text\n"
+
+    # Test write_txt when diff is empty (same content) with Verbose.V
+    # (covers else for verbose == Verbose.VV)
+    f.write_text("same text\n", encoding="utf-8")
+    my_io.write_txt("same text\n", f, verbose=Verbose.V)
+    assert f.read_text(encoding="utf-8") == "same text\n"
+
+    # Test write_txt when diff is empty (same content) with
+    # Verbose.VV to cover the uncovered branch
+    f.write_text("same text\n", encoding="utf-8")
+    my_io.write_txt("same text\n", f, verbose=Verbose.VV)
+    assert f.read_text(encoding="utf-8") == "same text\n"
+
+    # Test write_txt when verbose is not VV during OSError (covers else branch)
+    f.write_text("non-vv text\n", encoding="utf-8")
+    my_io.write_txt("non-vv text\n", f, verbose=Verbose.V)
+    assert f.read_text(encoding="utf-8") == "non-vv text\n"
+
+    # Test write_txt when read_text fails (OSError/UnicodeDecodeError)
+    # with verbose=Verbose.VV
+    missing = tmp_path / "missing_write.txt"
+    my_io.write_txt("hello\n", missing, verbose=Verbose.VV)
+    assert missing.read_text(encoding="utf-8") == "hello\n"
+
+    # Test write_txt when read_text fails (OSError/UnicodeDecodeError)
+    # with verbose=Verbose.V (covers else for verbose == Verbose.VV)
+    missing_v = tmp_path / "missing_write_v.txt"
+    my_io.write_txt("hello\n", missing_v, verbose=Verbose.V)
+    assert missing_v.read_text(encoding="utf-8") == "hello\n"
+
 
 def test_write_txt_no_previous(tmp_path: Path) -> None:
     """Test write_txt with no previous file."""
     f = tmp_path / "brand_new.txt"
     my_io.write_txt("hello\n", f, verbose=Verbose.VV)
     assert f.read_text(encoding="utf-8") == "hello\n"
+
+
+def test_write_txt_diff_empty_vv(tmp_path: Path) -> None:
+    """Test write_txt with identical content.
+
+    Under verbose=Verbose.VV when diff is empty.
+    """
+    f = tmp_path / "same.txt"
+    f.write_text("content\n", encoding="utf-8")
+    my_io.write_txt("content\n", f, verbose=Verbose.VV)
+    assert f.read_text(encoding="utf-8") == "content\n"

@@ -97,6 +97,9 @@ CONSTANT_UNASSIGNED: int
 CONSTANT_COMPLEX = 1 + 2
 CONSTANT_ANN: int = 10
 
+# Multi-target assignment to test non-Name target and Name target branches
+a, b = 1, 2
+
 @decorator1
 class BaseClass:
     pass
@@ -130,6 +133,11 @@ def standalone_func_inner(a: int):
 
 def bare_func():
     pass
+
+# Function calling target_func twice to test caller_name already in called_by branch
+def caller_func():
+    target_func()
+    target_func()
 '''
     (src_dir / "mod1.py").write_text(mod1_code, encoding="utf-8")
     (src_dir / "relative_mod.py").write_text("def foo(): pass", encoding="utf-8")
@@ -156,9 +164,40 @@ def bare_func():
     assert "pyproject.toml" in content
 
 
+def test_link_callers_already_called_by(tmp_path: Path) -> None:
+    """Test _link_callers when caller is already.
+
+    in target_func.called_by (branch False).
+    """
+    project_dir = tmp_path / "proj_callers"
+    src_dir = project_dir / "src"
+    src_dir.mkdir(parents=True)
+
+    code = """
+def target_func():
+    pass
+
+def caller_func():
+    target_func()
+    target_func()
+"""
+    (src_dir / "mod.py").write_text(code, encoding="utf-8")
+
+    analyzer = CodeStructureAnalyzer(project_path=project_dir)
+    modules = analyzer._analyze_modules()
+    function_registry = {
+        "target_func": modules[0].functions[0:1],
+    }
+    # Call _link_callers twice with the same caller
+    # to hit the False branch of caller_name not in target_func.called_by
+    analyzer._link_callers(["target_func"], "caller_func", function_registry)
+    analyzer._link_callers(["target_func"], "caller_func", function_registry)
+    assert modules[0].functions[0].called_by == ["caller_func"]
+
+
 def test_comprehensive_analysis_no_pyproject(tmp_path: Path) -> None:
     """Test analysis when pyproject.toml is absent."""
-    project_dir = tmp_path / "test_proj_no_pyproj"
+    project_dir = tmp_path / "test_proj_no_pyproject"
     src_dir = project_dir / "src"
     src_dir.mkdir(parents=True)
     (src_dir / "mod.py").write_text("x = 1", encoding="utf-8")

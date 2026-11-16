@@ -493,8 +493,7 @@ class TestGemini:
             )
             with pytest.raises(
                 ValueError,
-                match=r"GenAI response did not conform to "
-                r"DummyModel schema.",
+                match=r"GenAI response did not conform to DummyModel schema.",
             ):
                 await adapter.call("content", options)
 

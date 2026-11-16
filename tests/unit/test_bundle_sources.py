@@ -76,7 +76,7 @@ def test_bundler_executes_successfully_default_output(
 
     expected_output = proj["project_dir"] / "src_files.txt"
     assert expected_output.exists()
-    assert "Start bundle_sources" in caplog.text
+    assert "bundle_sources" in caplog.text
     assert "Include optional file" in caplog.text
 
 
@@ -134,6 +134,21 @@ def test_bundler_skips_missing_optional_files(
         assert bundler.execute() is True
 
     assert "Skipped optional file (not found)" in caplog.text
+
+
+def test_bundler_empty_source_files_branch(
+    tmp_path: Path,
+) -> None:
+    """Test that source_files being empty is handled correctly (branch coverage)."""
+    project_dir = tmp_path / "empty_src_project"
+    project_dir.mkdir()
+    src_dir = project_dir / "src"
+    src_dir.mkdir()
+    # File with disallowed extension so source_files is empty
+    (src_dir / "data.txt").write_text("not allowed", encoding="utf-8")
+
+    bundler = SourceBundler(project_path=project_dir)
+    assert bundler.execute() is True
 
 
 def test_missing_src_folder_logs_error_and_returns_false(

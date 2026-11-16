@@ -93,6 +93,44 @@ def test_all_constructs_fully(tmp_path: Path) -> None:
     assert len(mappings) >= 3
 
 
+def test_ast_node_mapper_branch_coverage_paths(tmp_path: Path) -> None:
+    """Test uncov_map triggering target lines and non-target lines.
+
+    For branch coverage.
+    """
+    code = (
+        "def sample_branches():\n"
+        "    if True:\n"
+        "        pass\n"
+        "    try:\n"
+        "        x = 1\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    for _ in range(1):\n"
+        "        pass\n"
+        "    while False:\n"
+        "        pass\n"
+    )
+    src = tmp_path / "branches.py"
+    src.write_text(code, encoding="utf-8")
+    # Target only some lines to exercise the condition where
+    # lineno is not in target_lines or is already mapped
+    mappings = uncov_map(src, [2, 4, 8, 10])
+    assert 2 in mappings
+    assert 4 in mappings
+    assert 8 in mappings
+    assert 10 in mappings
+
+    # Test lines not in target_lines and already mapped to cover
+    # the false branches of if conditions
+    mappings_extra = uncov_map(src, [2])
+    assert 2 in mappings_extra
+    # Pass a line that hits visit_If, visit_Try, visit_For,
+    # visit_While but lineno is not in target_lines
+    mappings_none = uncov_map(src, [99])
+    assert len(mappings_none) == 0
+
+
 def test_del_docstrings() -> None:
     """Test clearing docstrings from AST nodes."""
     code = '"""Module docstring"""\ndef sample():\n    """Func docstring"""\n    pass'

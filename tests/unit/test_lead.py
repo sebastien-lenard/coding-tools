@@ -244,6 +244,72 @@ def test_run_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     asyncio.run(lead.run())
 
 
+def test_run_success_input_path_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test lead run success when input_path is None and output_path is present."""
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "file.py"
+    target.write_text("pass", encoding="utf-8")
+
+    monkeypatch.setitem(
+        lead.TOOLS,
+        "my-tool",
+        {"mod": "coding_tools.my_path", "llm": "False"},
+    )
+    monkeypatch.setattr(
+        lead,
+        "parse_args",
+        lambda: argparse.Namespace(
+            tool="my-tool",
+            path=str(target),
+            test=False,
+            verbose=0,
+        ),
+    )
+
+    dummy_mod = cast("DummyModule", ModuleType("dummy_mod"))
+    dummy_mod.check = lambda *a, **kw: None
+    dummy_mod.precheck = lambda *a, **kw: None
+    dummy_mod.MIN_STEPS = 1
+    dummy_mod.MAX_STEPS = 5
+    sys.modules["coding_tools.dummy_mod"] = dummy_mod
+    monkeypatch.setitem(
+        lead.TOOLS,
+        "my-tool",
+        {"mod": "coding_tools.dummy_mod", "llm": "False"},
+    )
+
+    async def mock_llm_run(
+        ctx: lead.Context,
+        outputs: list[RunOutput],
+    ) -> list[RunOutput]:
+        outputs[0].status = RunState.PASS
+        # Keep input_path as is for one, and None with output_path
+        # for another or test both branches
+        ro1 = outputs[0]
+        ro1.input_path = None
+        ro1.output_path = tmp_path / "file.py"
+
+        # Add a second output where input_path is present and output_path is None
+        ro2 = RunOutput(
+            func="lead",
+            sub_func="mc.init",
+            status=RunState.PASS,
+            input_path=target,
+            output_path=None,
+            root_dir=tmp_path,
+            step=1,
+            max_steps=5,
+        )
+        return [ro1, ro2]
+
+    monkeypatch.setattr(lead.llm_emcee, "run", mock_llm_run)
+
+    asyncio.run(lead.run())
+
+
 def test_main_block(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the main execution entry block."""
     monkeypatch.setattr(

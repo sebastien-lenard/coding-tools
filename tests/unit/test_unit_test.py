@@ -1,4 +1,3 @@
-# tests/unit/test_unit_test.py
 # SPDX-FileCopyrightText: 2026 Sebastien Lenard <sebastien.lenard@gmail.com> and Contributors
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for unit_test module."""
@@ -41,6 +40,23 @@ def test_check_success(mock_src_path: MagicMock, tmp_path: Path) -> None:
         mock_cov_run.return_value = RunOutput(func="test", status=RunState.PASS)
         res = check(params, output)
         assert res.status == RunState.PASS
+
+
+@patch("coding_tools.my_path.src_path")
+def test_check_no_new_txt_and_fail(mock_src_path: MagicMock, tmp_path: Path) -> None:
+    """Test check function without new_txt and with pytest failure."""
+    f = tmp_path / "file.py"
+    f.write_text("print(1)", encoding="utf-8")
+    mock_src_path.return_value = f
+    params = CheckParams(file_path=f, old_txt="print(1)", new_txt="")
+    output = RunOutput(func="test", status=RunState.PRESTART)
+
+    with patch("coding_tools.my_pytest.run") as mock_pytest_run, \
+         patch("coding_tools.pytest_cov.run") as mock_cov_run:
+        mock_pytest_run.return_value = RunOutput(func="test", status=RunState.FAIL)
+        res = check(params, output)
+        assert res.status == RunState.FAIL
+        mock_cov_run.assert_not_called()
 
 
 @patch("coding_tools.my_path.src_path")

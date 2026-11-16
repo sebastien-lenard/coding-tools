@@ -55,7 +55,10 @@ def test_run(mock_get_path: MagicMock, mock_sub_run: MagicMock) -> None:
 def test_no_docstring_files(mock_sub: MagicMock) -> None:
     """Test no_docstring_files function."""
     mock_sub.return_value.stdout = (
+        "no colon line\n"
+        "src/file.txt:10:1: D100 Missing docstring\n"
         "src/file.py:10:1: D100 Missing docstring in public module"
     )
     files = no_docstring_files("src")
     assert Path("src/file.py") in files
+    assert Path("src/file.txt") not in files
