@@ -106,7 +106,6 @@ class LLMCallParams:
     """
 
     response_schema: type[BaseModel]
-    prefix: str
     tool_name: str = "generic-tool"
     process_step: str = "generation"
     target_file: str = "unknown.py"

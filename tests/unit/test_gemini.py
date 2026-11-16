@@ -83,7 +83,6 @@ def test_retry_llm_call_success(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             ),
         )
         assert res == mock_resp
@@ -115,7 +114,6 @@ def test_retry_llm_call_server_error_retryable(monkeypatch: pytest.MonkeyPatch) 
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             ),
         )
         assert res == mock_resp
@@ -148,7 +146,6 @@ def test_retry_llm_call_server_error_exhausted(monkeypatch: pytest.MonkeyPatch) 
                     req="request",
                     model="model",
                     config={},
-                    prefix="TEST",
                 ),
             )
 
@@ -174,7 +171,6 @@ def test_retry_llm_call_non_503_server_error(monkeypatch: pytest.MonkeyPatch) ->
                     req="request",
                     model="model",
                     config={},
-                    prefix="TEST",
                 ),
             )
 
@@ -197,7 +193,6 @@ def test_retry_llm_call_generic_exception(monkeypatch: pytest.MonkeyPatch) -> No
                     req="request",
                     model="model",
                     config={},
-                    prefix="TEST",
                 ),
             )
         assert "General failure" in str(exc_info.value)
@@ -224,7 +219,6 @@ def test_llm_call_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
         assert exc_info.value.status_code == 429
 
@@ -250,7 +244,6 @@ def test_llm_call_client_error_non_429(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
         assert exc_info.value.status_code == 400
 
@@ -321,7 +314,6 @@ def test_llm_call_client_error_exhausted_no_message(
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
 
     asyncio.run(_run())
@@ -361,7 +353,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -386,7 +377,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -414,7 +404,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -439,7 +428,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -464,7 +452,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -487,7 +474,6 @@ class TestGemini:
             adapter = Gemini()
             options = LLMCallParams(
                 response_schema=DummyModel,
-                prefix="TEST",
                 tool_name="tool",
                 target_file="test.py",
             )
@@ -570,7 +556,6 @@ def test_llm_call_server_error_503(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
         assert exc_info.value.status_code == 503
         assert exc_info.value.retryable is True
@@ -597,7 +582,6 @@ def test_llm_call_server_error_non_503(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
         assert exc_info.value.status_code == 500
         assert exc_info.value.retryable is False
@@ -623,7 +607,6 @@ def test_llm_call_returns_resp_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
             req="request",
             model="model",
             config={},
-            prefix="TEST",
         )
         assert res == expected_parsed
 
@@ -646,7 +629,6 @@ def test_retry_llm_call_returns_resp_directly(monkeypatch: pytest.MonkeyPatch) -
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             ),
         )
         assert res == mock_resp
@@ -671,7 +653,6 @@ def test_llm_call_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             )
         assert "API failure" in str(exc_info.value)
 
@@ -690,7 +671,6 @@ def test_max_retries_zero(monkeypatch: pytest.MonkeyPatch) -> None:
                 req="request",
                 model="model",
                 config={},
-                prefix="TEST",
             ),
         )
         assert res is None

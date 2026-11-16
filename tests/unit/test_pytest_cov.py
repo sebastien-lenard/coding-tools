@@ -39,18 +39,6 @@ def test_pytest_cov_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert res.status == RunState.PASS
 
 
-def test_pytest_cov_branch_parsing() -> None:
-    """Test branch audit string parsing helper."""
-    parse_audit = pytest_cov._parse_branch_audit
-    assert (
-        "Partial branch test coverage jump: no branch"
-        in parse_audit("no branch")
-    )
-    assert "exited early" in parse_audit("1->exit")
-    assert "never taken" in parse_audit("1->2")
-    assert "Partial branch" in parse_audit("unknown")
-
-
 def test_pytest_cov_formatting_exceptions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -66,7 +66,6 @@ class ChatStepParams:
     """Parameters for executing a single chat step."""
 
     file_path: Path
-    file_stem: str
     ctx: Context
     run_output: RunOutput
     check_params: CheckParams
@@ -114,7 +113,6 @@ async def _execute_chat_step(
 ) -> tuple[RunOutput, CheckParams, bool]:
     """Run single chat step, call LLM, check and save if pass."""
     file_path = params.file_path
-    file_stem = params.file_stem
     ctx = params.ctx
     run_output = params.run_output
     check_params = params.check_params
@@ -144,7 +142,6 @@ async def _execute_chat_step(
         )
         llm_params = llm_protocol.LLMCallParams(
             response_schema=llm_protocol.LLMResponse,
-            prefix=file_stem,
             tool_name=f"{ctx.func_name}",
             process_step=f"{step}",
             target_file=str(file_path),
@@ -239,12 +236,9 @@ async def chat(
     except (OSError, UnicodeEncodeError):
         return replace(run_output, status=RunState.FAIL, msg="Bad file")
 
-    file_stem = file_path.stem
-
     for step in range(ctx.max_steps):
         step_params = ChatStepParams(
             file_path=file_path,
-            file_stem=file_stem,
             ctx=ctx,
             run_output=run_output,
             check_params=check_params,

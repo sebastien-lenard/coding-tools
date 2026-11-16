@@ -136,7 +136,6 @@ async def llm_call(
     req: str,
     model: str,
     config: dict[str, object],
-    prefix: str | None = None,
 ) -> object:
     """Call LLM API and get parsed response.
 
@@ -192,7 +191,6 @@ class RetryParams(BaseModel):
     req: str
     model: str
     config: dict[str, object]
-    prefix: str | None = None
     sleep_func: Callable[[float], Awaitable[Any]] = asyncio.sleep
 
 
@@ -211,7 +209,6 @@ async def retry_llm_call(
                 params.req,
                 params.model,
                 params.config,
-                params.prefix,
             )
         except LLMServerError as e:
             retry, sleep_time = should_retry(e.status_code, _try)
@@ -276,7 +273,6 @@ class Gemini:
                 req=req,
                 model=self.model_name,
                 config=config_kwargs,
-                prefix=params.prefix,
             ),
         )
 

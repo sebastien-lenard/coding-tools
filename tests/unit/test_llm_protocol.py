@@ -60,10 +60,8 @@ def test_structured_generation_options_defaults() -> None:
     """Test default values for LLMCallParams."""
     options = LLMCallParams(
         response_schema=DummyModel,
-        prefix="test_prefix",
     )
     assert options.response_schema == DummyModel
-    assert options.prefix == "test_prefix"
 
 
 def test_llm_client_protocol_implementation() -> None:
@@ -72,7 +70,7 @@ def test_llm_client_protocol_implementation() -> None:
     res = asyncio.run(
         client.call(
             "req",
-            LLMCallParams(response_schema=DummyModel, prefix="p"),
+            LLMCallParams(response_schema=DummyModel),
         ),
     )
     assert isinstance(res, LLMResponse)
